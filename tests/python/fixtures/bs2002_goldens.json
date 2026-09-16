@@ -1,0 +1,35 @@
+[
+  {
+    "description": "Standard Bjerksund-Stensland benchmark case 1 (Non-dividend paying stock: American equals European)",
+    "spot": 100.0,
+    "strike": 100.0,
+    "r": 0.05,
+    "q": 0.0,
+    "t": 1.0,
+    "sigma": 0.20,
+    "expected_price": 10.4506,
+    "tolerance": 0.005
+  },
+  {
+    "description": "Standard Bjerksund-Stensland benchmark case 2 (Dividend paying stock with early exercise premium: S=100, K=80, T=1.5, r=0.06, q=0.07, sigma=0.25)",
+    "spot": 100.0,
+    "strike": 80.0,
+    "r": 0.06,
+    "q": 0.07,
+    "t": 1.5,
+    "sigma": 0.25,
+    "expected_price": 21.881,
+    "tolerance": 0.05
+  },
+  {
+    "description": "Deep ITM LEAPS (S=220, K=130, T=2.0, r=0.04, q=0.02, sigma=0.25)",
+    "spot": 220.0,
+    "strike": 130.0,
+    "r": 0.04,
+    "q": 0.02,
+    "t": 2.0,
+    "sigma": 0.25,
+    "expected_price": 92.80,
+    "tolerance": 0.10
+  }
+]

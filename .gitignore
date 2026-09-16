@@ -25,6 +25,20 @@ npm-debug.log*
 .agents/skills/archify/examples/
 
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Whitelist project HTML assets
+!src/leaps_scanner/api/static/index.html
+!docs/*.html
+
 # Environment
 .env
 .env.local

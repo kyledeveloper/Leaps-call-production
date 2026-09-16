@@ -1,0 +1,202 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "LEAPS Call Options Quant Screener Architecture",
+    "locale": "en",
+    "output": "arch-en.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "full-pipeline",
+        "label": "End-to-End Screener Pipeline",
+        "focus": ["client_ui", "fastapi_gateway", "webull_client", "greeks_engine", "strategy_screener", "scoring_aggregator"],
+        "note": "Complete workflow from Webull option chains ingestion to Greeks pricing and 4-strategy scoring"
+      },
+      {
+        "id": "quant-core",
+        "label": "Quant Core Pipeline",
+        "focus": ["greeks_engine", "strategy_screener", "scoring_aggregator"],
+        "note": "Black-Scholes pricing, effective leverage, volatility discount, and unusual flow analytics"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "client_ui",
+      "type": "frontend",
+      "label": "Interactive UI & Terminal",
+      "sublabel": "Web SPA / Rich CLI",
+      "pos": [40, 220],
+      "size": [160, 60]
+    },
+    {
+      "id": "fastapi_gateway",
+      "type": "backend",
+      "label": "FastAPI Service Gateway",
+      "sublabel": "REST API / WebSockets",
+      "tag": "ASGI / Uvicorn",
+      "pos": [260, 220],
+      "size": [160, 60]
+    },
+    {
+      "id": "webull_market_api",
+      "type": "external",
+      "label": "Webull OpenAPI",
+      "sublabel": "developer.webull.com",
+      "tag": "Quotes & Chains",
+      "pos": [480, 80],
+      "size": [160, 60]
+    },
+    {
+      "id": "webull_client",
+      "type": "backend",
+      "label": "Webull API Adapter",
+      "sublabel": "Auth / Rate-Limit / Parser",
+      "pos": [480, 220],
+      "size": [160, 60]
+    },
+    {
+      "id": "market_cache",
+      "type": "database",
+      "label": "Market Snapshot Cache",
+      "sublabel": "SQLite / In-Memory (TTL)",
+      "tag": "Hermetic Sandbox",
+      "pos": [480, 360],
+      "size": [160, 60]
+    },
+    {
+      "id": "greeks_engine",
+      "type": "backend",
+      "label": "Greeks Analytical Core",
+      "sublabel": "Black-Scholes / IV / Decay",
+      "tag": "NumPy / SciPy",
+      "pos": [700, 130],
+      "size": [160, 60]
+    },
+    {
+      "id": "strategy_screener",
+      "type": "backend",
+      "label": "4-Strategy Screener",
+      "sublabel": "ITM Sub / IV Discount / Flow",
+      "pos": [700, 310],
+      "size": [160, 60]
+    },
+    {
+      "id": "scoring_aggregator",
+      "type": "security",
+      "label": "Scoring & Ranker",
+      "sublabel": "Liquidity Guard / Top Opps",
+      "tag": "Top Opportunities",
+      "pos": [920, 220],
+      "size": [160, 60]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "LEAPS Quant Computing & Strategy Engine (Python Quant Backend)",
+      "wraps": ["fastapi_gateway", "webull_client", "market_cache", "greeks_engine", "strategy_screener", "scoring_aggregator"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-gateway",
+      "from": "client_ui",
+      "to": "fastapi_gateway",
+      "fromSide": "right",
+      "toSide": "left",
+      "label": "Scan",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gateway-client",
+      "from": "fastapi_gateway",
+      "to": "webull_client",
+      "fromSide": "right",
+      "toSide": "left",
+      "label": "Auth Query"
+    },
+    {
+      "id": "client-api",
+      "from": "webull_client",
+      "to": "webull_market_api",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "label": "OpenAPI Chains"
+    },
+    {
+      "id": "client-cache",
+      "from": "webull_client",
+      "to": "market_cache",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "Cache Snapshot",
+      "labelAt": [560, 310]
+    },
+    {
+      "id": "client-greeks",
+      "from": "webull_client",
+      "to": "greeks_engine",
+      "fromSide": "right",
+      "toSide": "left",
+      "label": "Chain Data"
+    },
+    {
+      "id": "greeks-screener",
+      "from": "greeks_engine",
+      "to": "strategy_screener",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "IV & Greeks",
+      "labelAt": [780, 235]
+    },
+    {
+      "id": "screener-scoring",
+      "from": "strategy_screener",
+      "to": "scoring_aggregator",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "label": "Candidates"
+    },
+    {
+      "id": "greeks-scoring",
+      "from": "greeks_engine",
+      "to": "scoring_aggregator",
+      "fromSide": "right",
+      "toSide": "top",
+      "label": "Pricing Factors"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Data Ingestion & Webull Protocol",
+      "items": [
+        "Direct connection to Webull OpenAPI for DTE >= 250d far-dated LEAPS option chains",
+        "Built-in token-bucket rate limiter and TTL caching to prevent quota starvation",
+        "Dual-mode: Production OpenAPI credentials and offline mock sandbox test isolation"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Quantitative 4-Strategy Screener",
+      "items": [
+        "Analytical Black-Scholes and numerical solver for exact IV and Greek sensitivities",
+        "Strategy 1: Deep ITM Stock Replacement (Delta 0.70-0.85, minimal decay, 2.5-4.5x leverage)",
+        "Strategy 2: Volatility Discount (IV Rank < 20% or IV/HV < 0.85 long vega setup)",
+        "Strategy 3: Blue-Chip Oversold Confluence (S&P 500/Nasdaq 100 leaders with oversold RSI/MA200)",
+        "Strategy 4: Unusual Volume & Large Flow (Far-expiry Vol/OI > 1.5 anomaly detection)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Delivery & Interactive UX",
+      "items": [
+        "High-performance FastAPI async microservice with automatic OpenAPI docs",
+        "Modern responsive single-page web dashboard with interactive parameter tuning",
+        "Color-coded terminal CLI with rich formatted tables and instant risk alerts"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LEAPS Call Quantitative Scanner</title>
+  <style>
+    :root {
+      --bg-base: #0f172a;
+      --bg-card: #1e293b;
+      --bg-hover: #334155;
+      --border: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-blue: #38bdf8;
+      --accent-green: #34d399;
+      --accent-amber: #fbbf24;
+      --accent-rose: #f43f5e;
+      --badge-pass-bg: rgba(52, 211, 153, 0.15);
+      --badge-pass-text: #34d399;
+      --badge-watch-bg: rgba(251, 191, 36, 0.15);
+      --badge-watch-text: #fbbf24;
+      --badge-reject-bg: rgba(244, 63, 94, 0.15);
+      --badge-reject-text: #f43f5e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      padding: 24px;
+      line-height: 1.5;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .title-group h1 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .title-group p {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+    .status-badges {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .badge {
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-online { background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); border: 1px solid rgba(56, 189, 248, 0.3); }
+    .badge-pass { background: var(--badge-pass-bg); color: var(--badge-pass-text); }
+    .badge-watch { background: var(--badge-watch-bg); color: var(--badge-watch-text); }
+    .badge-reject { background: var(--badge-reject-bg); color: var(--badge-reject-text); }
+
+    /* Control Panel */
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .slider-box {
+      flex: 1;
+      min-width: 320px;
+    }
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .slider-header span.alpha-val {
+      color: var(--accent-blue);
+      font-size: 16px;
+    }
+    input[type=range] {
+      width: 100%;
+      accent-color: var(--accent-blue);
+      cursor: pointer;
+    }
+    .slider-legend {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    .panel-meta {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .btn {
+      background: var(--accent-blue);
+      color: #0f172a;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.9; }
+
+    /* Strategy Tabs */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 8px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      background: var(--bg-card);
+      color: var(--accent-blue);
+      border: 1px solid var(--border);
+    }
+
+    /* Data Table */
+    .table-container {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+    th {
+      background: rgba(15, 23, 42, 0.6);
+      padding: 12px 16px;
+      color: var(--text-muted);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover { background: var(--bg-hover); }
+
+    .num { font-variant-numeric: tabular-nums; }
+    .sub-info { font-size: 11px; color: var(--text-muted); display: block; margin-top: 2px; }
+    .caveat-banner {
+      background: rgba(251, 191, 36, 0.1);
+      border: 1px solid rgba(251, 191, 36, 0.3);
+      color: var(--accent-amber);
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="title-group">
+      <h1>🦅 LEAPS Call Quant Scanner</h1>
+      <p>Multi-Strategy Quantitative Screening for Far-Dated Call Options (DTE ≥ 250d)</p>
+    </div>
+    <div class="status-badges">
+      <span class="badge badge-online" id="engineStatus">Sandbox Mode</span>
+      <button class="btn" onclick="triggerScan()">🔄 Refresh Scan</button>
+    </div>
+  </div>
+
+  <!-- Alpha Execution Slippage Panel -->
+  <div class="panel">
+    <div class="slider-box">
+      <div class="slider-header">
+        <span>Execution Price Parameter (α Slippage Slider)</span>
+        <span class="alpha-val" id="alphaDisplay">α = 0.50 (Midpoint + 50% Spread)</span>
+      </div>
+      <input type="range" id="alphaSlider" min="0" max="1" step="0.05" value="0.5" oninput="handleAlphaChange(this.value)">
+      <div class="slider-legend">
+        <span>0.0 (Aggressive Mid)</span>
+        <span>0.5 (Conservative Mid)</span>
+        <span>1.0 (Worst-case Ask)</span>
+      </div>
+    </div>
+    <div class="panel-meta">
+      <div><strong>Re-rank Latency:</strong> <span id="rerankTime" class="num">&lt; 1 ms</span></div>
+      <div><strong>Network Re-fetch:</strong> 0 KB (Zero Network Memory Recalculation)</div>
+    </div>
+  </div>
+
+  <!-- Strategy Board Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchBoard('deep_itm', this)">1. Deep ITM Stock Replacement</button>
+    <button class="tab-btn" onclick="switchBoard('vol_discount', this)">2. Volatility Discount</button>
+    <button class="tab-btn" onclick="switchBoard('oversold', this)">3. Blue-Chip Oversold Confluence</button>
+    <button class="tab-btn" onclick="switchBoard('unusual_flow', this)">4. Unusual Far-Dated Flow</button>
+  </div>
+
+  <div id="caveatContainer" style="display: none;">
+    <div class="caveat-banner">
+      ⚠️ <strong>Explanatory Note:</strong> Far-dated flow includes rollovers, tax-loss harvesting, and structured hedging; signals direction with lower certainty than short-dated UOA.
+    </div>
+  </div>
+
+  <!-- Main Table Container -->
+  <div class="table-container">
+    <table id="dataTable">
+      <thead>
+        <tr id="tableHeader"></tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    let currentAlpha = 0.5;
+    let currentBoardKey = 'deep_itm';
+    let cachedBoards = {};
+
+    async function fetchConfig() {
+      try {
+        const res = await fetch('/api/v1/config');
+        if (res.ok) {
+          const cfg = await res.json();
+          document.getElementById('engineStatus').innerText = cfg.offline_mode ? 'Sandbox Offline' : 'Live Connected';
+        }
+      } catch (e) {
+        console.warn('Config fetch error, running standalone mock UI:', e);
+      }
+    }
+
+    async function loadBoards(alpha) {
+      const t0 = performance.now();
+      try {
+        const res = await fetch(`/api/v1/boards?alpha=${alpha}`);
+        if (res.ok) {
+          const data = await res.json();
+          cachedBoards = data.boards;
+          const elapsed = (performance.now() - t0).toFixed(1);
+          document.getElementById('rerankTime').innerText = `${elapsed} ms`;
+          renderActiveBoard();
+        }
+      } catch (e) {
+        console.error('Failed to load boards:', e);
+      }
+    }
+
+    async function handleAlphaChange(val) {
+      currentAlpha = parseFloat(val);
+      document.getElementById('alphaDisplay').innerText = `α = ${currentAlpha.toFixed(2)}`;
+
+      const t0 = performance.now();
+      try {
+        const res = await fetch('/api/v1/rerank', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ alpha: currentAlpha })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          cachedBoards = data.boards;
+          const elapsed = (performance.now() - t0).toFixed(1);
+          document.getElementById('rerankTime').innerText = `${elapsed} ms`;
+          renderActiveBoard();
+        }
+      } catch (e) {
+        console.warn('Rerank API error:', e);
+      }
+    }
+
+    async function triggerScan() {
+      try {
+        await fetch('/api/v1/scan', { method: 'POST' });
+        loadBoards(currentAlpha);
+      } catch (e) {
+        console.error('Scan trigger error:', e);
+      }
+    }
+
+    function switchBoard(key, btn) {
+      currentBoardKey = key;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('caveatContainer').style.display = (key === 'unusual_flow') ? 'block' : 'none';
+      renderActiveBoard();
+    }
+
+    function renderActiveBoard() {
+      const items = cachedBoards[currentBoardKey] || [];
+      const thead = document.getElementById('tableHeader');
+      const tbody = document.getElementById('tableBody');
+
+      // Set headers based on board
+      if (currentBoardKey === 'deep_itm') {
+        thead.innerHTML = `
+          <th>Symbol</th>
+          <th>Underlying</th>
+          <th>Strike / Spot</th>
+          <th>DTE</th>
+          <th>Bid / Ask</th>
+          <th>P_exec (α)</th>
+          <th>Delta</th>
+          <th>Eff. Leverage</th>
+          <th>Intrinsic %</th>
+          <th>Carry Cost</th>
+          <th>Status</th>
+        `;
+      } else if (currentBoardKey === 'vol_discount') {
+        thead.innerHTML = `
+          <th>Symbol</th>
+          <th>Underlying</th>
+          <th>Strike / Spot</th>
+          <th>DTE</th>
+          <th>P_exec (α)</th>
+          <th>IV Percentile</th>
+          <th>Regime</th>
+          <th>Carry Cost</th>
+          <th>Status</th>
+        `;
+      } else if (currentBoardKey === 'oversold') {
+        thead.innerHTML = `
+          <th>Symbol</th>
+          <th>Underlying</th>
+          <th>Strike / Spot</th>
+          <th>DTE</th>
+          <th>P_exec (α)</th>
+          <th>Confluence Score</th>
+          <th>Carry Cost</th>
+          <th>Status</th>
+        `;
+      } else if (currentBoardKey === 'unusual_flow') {
+        thead.innerHTML = `
+          <th>Symbol</th>
+          <th>Underlying</th>
+          <th>Strike / Spot</th>
+          <th>DTE</th>
+          <th>P_exec (α)</th>
+          <th>Volume / OI</th>
+          <th>Vol / OI Ratio</th>
+          <th>Dollar Volume</th>
+          <th>Status</th>
+        `;
+      }
+
+      if (items.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 32px;">No candidate opportunities found for this strategy.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = items.map(it => {
+        const statusBadge = `<span class="badge badge-${it.status.toLowerCase()}">${it.status}</span>`;
+        if (currentBoardKey === 'deep_itm') {
+          return `
+            <tr>
+              <td><strong>${it.symbol}</strong></td>
+              <td>${it.underlying}</td>
+              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">Spot: $${it.spot.toFixed(1)}</span></td>
+              <td class="num">${Math.round(it.dte)}d</td>
+              <td class="num">$${it.bid.toFixed(2)} / $${it.ask.toFixed(2)}</td>
+              <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${it.p_exec.toFixed(2)}</td>
+              <td class="num">${it.delta.toFixed(2)}</td>
+              <td class="num">${it.effective_leverage.toFixed(1)}x</td>
+              <td class="num">${( (it.intrinsic_per_share / it.p_exec) * 100 ).toFixed(1)}%</td>
+              <td class="num">${(it.carry_cost * 100).toFixed(2)}%/yr</td>
+              <td>${statusBadge}</td>
+            </tr>
+          `;
+        } else if (currentBoardKey === 'vol_discount') {
+          return `
+            <tr>
+              <td><strong>${it.symbol}</strong></td>
+              <td>${it.underlying}</td>
+              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">Spot: $${it.spot.toFixed(1)}</span></td>
+              <td class="num">${Math.round(it.dte)}d</td>
+              <td class="num">$${it.p_exec.toFixed(2)}</td>
+              <td class="num">${it.iv_percentile !== null ? (it.iv_percentile * 100).toFixed(1) + '%' : 'N/A'}</td>
+              <td><span class="badge" style="background: rgba(56,189,248,0.15); color: var(--accent-blue);">${it.regime || 'NONE'}</span></td>
+              <td class="num">${(it.carry_cost * 100).toFixed(2)}%/yr</td>
+              <td>${statusBadge}</td>
+            </tr>
+          `;
+        } else if (currentBoardKey === 'oversold') {
+          return `
+            <tr>
+              <td><strong>${it.symbol}</strong></td>
+              <td>${it.underlying}</td>
+              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">Spot: $${it.spot.toFixed(1)}</span></td>
+              <td class="num">${Math.round(it.dte)}d</td>
+              <td class="num">$${it.p_exec.toFixed(2)}</td>
+              <td class="num" style="color: var(--accent-green); font-weight: 600;">${it.confluence_score.toFixed(1)} / 4.0</td>
+              <td class="num">${(it.carry_cost * 100).toFixed(2)}%/yr</td>
+              <td>${statusBadge}</td>
+            </tr>
+          `;
+        } else {
+          return `
+            <tr>
+              <td><strong>${it.symbol}</strong></td>
+              <td>${it.underlying}</td>
+              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">Spot: $${it.spot.toFixed(1)}</span></td>
+              <td class="num">${Math.round(it.dte)}d</td>
+              <td class="num">$${it.p_exec.toFixed(2)}</td>
+              <td class="num">${it.volume.toLocaleString()} / ${it.open_interest.toLocaleString()}</td>
+              <td class="num" style="color: var(--accent-amber); font-weight: 600;">${it.vol_oi_ratio.toFixed(2)}x</td>
+              <td class="num">$${it.dollar_volume.toLocaleString()}</td>
+              <td>${statusBadge}</td>
+            </tr>
+          `;
+        }
+      }).join('');
+    }
+
+    // Initialize
+    fetchConfig();
+    loadBoards(currentAlpha);
+  </script>
+</body>
+</html>

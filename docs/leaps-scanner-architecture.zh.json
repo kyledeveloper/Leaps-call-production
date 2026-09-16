@@ -1,0 +1,202 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "LEAPS Call 期权量化扫描系统架构",
+    "locale": "zh-CN",
+    "output": "arch-zh.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "full-pipeline",
+        "label": "全链路扫描流",
+        "focus": ["client_ui", "fastapi_gateway", "webull_client", "greeks_engine", "strategy_screener", "scoring_aggregator"],
+        "note": "从 Webull 期权链拉取、Greeks 定价到四维量化打分的端到端流程"
+      },
+      {
+        "id": "quant-core",
+        "label": "量化核心引擎",
+        "focus": ["greeks_engine", "strategy_screener", "scoring_aggregator"],
+        "note": "Black-Scholes 定价、杠杆倍数、波动率折价与异动大单综合评估"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "client_ui",
+      "type": "frontend",
+      "label": "交互终端与看板",
+      "sublabel": "Web SPA / Rich CLI",
+      "pos": [40, 220],
+      "size": [160, 60]
+    },
+    {
+      "id": "fastapi_gateway",
+      "type": "backend",
+      "label": "FastAPI 服务网关",
+      "sublabel": "REST API / WebSockets",
+      "tag": "ASGI / Uvicorn",
+      "pos": [260, 220],
+      "size": [160, 60]
+    },
+    {
+      "id": "webull_market_api",
+      "type": "external",
+      "label": "Webull OpenAPI",
+      "sublabel": "developer.webull.com",
+      "tag": "Quotes & Chains",
+      "pos": [480, 80],
+      "size": [160, 60]
+    },
+    {
+      "id": "webull_client",
+      "type": "backend",
+      "label": "Webull 官方适配器",
+      "sublabel": "Auth / Rate-Limit / Parser",
+      "pos": [480, 220],
+      "size": [160, 60]
+    },
+    {
+      "id": "market_cache",
+      "type": "database",
+      "label": "本地行情快照缓存",
+      "sublabel": "SQLite / In-Memory (TTL)",
+      "tag": "Hermetic Sandbox",
+      "pos": [480, 360],
+      "size": [160, 60]
+    },
+    {
+      "id": "greeks_engine",
+      "type": "backend",
+      "label": "Greeks 计算核心",
+      "sublabel": "Black-Scholes / IV / Decay",
+      "tag": "NumPy / SciPy",
+      "pos": [700, 130],
+      "size": [160, 60]
+    },
+    {
+      "id": "strategy_screener",
+      "type": "backend",
+      "label": "四维策略筛选器",
+      "sublabel": "ITM代正股 / IV洼地 / 异动放量",
+      "pos": [700, 310],
+      "size": [160, 60]
+    },
+    {
+      "id": "scoring_aggregator",
+      "type": "security",
+      "label": "量化打分与排序器",
+      "sublabel": "流动性护栏 / 机会总排名",
+      "tag": "Top Opportunities",
+      "pos": [920, 220],
+      "size": [160, 60]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "LEAPS 量化计算与策略服务 (Python Quant Backend)",
+      "wraps": ["fastapi_gateway", "webull_client", "market_cache", "greeks_engine", "strategy_screener", "scoring_aggregator"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-gateway",
+      "from": "client_ui",
+      "to": "fastapi_gateway",
+      "fromSide": "right",
+      "toSide": "left",
+      "label": "触发扫描",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gateway-client",
+      "from": "fastapi_gateway",
+      "to": "webull_client",
+      "fromSide": "right",
+      "toSide": "left",
+      "label": "凭证查询"
+    },
+    {
+      "id": "client-api",
+      "from": "webull_client",
+      "to": "webull_market_api",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "label": "OpenAPI 期权链"
+    },
+    {
+      "id": "client-cache",
+      "from": "webull_client",
+      "to": "market_cache",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "快照缓存",
+      "labelAt": [560, 310]
+    },
+    {
+      "id": "client-greeks",
+      "from": "webull_client",
+      "to": "greeks_engine",
+      "fromSide": "right",
+      "toSide": "left",
+      "label": "期权链数据"
+    },
+    {
+      "id": "greeks-screener",
+      "from": "greeks_engine",
+      "to": "strategy_screener",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "IV与Greeks",
+      "labelAt": [780, 235]
+    },
+    {
+      "id": "screener-scoring",
+      "from": "strategy_screener",
+      "to": "scoring_aggregator",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "label": "策略候选集"
+    },
+    {
+      "id": "greeks-scoring",
+      "from": "greeks_engine",
+      "to": "scoring_aggregator",
+      "fromSide": "right",
+      "toSide": "top",
+      "label": "定价因子"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "数据层与 Webull 适配",
+      "items": [
+        "对接 Webull OpenAPI 官方协议，提取 DTE >= 250 天的远期 LEAPS 期权链",
+        "内置速率控制 (Rate-Limiter) 与本地离线缓存，保障请求稳定与防频控",
+        "支持生产实盘凭证接入与离线沙盒单测隔离"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "量化与四维策略引擎",
+      "items": [
+        "Black-Scholes 闭式与二叉树数值定价，快速反推 IV 与全量 Greeks",
+        "策略一：深度实值代正股 (Delta 0.7-0.85, 极低外在价值磨损, 2.5-4.5x 杠杆)",
+        "策略二：波动率洼地 (IV Rank < 20% 或 IV/HV < 0.85 远期波动率低估)",
+        "策略三：龙头超跌共振 (标普500/纳指100超跌均线偏离与基本面优选)",
+        "策略四：远期异动放量 (Volume/OI > 1.5 异常大单侦测)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "交付与可视化交互",
+      "items": [
+        "FastAPI 高性能微服务，原生 Swagger 文档与高并发异步 IO",
+        "现代化交互式 Web 看板，支持动态滑块调优参数与收益走势图表",
+        "提供命令行 CLI 实时表格输出与自动化告警触发"
+      ]
+    }
+  ]
+}
