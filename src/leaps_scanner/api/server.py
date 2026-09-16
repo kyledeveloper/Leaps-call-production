@@ -95,6 +95,7 @@ class AppState:
         self.scanned_symbols: List[str] = []
         self._scan_cancel = False
         self._scan_thread: Optional[threading.Thread] = None
+        self._scan_seq: int = 0
         self._lock = threading.Lock()
 
     def resolve_scan_symbols(self, tier: Optional[str] = None) -> List[str]:
@@ -121,8 +122,12 @@ class AppState:
         if tier:
             normalized = normalize_scan_tier(tier)
             self.scan_tier = normalized or "etfs"
+        with self._lock:
+            self._scan_seq += 1
+            seq = self._scan_seq
+            self._scan_cancel = False
         syms = [SymbologyNormalizer.to_canonical(s) for s in symbols] if symbols else self.resolve_scan_symbols()
-        self._scan_worker(syms)
+        self._scan_worker(syms, seq)
         return len(self.candidates)
 
     def request_scan(
@@ -132,7 +137,9 @@ class AppState:
     ) -> Tuple[int, Dict[str, Any]]:
         """
         Scan the selected universe tier.
-        Sandbox runs inline. Delayed/Webull run in a background thread so the UI stays alive.
+        Sandbox runs inline. Delayed/Webull run in the background.
+        Switching tiers cancels the in-flight scan and starts the new one.
+        Repeating the same tier while it is already running returns 409.
         """
         target_tier = None
         if tier:
@@ -142,8 +149,11 @@ class AppState:
             target_tier = normalize_scan_tier(raw) or "etfs"
 
         with self._lock:
-            if self.scan_status == "running":
+            same_tier = target_tier is None or target_tier == self.scan_tier
+            if self.scan_status == "running" and same_tier:
                 return 409, {**self.public_config(), "error": "scan_in_progress", "message": "A scan is already running."}
+            self._scan_seq += 1
+            seq = self._scan_seq
             if target_tier:
                 self.scan_tier = target_tier
             syms = [SymbologyNormalizer.to_canonical(s) for s in symbols] if symbols else self.resolve_scan_symbols()
@@ -154,21 +164,23 @@ class AppState:
             async_scan = self.source in ("delayed", "webull")
 
         if async_scan:
-            self._scan_thread = threading.Thread(target=self._scan_worker, args=(syms,), daemon=True)
+            self._scan_thread = threading.Thread(target=self._scan_worker, args=(syms, seq), daemon=True)
             self._scan_thread.start()
             payload = self.public_config()
             payload["message"] = f"Scanning {self.scan_tier} ({len(syms)} names) in the background."
             return 202, payload
-        self._scan_worker(syms)
+        self._scan_worker(syms, seq)
         payload = self.public_config()
         payload["message"] = f"Scanned {self.scan_tier} ({len(self.scanned_symbols)} names)."
         return 200, payload
 
-    def _scan_worker(self, symbols: List[str]) -> None:
+    def _scan_worker(self, symbols: List[str], seq: Optional[int] = None) -> None:
         collected: List[StrategyCandidate] = []
         total = len(symbols)
         for i, sym in enumerate(symbols):
             with self._lock:
+                if seq is not None and seq != self._scan_seq:
+                    return
                 if self._scan_cancel:
                     self.scan_status = "idle"
                     return
@@ -180,12 +192,16 @@ class AppState:
                 batch = []
             collected.extend(batch)
             with self._lock:
+                if seq is not None and seq != self._scan_seq:
+                    return
                 self.candidates = list(collected)
                 self.ranker = MemoryRanker(self.candidates)
                 self.last_scan_time = datetime.now(timezone.utc).isoformat()
                 self.scan_progress = {"done": i + 1, "total": total, "symbol": sym}
                 self.scanned_symbols = list(symbols)
         with self._lock:
+            if seq is not None and seq != self._scan_seq:
+                return
             if self.source in ("delayed", "webull"):
                 asof_day = datetime.now(timezone.utc).date().isoformat()
                 self.iv_store.ingest_from_candidates(collected, asof_day)

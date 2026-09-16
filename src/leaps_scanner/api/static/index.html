@@ -372,6 +372,19 @@
     .toggle button.on-sandbox { background: rgba(251, 191, 36, 0.2); color: var(--accent-amber); }
     .toggle button.on-delayed { background: rgba(56, 189, 248, 0.2); color: var(--accent-blue); }
     .toggle button.on-live { background: rgba(52, 211, 153, 0.2); color: var(--accent-green); }
+    .tier-toggle {
+      display: flex;
+      flex-wrap: wrap;
+      width: 100%;
+      max-width: 100%;
+      overflow: visible;
+      border-radius: 12px;
+      flex: 1 1 100%;
+    }
+    .tier-toggle button {
+      flex: 1 1 auto;
+      min-width: 4.5rem;
+    }
     .cred-grid {
       display: grid;
       grid-template-columns: 1fr 1fr auto;
@@ -461,16 +474,15 @@
     <div class="source-row">
       <div>
         <strong data-i18n="scanUniverse">Scan universe</strong>
-        <div class="hint" id="scanHint" data-i18n="scanHintDefault">Wired to universe_manager. ETFs 12 · DJIA 30 · Core = SP100 ∪ NDX ∪ DJIA ∪ ETFs. Delayed public scans in the background.</div>
+        <div class="hint" id="scanHint" data-i18n="scanHintDefault">Wired to universe_manager. ETFs 12 · DJIA 30 · SP100 101 · NDX 101 · Core union 140+. Delayed public scans in the background.</div>
       </div>
-      <div class="toggle" role="group" aria-label="Scan universe">
-        <button type="button" id="tierEtfs" class="on-delayed" onclick="setScanTier('etfs')" data-i18n="tierEtfs">ETFs</button>
-        <button type="button" id="tierDjia" onclick="setScanTier('djia')" data-i18n="tierDjia">DJIA</button>
-        <button type="button" id="tierSp100" onclick="setScanTier('sp100')" data-i18n="tierSp100">SP100</button>
-        <button type="button" id="tierNdx" onclick="setScanTier('ndx')" data-i18n="tierNdx">NDX</button>
-        <button type="button" id="tierCore" onclick="setScanTier('core')" data-i18n="tierCore">Core union</button>
-      </div>
-
+    </div>
+    <div class="toggle tier-toggle" role="group" aria-label="Scan universe">
+      <button type="button" id="tierEtfs" class="on-delayed" onclick="setScanTier('etfs')" data-i18n="tierEtfs">ETFs</button>
+      <button type="button" id="tierDjia" onclick="setScanTier('djia')" data-i18n="tierDjia">DJIA</button>
+      <button type="button" id="tierSp100" onclick="setScanTier('sp100')" data-i18n="tierSp100">SP100</button>
+      <button type="button" id="tierNdx" onclick="setScanTier('ndx')" data-i18n="tierNdx">NDX</button>
+      <button type="button" id="tierCore" onclick="setScanTier('core')" data-i18n="tierCore">Core union</button>
     </div>
   </div>
 
@@ -1206,7 +1218,7 @@
         });
         const cfg = await res.json();
         if (res.status === 409) {
-          paintScanTier(lastCfg && lastCfg.scan_tier, lastCfg);
+          await applyConfig(cfg);
           startScanPoll();
           return;
         }

@@ -167,14 +167,24 @@ class TestAPIServer(unittest.TestCase):
         self.assertGreaterEqual(cfg["universe"]["sp100"], 100)
         self.assertGreaterEqual(cfg["universe"]["ndx"], 100)
 
-        # Test 409 scan_in_progress does NOT corrupt self.scan_tier (CRITICAL-01 regression)
+        # Switching tiers while a scan is running replaces the in-flight job.
         self.state.scan_status = "running"
         self.state.scan_tier = "etfs"
         code, _, body = handler.dispatch(
             "POST", "/api/v1/scan", json.dumps({"tier": "sp100"}).encode()
         )
+        self.assertEqual(code, 200)
+        self.assertEqual(self.state.scan_tier, "sp100")
+        self.state.scan_status = "idle"
+
+        # Same-tier request while running still 409 and does not mutate the tier.
+        self.state.scan_status = "running"
+        self.state.scan_tier = "ndx"
+        code, _, body = handler.dispatch(
+            "POST", "/api/v1/scan", json.dumps({"tier": "ndx"}).encode()
+        )
         self.assertEqual(code, 409)
-        self.assertEqual(self.state.scan_tier, "etfs")  # Must NOT be mutated to sp100
+        self.assertEqual(self.state.scan_tier, "ndx")
         self.state.scan_status = "idle"
 
 
