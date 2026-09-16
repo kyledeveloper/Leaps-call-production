@@ -19,32 +19,50 @@ class TestStrategyAwareFunnel(unittest.TestCase):
 
     def test_level3_strategy_one_preserves_deep_itm_contract(self):
         from src.leaps_scanner.data.funnel import get_strike_window, filter_strikes
-        # S = 200.0. Deep ITM contract with K = 116.0 (K / S = 0.58, Delta ~ 0.85)
         spot = 200.0
         strikes = [90.0, 116.0, 140.0, 170.0, 200.0, 240.0, 280.0]
 
-        # In Strategy 1 mode, window is [0.50S, 0.95S] -> [100.0, 190.0]
+        # Strategy 1 window is [0.65S, 0.85S] -> [130.0, 170.0]
         window_strat1 = get_strike_window(spot, active_strategies=["deep_itm"])
-        self.assertAlmostEqual(window_strat1[0], 100.0)
-        self.assertAlmostEqual(window_strat1[1], 190.0)
+        self.assertAlmostEqual(window_strat1[0], 130.0)
+        self.assertAlmostEqual(window_strat1[1], 170.0)
 
         kept_strat1 = filter_strikes(strikes, spot, active_strategies=["deep_itm"])
-        # K=116.0 must be preserved!
-        self.assertIn(116.0, kept_strat1)
-
-        # Contrast with naive old v1 filter [0.65S, 1.35S] -> [130.0, 270.0]
-        # In naive window, 116.0 was discarded!
-        naive_window = (0.65 * spot, 1.35 * spot)
-        self.assertNotIn(116.0, [k for k in strikes if naive_window[0] <= k <= naive_window[1]])
+        self.assertIn(140.0, kept_strat1)
+        self.assertIn(170.0, kept_strat1)
+        # 0.58S is prepaid equity, not a replacement LEAPS
+        self.assertNotIn(116.0, kept_strat1)
+        self.assertNotIn(200.0, kept_strat1)
 
     def test_level3_union_window(self):
         from src.leaps_scanner.data.funnel import get_strike_window, filter_strikes
-        # When both Strategy 1 ([0.50S, 0.95S]) and Strategy 4 ([0.70S, 1.35S]) are active,
-        # Union window is [0.50S, 1.35S]
+        # Strategy 1 [0.65S, 0.85S] union Strategy 4 [0.70S, 1.35S] -> [0.65S, 1.35S]
         spot = 100.0
         low, high = get_strike_window(spot, active_strategies=["deep_itm", "unusual_flow"])
-        self.assertAlmostEqual(low, 50.0)
+        self.assertAlmostEqual(low, 65.0)
         self.assertAlmostEqual(high, 135.0)
+
+    def test_prepaid_equity_delta_is_not_scanned(self):
+        from src.leaps_scanner.data.funnel import keep_scan_delta
+        from src.leaps_scanner.scoring.ranker import StrategyCandidate, MemoryRanker
+
+        self.assertTrue(keep_scan_delta(0.90))
+        self.assertFalse(keep_scan_delta(0.901))
+        self.assertFalse(keep_scan_delta(0.99))
+
+        keep = StrategyCandidate(
+            symbol="AAPL270115C00180000", underlying="AAPL", strike=180.0, spot=220.0,
+            dte=480.0, bid=50.0, ask=52.0, delta=0.82, open_interest=1000, volume=80,
+        )
+        drop = StrategyCandidate(
+            symbol="AAPL270115C00100000", underlying="AAPL", strike=100.0, spot=220.0,
+            dte=480.0, bid=118.0, ask=122.0, delta=0.97, open_interest=800, volume=40,
+        )
+        ranker = MemoryRanker([keep, drop])
+        board = ranker.rank(alpha=0.5)
+        symbols = [x.symbol for x in board]
+        self.assertIn("AAPL270115C00180000", symbols)
+        self.assertNotIn("AAPL270115C00100000", symbols)
 
 if __name__ == "__main__":
     unittest.main()

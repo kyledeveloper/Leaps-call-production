@@ -44,6 +44,14 @@ class TestLiquidityGuards(unittest.TestCase):
         )
         self.assertEqual(res_exempt.status, GuardStatus.PASS)
 
+    def test_absolute_spread_scales_with_premium(self):
+        from src.leaps_scanner.strategies.guards import evaluate_liquidity_guard, GuardStatus
+        # $100 LEAPS, $2 half-spread (4% relative) must not die on the old $0.75 abs cap.
+        res = evaluate_liquidity_guard(
+            bid=96.0, ask=104.0, open_interest=500, volume=80, multiplier=100
+        )
+        self.assertNotEqual(res.status, GuardStatus.REJECT)
+
     def test_non_standard_multiplier_rejected(self):
         from src.leaps_scanner.strategies.guards import evaluate_liquidity_guard, GuardStatus
         # Split adjusted contract with multiplier=1000 or adjusted=True

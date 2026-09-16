@@ -7,13 +7,23 @@ from typing import Any, Dict, List, Sequence, Tuple
 
 # Strike price ratios relative to underlying spot price S
 STRATEGY_STRIKE_RATIOS: Dict[str, Tuple[float, float]] = {
-    "deep_itm": (0.50, 0.95),       # Preserves Delta ~ 0.85 contracts (K around 0.55S - 0.60S)
+    "deep_itm": (0.65, 0.85),       # Stock-replacement zone; 0.50S is prepaid equity
     "vol_discount": (0.70, 1.25),   # Long vega ATM / near-money contracts
     "oversold": (0.50, 1.25),       # Mean-reversion ITM/ATM LEAPS
     "unusual_flow": (0.70, 1.35)    # Far-dated institutional flow
 }
 
 DEFAULT_RATIO_RANGE = (0.50, 1.35)
+# Calls with delta above this are prepaid stock — skip ingest, ranking, and boards.
+MAX_CALL_DELTA = 0.90
+
+
+def keep_scan_delta(delta: float) -> bool:
+    """False when the contract is prepaid equity (delta > 0.90)."""
+    try:
+        return float(delta) <= MAX_CALL_DELTA
+    except (TypeError, ValueError):
+        return True
 
 
 def filter_expirations(

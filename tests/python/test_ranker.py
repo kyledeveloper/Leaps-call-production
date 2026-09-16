@@ -43,9 +43,9 @@ class TestRankerAndMemoryReordering(unittest.TestCase):
         # Test initial ranking with alpha=0.5
         board_alpha_05 = ranker.rank(alpha=0.5)
         self.assertEqual(len(board_alpha_05), 2)
-        # Verify sort order: c2 has lower carry cost than c1, so c2 is sorted first
-        self.assertEqual(board_alpha_05[0].symbol, "AAPL270115C00140000")
-        self.assertEqual(board_alpha_05[1].symbol, "AAPL270115C00150000")
+        # 150/220=0.68 is inside [0.65, 0.85]; 140/220=0.64 is prepaid-equity REJECT
+        self.assertEqual(board_alpha_05[0].symbol, "AAPL270115C00150000")
+        self.assertEqual(board_alpha_05[1].symbol, "AAPL270115C00140000")
 
         items_05 = {x.symbol: x for x in board_alpha_05}
         # Check P_exec for c1: Mid=76.5, half_spread=1.5 -> P_exec = 76.5 + 0.5 * 1.5 = 77.25

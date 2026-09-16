@@ -121,7 +121,7 @@ class TestFinancialEdgeCases(unittest.TestCase):
             dte=360.0,
             bid=149.0,
             ask=151.0,
-            delta=0.99,
+            delta=0.82,
             open_interest=500,
             volume=100,
             iv=None,

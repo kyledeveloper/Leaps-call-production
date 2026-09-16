@@ -89,10 +89,12 @@ def evaluate_liquidity_guard(
     else:
         rel_tier = GuardStatus.REJECT
 
-    # Absolute tiers (half-spread): Pass <= $0.75, Watch <= $1.50, Reject > $1.50
-    if half_spread <= 0.75:
+    # Absolute half-spread scales with premium so $100 LEAPS are not gated at $0.75.
+    abs_pass = max(0.75, 0.025 * mid)
+    abs_watch = max(1.50, 0.05 * mid)
+    if half_spread <= abs_pass:
         abs_tier = GuardStatus.PASS
-    elif half_spread <= 1.50:
+    elif half_spread <= abs_watch:
         abs_tier = GuardStatus.WATCH
     else:
         abs_tier = GuardStatus.REJECT

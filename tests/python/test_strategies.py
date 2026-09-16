@@ -41,7 +41,67 @@ class TestStrategies(unittest.TestCase):
         )
         self.assertEqual(res.status, GuardStatus.PASS)
         self.assertAlmostEqual(res.effective_leverage, 2.877, places=2)
-        self.assertLess(res.carry_cost, 0.05)
+        self.assertLess(res.carry_cost, 0.15)
+
+    def test_strategy_one_carry_tiers(self):
+        from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
+        from src.leaps_scanner.strategies.guards import GuardStatus
+
+        excellent = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80, dividend_yield=0.03
+        )
+        self.assertEqual(excellent.status, GuardStatus.PASS)
+        self.assertLess(excellent.carry_cost, 0.15)
+
+        # DTE=250, P=33.3, K=75 → ~36% time-value drag, should REJECT on carry
+        heavy = evaluate_deep_itm(
+            spot=100.0, strike=75.0, dte=250.0, p_exec=33.3, delta=0.80, dividend_yield=0.0
+        )
+        self.assertGreaterEqual(heavy.carry_cost, 0.35)
+        self.assertEqual(heavy.status, GuardStatus.REJECT)
+        self.assertTrue(any(r.startswith("HIGH_CARRY_DRAG_") for r in heavy.reasons))
+
+        # ~20% drag: acceptable WATCH, not reject (q must not be added)
+        mid = evaluate_deep_itm(
+            spot=100.0, strike=76.0, dte=400.0, p_exec=30.0, delta=0.80, dividend_yield=0.04
+        )
+        self.assertGreaterEqual(mid.carry_cost, 0.15)
+        self.assertLess(mid.carry_cost, 0.25)
+        self.assertNotEqual(mid.status, GuardStatus.REJECT)
+
+    def test_strategy_one_promoted_delta_and_strike_window(self):
+        from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
+        from src.leaps_scanner.strategies.guards import GuardStatus
+
+        # 0.72 delta is now PASS, not WATCH
+        res = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.72, dividend_yield=0.0
+        )
+        self.assertEqual(res.status, GuardStatus.PASS)
+
+        # 0.58S is outside [0.65, 0.85]
+        too_deep = evaluate_deep_itm(
+            spot=100.0, strike=58.0, dte=400.0, p_exec=44.0, delta=0.80, dividend_yield=0.0
+        )
+        self.assertEqual(too_deep.status, GuardStatus.REJECT)
+        self.assertTrue(any(r.startswith("STRIKE_OUT_OF_WINDOW_") for r in too_deep.reasons))
+
+        # Intrinsic 60% is WATCH, not REJECT
+        mid_intrinsic = evaluate_deep_itm(
+            spot=100.0, strike=80.0, dte=400.0, p_exec=33.0, delta=0.78, dividend_yield=0.0
+        )
+        self.assertGreaterEqual(mid_intrinsic.intrinsic_ratio, 0.55)
+        self.assertLess(mid_intrinsic.intrinsic_ratio, 0.65)
+
+    def test_strategy_one_liquidity_zero_bid(self):
+        from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
+        from src.leaps_scanner.strategies.guards import GuardStatus
+        res = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80,
+            bid=0.0, ask=28.0, open_interest=500, volume=80, ask_size=20,
+        )
+        self.assertEqual(res.status, GuardStatus.REJECT)
+        self.assertTrue(any("ZERO_BID" in r for r in res.reasons))
 
     def test_strategy_one_runs_when_iv_unavailable(self):
         from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
@@ -72,6 +132,30 @@ class TestStrategies(unittest.TestCase):
         )
         self.assertEqual(res.status, GuardStatus.REJECT)
         self.assertIn("DELTA_OUT_OF_BOUNDS", res.reasons)
+
+    def test_strategy_one_daily_theta_tiers(self):
+        from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
+        from src.leaps_scanner.strategies.guards import GuardStatus
+
+        none_iv = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80, iv=None
+        )
+        self.assertEqual(none_iv.status, GuardStatus.PASS)
+        self.assertEqual(none_iv.theta_daily_pct, 0.0)
+
+        mild = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80, iv=0.22
+        )
+        self.assertGreater(mild.theta_daily_pct, 0.0)
+        self.assertLess(mild.theta_daily_pct, 0.0008)
+        self.assertNotEqual(mild.status, GuardStatus.REJECT)
+
+        hot = evaluate_deep_itm(
+            spot=100.0, strike=85.0, dte=250.0, p_exec=22.0, delta=0.80, iv=0.60
+        )
+        self.assertGreaterEqual(hot.theta_daily_pct, 0.0010)
+        self.assertEqual(hot.status, GuardStatus.REJECT)
+        self.assertTrue(any(r.startswith("HIGH_THETA_DRAG_") for r in hot.reasons))
 
 if __name__ == "__main__":
     unittest.main()

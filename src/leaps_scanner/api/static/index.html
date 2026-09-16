@@ -24,23 +24,31 @@
       --badge-reject-text: #f43f5e;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-text-size-adjust: 100%; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background-color: var(--bg-base);
       color: var(--text-main);
-      padding: 24px;
+      padding: clamp(10px, 2.2vw, 24px);
       line-height: 1.5;
+      max-width: 1600px;
+      margin: 0 auto;
+      overflow-x: hidden;
+      min-height: 100vh;
     }
     .header {
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: clamp(12px, 2vw, 24px);
       padding-bottom: 16px;
       border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
     }
+    .title-group { min-width: 0; flex: 1 1 240px; }
     .title-group h1 {
-      font-size: 24px;
+      font-size: clamp(18px, 2.4vw, 24px);
       font-weight: 700;
       letter-spacing: -0.5px;
       display: flex;
@@ -49,13 +57,23 @@
     }
     .title-group p {
       color: var(--text-muted);
-      font-size: 14px;
+      font-size: clamp(12px, 1.5vw, 14px);
       margin-top: 4px;
     }
     .status-badges {
       display: flex;
-      gap: 12px;
+      gap: 8px;
       align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      flex: 1 1 280px;
+    }
+    #universeBadge {
+      text-transform: none;
+      letter-spacing: 0;
+      white-space: normal;
+      max-width: min(100%, 560px);
+      line-height: 1.35;
     }
     .badge {
       padding: 4px 10px;
@@ -69,6 +87,79 @@
     .badge-pass { background: var(--badge-pass-bg); color: var(--badge-pass-text); }
     .badge-watch { background: var(--badge-watch-bg); color: var(--badge-watch-text); }
     .badge-reject { background: var(--badge-reject-bg); color: var(--badge-reject-text); }
+    .status-filter {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .status-filter .filter-label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-right: 4px;
+    }
+    .status-chip {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 9999px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      cursor: pointer;
+    }
+    .status-chip span { font-weight: 600; opacity: 0.8; margin-left: 4px; }
+    .status-chip.on[data-status="PASS"] { background: var(--badge-pass-bg); color: var(--badge-pass-text); border-color: rgba(52, 211, 153, 0.4); }
+    .status-chip.on[data-status="WATCH"] { background: var(--badge-watch-bg); color: var(--badge-watch-text); border-color: rgba(251, 191, 36, 0.4); }
+    .status-chip.on[data-status="REJECT"] { background: var(--badge-reject-bg); color: var(--badge-reject-text); border-color: rgba(244, 63, 94, 0.4); }
+    .strategy-help {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 12px;
+    }
+    .strategy-help summary {
+      cursor: pointer;
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      list-style: none;
+    }
+    .strategy-help summary::-webkit-details-marker { display: none; }
+    .strategy-help summary::after {
+      content: "Show ▾";
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+    .strategy-help[open] summary::after { content: "Hide ▴"; }
+    .help-body { padding: 0 16px 16px; }
+    .help-body p { color: var(--text-muted); font-size: 13px; margin-bottom: 12px; max-width: 72ch; }
+    .factor-table {
+      width: 100%;
+      min-width: 0;
+      font-size: 12px;
+    }
+    .factor-table th, .factor-table td {
+      white-space: normal;
+      padding: 8px 10px;
+      vertical-align: top;
+    }
+    .factor-table td:nth-child(2) { color: var(--accent-green); }
+    .factor-table td:nth-child(3) { color: var(--accent-amber); }
+    .factor-table td:nth-child(4) { color: var(--accent-rose); }
 
     /* Control Panel */
     .panel {
@@ -84,8 +175,8 @@
       justify-content: space-between;
     }
     .slider-box {
-      flex: 1;
-      min-width: 320px;
+      flex: 1 1 260px;
+      min-width: 0;
     }
     .slider-header {
       display: flex;
@@ -96,7 +187,8 @@
     }
     .slider-header span.alpha-val {
       color: var(--accent-blue);
-      font-size: 16px;
+      font-size: clamp(13px, 1.6vw, 16px);
+      text-align: right;
     }
     input[type=range] {
       width: 100%;
@@ -133,6 +225,10 @@
       margin-bottom: 16px;
       border-bottom: 1px solid var(--border);
       padding-bottom: 8px;
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
     }
     .tab-btn {
       background: transparent;
@@ -144,12 +240,15 @@
       cursor: pointer;
       border-radius: 6px;
       transition: all 0.2s;
+      white-space: nowrap;
+      flex: 0 0 auto;
     }
     .tab-btn.active {
       background: var(--bg-card);
       color: var(--accent-blue);
       border: 1px solid var(--border);
     }
+    .tab-short { display: none; }
 
     /* Data Table */
     .table-container {
@@ -157,20 +256,26 @@
       border: 1px solid var(--border);
       border-radius: 12px;
       overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      max-width: 100%;
     }
     table {
       width: 100%;
       border-collapse: collapse;
       font-size: 13px;
       text-align: left;
+      min-width: 860px;
     }
     th {
-      background: rgba(15, 23, 42, 0.6);
+      background: rgba(15, 23, 42, 0.92);
       padding: 12px 16px;
       color: var(--text-muted);
       font-weight: 600;
       border-bottom: 1px solid var(--border);
       white-space: nowrap;
+      position: sticky;
+      top: 0;
+      z-index: 2;
     }
     td {
       padding: 12px 16px;
@@ -179,6 +284,14 @@
     }
     tr:last-child td { border-bottom: none; }
     tr:hover { background: var(--bg-hover); }
+    th:first-child, td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      background: var(--bg-card);
+    }
+    th:first-child { z-index: 3; background: rgba(15, 23, 42, 0.95); }
+    tr:hover td:first-child { background: var(--bg-hover); }
 
     .num { font-variant-numeric: tabular-nums; }
     .sub-info { font-size: 11px; color: var(--text-muted); display: block; margin-top: 2px; }
@@ -190,6 +303,87 @@
       border-radius: 8px;
       margin-bottom: 16px;
       font-size: 13px;
+    }
+    .source-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      display: grid;
+      gap: 12px;
+    }
+    .source-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .toggle {
+      display: inline-flex;
+      flex-wrap: wrap;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 9999px;
+      overflow: hidden;
+      max-width: 100%;
+    }
+    .toggle button {
+      background: transparent;
+      color: var(--text-muted);
+      border: none;
+      padding: 8px 16px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .toggle button.on-sandbox { background: rgba(251, 191, 36, 0.2); color: var(--accent-amber); }
+    .toggle button.on-delayed { background: rgba(56, 189, 248, 0.2); color: var(--accent-blue); }
+    .toggle button.on-live { background: rgba(52, 211, 153, 0.2); color: var(--accent-green); }
+    .cred-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 10px;
+      width: 100%;
+    }
+    .cred-grid input {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+    .hint { font-size: 13px; color: var(--text-muted); overflow-wrap: anywhere; }
+    .hint.error { color: var(--accent-rose); }
+    .hint.ok { color: var(--accent-green); }
+    .btn.ghost {
+      background: #334155;
+      color: #f8fafc;
+    }
+    @media (max-width: 1100px) {
+      .header { align-items: stretch; }
+      .status-badges { justify-content: flex-start; }
+    }
+    @media (max-width: 800px) {
+      .cred-grid { grid-template-columns: 1fr; }
+      .source-row { flex-direction: column; align-items: stretch; }
+      .toggle { width: 100%; border-radius: 12px; }
+      .toggle button { flex: 1 1 auto; padding: 8px 10px; font-size: 12px; }
+      .slider-header { flex-direction: column; gap: 4px; }
+      .slider-legend { font-size: 11px; gap: 8px; }
+      .tab-full { display: none; }
+      .tab-short { display: inline; }
+      th, td { padding: 8px 10px; font-size: 12px; }
+      table { min-width: 720px; }
+      .status-badges .btn { flex: 1 1 calc(50% - 8px); }
+    }
+    @media (max-width: 520px) {
+      .title-group p { display: none; }
+      .panel, .source-panel { padding: 12px; }
+      .badge { font-size: 11px; padding: 4px 8px; }
+      .status-filter { gap: 6px; }
     }
   </style>
 </head>
@@ -205,6 +399,36 @@
       <span class="badge" style="background: rgba(147, 51, 234, 0.15); color: #c084fc; border: 1px solid rgba(147, 51, 234, 0.3);" id="universeBadge">Universe: Loading...</span>
       <button class="btn" style="background: #334155; color: #f8fafc;" onclick="triggerUniverseSync(event)">⚡ Sync Rebalance</button>
       <button class="btn" onclick="triggerScan()">🔄 Refresh Scan</button>
+    </div>
+  </div>
+
+  <div class="source-panel">
+    <div class="source-row">
+      <div>
+        <strong>Market data source</strong>
+        <div class="hint" id="sourceHint">Sandbox fixtures by default. Delayed public uses Yahoo daily bars + Nasdaq OPRA delayed chains — no keys. Webull still needs OpenAPI keys.</div>
+      </div>
+      <div class="toggle" role="group" aria-label="Data source">
+        <button type="button" id="btnSandbox" class="on-sandbox" onclick="switchSource('sandbox')">Sandbox</button>
+        <button type="button" id="btnDelayed" onclick="switchSource('delayed')">Delayed public</button>
+        <button type="button" id="btnLive" onclick="switchSource('webull')">Live Webull</button>
+      </div>
+    </div>
+    <form id="credForm" class="cred-grid" style="display:none;" onsubmit="connectLive(event)">
+      <input id="appKey" type="text" autocomplete="off" spellcheck="false" placeholder="WEBULL_APP_KEY" />
+      <input id="appSecret" type="password" autocomplete="new-password" placeholder="WEBULL_APP_SECRET" />
+      <button class="btn" type="submit" id="btnConnect">Connect live</button>
+    </form>
+    <div class="source-row">
+      <div>
+        <strong>Scan universe</strong>
+        <div class="hint" id="scanHint">Wired to universe_manager. ETFs 12 · DJIA 30 · Core = SP100 ∪ NDX ∪ DJIA ∪ ETFs. Delayed public scans in the background.</div>
+      </div>
+      <div class="toggle" role="group" aria-label="Scan universe">
+        <button type="button" id="tierEtfs" class="on-delayed" onclick="setScanTier('etfs')">ETFs</button>
+        <button type="button" id="tierDjia" onclick="setScanTier('djia')">DJIA</button>
+        <button type="button" id="tierCore" onclick="setScanTier('core')">Core union</button>
+      </div>
     </div>
   </div>
 
@@ -230,16 +454,25 @@
 
   <!-- Strategy Board Tabs -->
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchBoard('deep_itm', this)">1. Deep ITM Stock Replacement</button>
-    <button class="tab-btn" onclick="switchBoard('vol_discount', this)">2. Volatility Discount</button>
-    <button class="tab-btn" onclick="switchBoard('oversold', this)">3. Blue-Chip Oversold Confluence</button>
-    <button class="tab-btn" onclick="switchBoard('unusual_flow', this)">4. Unusual Far-Dated Flow</button>
+    <button class="tab-btn active" onclick="switchBoard('deep_itm', this)"><span class="tab-full">1. Deep ITM Stock Replacement</span><span class="tab-short">1. Deep ITM</span></button>
+    <button class="tab-btn" onclick="switchBoard('vol_discount', this)"><span class="tab-full">2. Volatility Discount</span><span class="tab-short">2. Vol Discount</span></button>
+    <button class="tab-btn" onclick="switchBoard('oversold', this)"><span class="tab-full">3. Blue-Chip Oversold Confluence</span><span class="tab-short">3. Oversold</span></button>
+    <button class="tab-btn" onclick="switchBoard('unusual_flow', this)"><span class="tab-full">4. Unusual Far-Dated Flow</span><span class="tab-short">4. Unusual Flow</span></button>
   </div>
 
-  <div id="caveatContainer" style="display: none;">
-    <div class="caveat-banner">
-      ⚠️ <strong>Explanatory Note:</strong> Far-dated flow includes rollovers, tax-loss harvesting, and structured hedging; signals direction with lower certainty than short-dated UOA.
-    </div>
+  <details class="strategy-help" id="strategyHelp">
+    <summary>
+      <span id="helpTitle">1. Deep ITM — rules & filters</span>
+    </summary>
+    <div class="help-body" id="helpBody"></div>
+  </details>
+
+  <div class="status-filter" role="group" aria-label="Status filter">
+    <span class="filter-label">Status</span>
+    <button type="button" class="status-chip on" data-status="PASS" onclick="toggleStatusFilter('PASS')">PASS <span id="countPass">0</span></button>
+    <button type="button" class="status-chip on" data-status="WATCH" onclick="toggleStatusFilter('WATCH')">WATCH <span id="countWatch">0</span></button>
+    <button type="button" class="status-chip" data-status="REJECT" onclick="toggleStatusFilter('REJECT')">REJECT <span id="countReject">0</span></button>
+    <span class="hint" id="filterMeta">Default: PASS + WATCH</span>
   </div>
 
   <!-- Main Table Container -->
@@ -256,20 +489,235 @@
     let currentAlpha = 0.5;
     let currentBoardKey = 'deep_itm';
     let cachedBoards = {};
+    const visibleStatuses = new Set(['PASS', 'WATCH']);
+    let scanPollTimer = null;
+
+    const STRATEGY_HELP = {
+      deep_itm: {
+        title: "1. Deep ITM — stock replacement / PMCC base",
+        blurb: "Buy a far-dated, moderately deep call instead of 100 shares. Goal is high delta with leftover leverage, not prepaid stock. Delta > 0.90 is dropped before scan. Does not require IV (Clause 4); theta gate is skipped when IV is missing.",
+        rows: [
+          ["Strike / spot", "0.65S – 0.85S", "—", "Outside window"],
+          ["Delta", "0.70 – 0.85", "0.85 – 0.90", "< 0.70; > 0.90 not ingested"],
+          ["Intrinsic / P_exec", "≥ 65%", "55 – 65%", "< 55%"],
+          ["Effective leverage", "2.5x – 4.5x", "2.0–2.5x or 4.5–5.5x", "< 2.0x or > 5.5x"],
+          ["Carry  extrinsic/(P×T)", "< 15%/yr", "15 – 35%/yr", "≥ 35%/yr"],
+          ["Theta |Θ_day| / P_exec", "< 0.03%/day", "0.03 – 0.10%/day", "≥ 0.10%/day"],
+          ["DTE", "≥ 300", "250 – 300", "< 250"],
+          ["Liquidity", "OI / spread / size OK", "Soft OI or spread", "Zero bid, crossed, low OI"]
+        ]
+      },
+      vol_discount: {
+        title: "2. Volatility discount — long vega in cheap IV",
+        blurb: "Buy LEAPS when ATM IV is historically cheap. Regime A is a quiet bottom (no crash). Regime B is post-crash relative value. Needs ≥ 90 days of IV history; Delayed public currently has no IV percentile so this board degrades.",
+        rows: [
+          ["IV history", "≥ 90 daily ATM IV pts", "—", "< 90 days → strategy off"],
+          ["Regime A IV percentile", "< 20%", "20 – 30%", "≥ 30%"],
+          ["Regime A IV / HV252", "< 0.85", "0.85 – 1.00", "≥ 1.00"],
+          ["Regime B (crash)", "IV %ile < 40% or z < 0", "—", "Still rich after crash"],
+          ["Crash definition", "—", "—", "−15% 20d or −20% from 52w high"],
+          ["Strike / spot", "0.70S – 1.25S", "—", "Outside window"],
+          ["DTE", "≥ 300", "250 – 300", "< 250"],
+          ["Earnings (Regime A)", "—", "Within 10 days → WATCH", "—"]
+        ]
+      },
+      oversold: {
+        title: "3. Blue-chip oversold confluence",
+        blurb: "Mean-reversion LEAPS on core-universe names after a pullback. Score four technicals (RSI, 200DMA, 52w high, bounce off 52w low). PASS needs score ≥ 2.0 and at least one core signal. Requires membership in the core universe and ≥ 200 daily bars.",
+        rows: [
+          ["Universe", "SP100 ∪ NDX ∪ DJIA ∪ ETFs", "—", "Not in core universe"],
+          ["Daily bars", "≥ 200", "—", "< 200"],
+          ["RSI(14)", "≤ 30 (core +1.0)", "≤ 40 (weak +0.5)", "—"],
+          ["vs 200DMA (HV20≤40%)", "≤ −10%", "≤ −6%", "—"],
+          ["vs 200DMA (HV20>40%)", "≤ −15%", "≤ −8%", "—"],
+          ["Drawdown from 52w high", "≥ 15%", "≥ 10%", "—"],
+          ["Bounce off 52w low", "≥ 3% (if DD≥10%)", "0 – 3%", "—"],
+          ["Confluence score", "≥ 2.0 and ≥1 core", "1.0 – 2.0", "< 1.0"],
+          ["Strike / spot", "0.50S – 1.25S", "—", "Outside window"],
+          ["DTE", "≥ 250", "—", "< 250"]
+        ]
+      },
+      unusual_flow: {
+        title: "4. Unusual far-dated flow",
+        blurb: "Spot large prints in LEAPS calls. Needs Vol/OI, dollar volume, and contract count together. Buyer-aggressor tagging is off (midpoint prints are not NBBO). Far-dated flow includes rollovers, tax-loss harvesting, and structured hedges — weaker directional signal than short-dated UOA. Delayed Nasdaq volume is often missing.",
+        rows: [
+          ["Strike / spot", "0.70S – 1.35S", "—", "Outside window"],
+          ["DTE", "≥ 250", "—", "< 250"],
+          ["Vol / OI", "≥ 3.0 and OI ≥ 50", "≥ 2.0", "< 2.0"],
+          ["Dollar volume (stock)", "≥ $250k", "≥ $100k", "< $100k"],
+          ["Dollar volume (ETF)", "≥ $1.0M", "≥ $250k", "< $250k"],
+          ["Contract volume (stock)", "≥ 500", "≥ 200", "< 200"],
+          ["Contract volume (ETF)", "≥ 2,000", "≥ 500", "< 500"],
+          ["Open interest", "> 0", "—", "≤ 0"]
+        ]
+      }
+    };
+
+    function paintStrategyHelp(key) {
+      const spec = STRATEGY_HELP[key] || STRATEGY_HELP.deep_itm;
+      document.getElementById('helpTitle').innerText = spec.title;
+      const rows = spec.rows.map(r =>
+        `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`
+      ).join('');
+      document.getElementById('helpBody').innerHTML =
+        `<p>${spec.blurb}</p>` +
+        `<div class="table-container"><table class="factor-table"><thead><tr><th>Filter</th><th>PASS</th><th>WATCH</th><th>REJECT</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+
+    function paintScanTier(tier, cfg) {
+      const t = tier || (cfg && cfg.scan_tier) || 'etfs';
+      document.getElementById('tierEtfs').className = t === 'etfs' ? 'on-delayed' : '';
+      document.getElementById('tierDjia').className = t === 'djia' ? 'on-delayed' : '';
+      document.getElementById('tierCore').className = t === 'core' ? 'on-delayed' : '';
+      const hint = document.getElementById('scanHint');
+      const uni = (cfg && cfg.universe) || {};
+      const n = t === 'etfs' ? (uni.etfs || 12) : t === 'djia' ? (uni.djia || 30) : (uni.core || 140);
+      const prog = (cfg && cfg.scan_progress) || {};
+      const status = cfg && cfg.scan_status;
+      if (status === 'running') {
+        hint.innerText = `Scanning ${t} · ${prog.done || 0}/${prog.total || n}` + (prog.symbol ? ` · ${prog.symbol}` : '') + ` · ${cfg.candidate_count || 0} contracts so far`;
+      } else {
+        hint.innerText = `${t} · ${cfg && cfg.scan_symbol_count ? cfg.scan_symbol_count : n} names · ${cfg && cfg.candidate_count != null ? cfg.candidate_count : 0} contracts`;
+      }
+    }
+
+    function startScanPoll() {
+      if (scanPollTimer) return;
+      scanPollTimer = setInterval(async () => {
+        try {
+          const res = await fetch('/api/v1/config');
+          if (!res.ok) return;
+          const cfg = await res.json();
+          paintScanTier(cfg.scan_tier, cfg);
+          await loadBoards(currentAlpha, true);
+          if (cfg.scan_status !== 'running') {
+            clearInterval(scanPollTimer);
+            scanPollTimer = null;
+            await applyConfig(cfg);
+          }
+        } catch (e) {}
+      }, 2000);
+    }
+
+    async function applyConfig(cfg) {
+      const statusEl = document.getElementById('engineStatus');
+      const hint = document.getElementById('sourceHint');
+      const sandboxBtn = document.getElementById('btnSandbox');
+      const delayedBtn = document.getElementById('btnDelayed');
+      const liveBtn = document.getElementById('btnLive');
+      const form = document.getElementById('credForm');
+      const source = cfg.source || (cfg.offline_mode ? 'sandbox' : 'webull');
+      sandboxBtn.className = source === 'sandbox' ? 'on-sandbox' : '';
+      delayedBtn.className = source === 'delayed' ? 'on-delayed' : '';
+      liveBtn.className = source === 'webull' && !cfg.offline_mode ? 'on-live' : '';
+      form.style.display = source === 'webull' && (cfg.error === 'missing_credentials' || cfg.last_error === 'missing_credentials' || cfg.error === 'auth_failed') ? 'grid' : 'none';
+      if (source === 'webull' && !cfg.offline_mode) {
+        statusEl.innerText = 'Live Webull';
+        hint.className = 'hint ok';
+        hint.innerText = `Live Webull scan · ${cfg.candidate_count || 0} contracts · ${cfg.credential_hint ? 'key ' + cfg.credential_hint : ''}`;
+      } else if (source === 'delayed') {
+        statusEl.innerText = 'Delayed public';
+        hint.className = 'hint ok';
+        hint.innerText = cfg.message || `Yahoo history + Nasdaq delayed OPRA · ${cfg.candidate_count || 0} LEAPS calls · ~15 min delay, not NBBO.`;
+      } else if (cfg.error === 'missing_credentials' || cfg.last_error === 'missing_credentials') {
+        statusEl.innerText = 'Sandbox Offline';
+        hint.className = 'hint error';
+        hint.innerText = cfg.message || 'Live Webull needs App Key and App Secret. Or use Delayed public (no keys).';
+        form.style.display = 'grid';
+      } else if (cfg.error === 'auth_failed' || cfg.last_error === 'auth_failed' || cfg.error === 'delayed_failed') {
+        statusEl.innerText = 'Sandbox Offline';
+        hint.className = 'hint error';
+        hint.innerText = cfg.message || 'Feed failed. Staying on sandbox.';
+      } else {
+        statusEl.innerText = 'Sandbox Offline';
+        hint.className = 'hint';
+        hint.innerText = 'Sandbox fixtures (not the tape). Delayed public needs no keys. Do not paste Webull keys into chat.';
+      }
+      paintScanTier(cfg.scan_tier, cfg);
+      if (cfg.scan_status === 'running') startScanPoll();
+    }
 
     async function fetchConfig() {
       try {
         const res = await fetch('/api/v1/config');
         if (res.ok) {
           const cfg = await res.json();
-          document.getElementById('engineStatus').innerText = cfg.offline_mode ? 'Sandbox Offline' : 'Live Connected';
+          await applyConfig(cfg);
         }
       } catch (e) {
         console.warn('Config fetch error, running standalone mock UI:', e);
       }
     }
 
-    async function loadBoards(alpha) {
+    async function switchSource(source) {
+      const hint = document.getElementById('sourceHint');
+      const form = document.getElementById('credForm');
+      if (source === 'webull') {
+        form.style.display = 'grid';
+        const key = document.getElementById('appKey').value.trim();
+        const secret = document.getElementById('appSecret').value.trim();
+        if (!key && !secret) {
+          hint.className = 'hint';
+          hint.innerText = 'Paste Webull OpenAPI keys, then Connect live. Prefer Delayed public if you do not want to send keys.';
+          return;
+        }
+        return connectLive();
+      }
+      form.style.display = 'none';
+      hint.className = 'hint';
+      hint.innerText = source === 'delayed'
+        ? 'Fetching Yahoo bars + Nasdaq delayed LEAPS chains. This can take a short while…'
+        : 'Loading sandbox…';
+      try {
+        const res = await fetch('/api/v1/mode', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ source })
+        });
+        const cfg = await res.json();
+        await applyConfig(cfg);
+        if (res.ok) await loadBoards(currentAlpha);
+      } catch (e) {
+        hint.className = 'hint error';
+        hint.innerText = 'Could not switch data source.';
+      }
+    }
+
+    async function connectLive(evt, reuseSaved) {
+      if (evt && evt.preventDefault) evt.preventDefault();
+      const hint = document.getElementById('sourceHint');
+      const btn = document.getElementById('btnConnect');
+      btn.disabled = true;
+      btn.innerText = 'Connecting…';
+      hint.className = 'hint';
+      hint.innerText = 'Contacting Webull. If the token is PENDING, approve OpenAPI access in the Webull app.';
+      const payload = { source: 'webull', offline: false };
+      if (!reuseSaved) {
+        payload.app_key = document.getElementById('appKey').value.trim();
+        payload.app_secret = document.getElementById('appSecret').value.trim();
+      }
+      try {
+        const res = await fetch('/api/v1/mode', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const cfg = await res.json();
+        await applyConfig(cfg);
+        if (res.ok) {
+          document.getElementById('appSecret').value = '';
+          await loadBoards(currentAlpha);
+        }
+      } catch (e) {
+        hint.className = 'hint error';
+        hint.innerText = 'Live connect failed before Webull answered. Stay on sandbox or try Delayed public.';
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Connect live';
+      }
+    }
+
+    async function loadBoards(alpha, quiet) {
       const t0 = performance.now();
       try {
         const res = await fetch(`/api/v1/boards?alpha=${alpha}`);
@@ -277,7 +725,7 @@
           const data = await res.json();
           cachedBoards = data.boards;
           const elapsed = (performance.now() - t0).toFixed(1);
-          document.getElementById('rerankTime').innerText = `${elapsed} ms`;
+          if (!quiet) document.getElementById('rerankTime').innerText = `${elapsed} ms`;
           renderActiveBoard();
         }
       } catch (e) {
@@ -310,10 +758,34 @@
 
     async function triggerScan() {
       try {
-        await fetch('/api/v1/scan', { method: 'POST' });
-        loadBoards(currentAlpha);
+        const res = await fetch('/api/v1/scan', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({})
+        });
+        const cfg = await res.json();
+        await applyConfig(cfg);
+        if (res.status === 202 || cfg.scan_status === 'running') startScanPoll();
+        await loadBoards(currentAlpha);
       } catch (e) {
         console.error('Scan trigger error:', e);
+      }
+    }
+
+    async function setScanTier(tier) {
+      paintScanTier(tier, { scan_tier: tier, scan_status: 'running', scan_progress: { done: 0, total: 0 }, candidate_count: 0, universe: {} });
+      try {
+        const res = await fetch('/api/v1/scan', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ tier })
+        });
+        const cfg = await res.json();
+        await applyConfig(cfg);
+        if (res.status === 202 || cfg.scan_status === 'running') startScanPoll();
+        await loadBoards(currentAlpha);
+      } catch (e) {
+        document.getElementById('scanHint').innerText = 'Could not start universe scan.';
       }
     }
 
@@ -321,12 +793,42 @@
       currentBoardKey = key;
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      document.getElementById('caveatContainer').style.display = (key === 'unusual_flow') ? 'block' : 'none';
+      paintStrategyHelp(key);
+      renderActiveBoard();
+    }
+
+    function toggleStatusFilter(status) {
+      if (visibleStatuses.has(status)) {
+        visibleStatuses.delete(status);
+      } else {
+        visibleStatuses.add(status);
+      }
+      document.querySelectorAll('.status-chip').forEach(chip => {
+        chip.classList.toggle('on', visibleStatuses.has(chip.dataset.status));
+      });
       renderActiveBoard();
     }
 
     function renderActiveBoard() {
-      const items = cachedBoards[currentBoardKey] || [];
+      const allItems = cachedBoards[currentBoardKey] || [];
+      const counts = { PASS: 0, WATCH: 0, REJECT: 0 };
+      allItems.forEach(it => {
+        const st = String(it.status || '').toUpperCase();
+        if (counts[st] !== undefined) counts[st] += 1;
+      });
+      document.getElementById('countPass').innerText = counts.PASS;
+      document.getElementById('countWatch').innerText = counts.WATCH;
+      document.getElementById('countReject').innerText = counts.REJECT;
+      const items = allItems.filter(it => visibleStatuses.has(String(it.status || '').toUpperCase()));
+      const hidden = allItems.length - items.length;
+      const meta = document.getElementById('filterMeta');
+      if (!allItems.length) {
+        meta.innerText = 'No scanned contracts on this board.';
+      } else if (!visibleStatuses.size) {
+        meta.innerText = 'No status selected — click PASS / WATCH / REJECT.';
+      } else {
+        meta.innerText = `Showing ${items.length} of ${allItems.length}` + (hidden ? ` · ${hidden} hidden` : '');
+      }
       const thead = document.getElementById('tableHeader');
       const tbody = document.getElementById('tableBody');
 
@@ -343,6 +845,7 @@
           <th>Eff. Leverage</th>
           <th>Intrinsic %</th>
           <th>Carry Cost</th>
+          <th>Θ / day</th>
           <th>Status</th>
         `;
       } else if (currentBoardKey === 'vol_discount') {
@@ -382,8 +885,12 @@
         `;
       }
 
-      if (items.length === 0) {
+      if (allItems.length === 0) {
         tbody.innerHTML = `<tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 32px;">No candidate opportunities found for this strategy.</td></tr>`;
+        return;
+      }
+      if (items.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 32px;">No rows match the status filter. REJECT is hidden by default.</td></tr>`;
         return;
       }
 
@@ -402,6 +909,7 @@
               <td class="num">${it.effective_leverage.toFixed(1)}x</td>
               <td class="num">${( (it.intrinsic_per_share / it.p_exec) * 100 ).toFixed(1)}%</td>
               <td class="num">${(it.carry_cost * 100).toFixed(2)}%/yr</td>
+              <td class="num">${((it.theta_daily_pct || 0) * 100).toFixed(3)}%/d</td>
               <td>${statusBadge}</td>
             </tr>
           `;
@@ -457,7 +965,7 @@
           const data = await res.json();
           const uBadge = document.getElementById('universeBadge');
           if (uBadge && data.indices) {
-            uBadge.innerText = `SP100: ${data.indices.sp100} | NDX: ${data.indices.nasdaq100} | DJIA: ${data.indices.djia} | Total: ${data.master_count}`;
+            uBadge.innerText = `ETFs: ${data.indices.etfs || 0} | DJIA: ${data.indices.djia} | SP100: ${data.indices.sp100} | NDX: ${data.indices.nasdaq100} | Core: ${data.master_count}`;
           }
         }
       } catch (e) {
@@ -487,6 +995,7 @@
     }
 
     // Initialize
+    paintStrategyHelp(currentBoardKey);
     fetchConfig();
     fetchUniverseStats();
     loadBoards(currentAlpha);

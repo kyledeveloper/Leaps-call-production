@@ -29,6 +29,7 @@ from src.leaps_scanner.strategies.unusual_flow import (
 )
 from src.leaps_scanner.strategies.guards import GuardStatus
 from src.leaps_scanner.data.universe import SymbologyNormalizer
+from src.leaps_scanner.data.funnel import keep_scan_delta
 
 
 @dataclass
@@ -91,6 +92,7 @@ class RankedItem:
     confluence_score: float = 0.0
     iv_percentile: Optional[float] = None
     regime: str = "NONE"
+    theta_daily_pct: float = 0.0
 
 
 class MemoryRanker:
@@ -100,8 +102,9 @@ class MemoryRanker:
     def __init__(self, candidates: List[StrategyCandidate]):
         self._candidates: List[StrategyCandidate] = []
         for c in candidates:
-            # Defensive normalization: ensure candidate underlying is canonical
             c.underlying = SymbologyNormalizer.to_canonical(c.underlying)
+            if not keep_scan_delta(c.delta):
+                continue
             self._candidates.append(c)
 
     def rank(self, alpha: float = 0.5) -> List[RankedItem]:
@@ -151,7 +154,12 @@ class MemoryRanker:
                 p_exec=pexec_res.p_exec,
                 delta=c.delta,
                 dividend_yield=c.dividend_yield,
-                iv=c.iv
+                iv=c.iv,
+                bid=c.bid,
+                ask=c.ask,
+                open_interest=c.open_interest,
+                volume=c.volume,
+                ask_size=c.ask_size,
             )
             deep_itm_items.append(RankedItem(
                 symbol=c.symbol,
@@ -167,13 +175,14 @@ class MemoryRanker:
                 delta=c.delta,
                 intrinsic_per_share=carry_res.intrinsic_per_share,
                 extrinsic_per_share=carry_res.extrinsic_per_share,
-                carry_cost=carry_res.total_annualized_carry,
+                carry_cost=s1_res.carry_cost,
                 effective_leverage=s1_res.effective_leverage,
                 status=s1_res.status,
                 reasons=s1_res.reasons,
                 open_interest=c.open_interest,
                 volume=c.volume,
-                strategy_name="deep_itm"
+                strategy_name="deep_itm",
+                theta_daily_pct=s1_res.theta_daily_pct,
             ))
 
             # 2. Strategy 2: Volatility Discount

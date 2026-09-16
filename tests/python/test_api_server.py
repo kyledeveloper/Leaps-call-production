@@ -83,6 +83,56 @@ class TestAPIServer(unittest.TestCase):
         self.assertIn("results", res)
         self.assertIn("djia", res["results"])
 
+    def test_live_mode_requires_credentials(self):
+        handler_cls = create_api_handler_class(self.state)
+        code, headers, body = handler_cls.dispatch(
+            "POST",
+            "/api/v1/mode",
+            json.dumps({"offline": False}).encode("utf-8"),
+        )
+        self.assertEqual(code, 400)
+        res = json.loads(body.decode("utf-8"))
+        self.assertEqual(res["error"], "missing_credentials")
+        self.assertTrue(res["offline_mode"])
+
+        code, headers, body = handler_cls.dispatch(
+            "POST",
+            "/api/v1/mode",
+            json.dumps({"offline": True}).encode("utf-8"),
+        )
+        self.assertEqual(code, 200)
+        res = json.loads(body.decode("utf-8"))
+        self.assertTrue(res["offline_mode"])
+        self.assertGreater(res["candidate_count"], 0)
+
+        code, headers, body = handler_cls.dispatch("GET", "/api/v1/config", b"")
+        self.assertEqual(code, 200)
+        cfg = json.loads(body.decode("utf-8"))
+        self.assertIn("has_credentials", cfg)
+        self.assertIn("connection_status", cfg)
+        self.assertEqual(cfg.get("source"), "sandbox")
+
+    def test_universe_scan_tiers(self):
+        etfs = self.state.resolve_scan_symbols("etfs")
+        djia = self.state.resolve_scan_symbols("djia")
+        core = self.state.resolve_scan_symbols("core")
+        self.assertGreaterEqual(len(etfs), 12)
+        self.assertEqual(len(djia), 30)
+        self.assertGreaterEqual(len(core), 140)
+        self.assertTrue(set(etfs).issubset(set(core)))
+        self.assertTrue(set(djia).issubset(set(core)))
+
+        handler = create_api_handler_class(self.state)
+        code, _, body = handler.dispatch(
+            "POST", "/api/v1/scan", json.dumps({"tier": "etfs"}).encode()
+        )
+        self.assertEqual(code, 200)
+        res = json.loads(body.decode())
+        self.assertEqual(res["scan_tier"], "etfs")
+        self.assertGreater(res["candidate_count"], 0)
+        underlyings = {row["underlying"] for row in self.state.get_boards()["deep_itm"]}
+        self.assertGreaterEqual(len(underlyings), 12)
+
 
 if __name__ == "__main__":
     unittest.main()

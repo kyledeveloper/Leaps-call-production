@@ -23,9 +23,43 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from src.leaps_scanner.scoring.ranker import StrategyCandidate
-from src.leaps_scanner.data.universe import SymbologyNormalizer
+from src.leaps_scanner.data.universe import CORE_ETFS, SymbologyNormalizer
+from src.leaps_scanner.data.funnel import keep_scan_delta
 
 logger = logging.getLogger(__name__)
+
+_ETF_SET = {s.upper() for s in CORE_ETFS}
+
+
+def _synthetic_offline_spec(symbol: str) -> dict:
+    """Deterministic sandbox chain for tickers without a hand-written fixture."""
+    digest = hashlib.md5(symbol.upper().encode("utf-8")).hexdigest()
+    seed = int(digest[:8], 16)
+    spot = float(60 + (seed % 440))
+    is_etf = symbol.upper() in _ETF_SET
+    dte = 480.0
+    strikes = [round(spot * m, 2) for m in (0.70, 0.80, 0.90, 1.00)]
+    options = []
+    for i, strike in enumerate(strikes):
+        intrinsic = max(0.0, spot - strike)
+        extra = 6.0 - i
+        bid = round(intrinsic + extra, 2)
+        ask = round(bid + 1.5, 2)
+        delta = round(0.82 - i * 0.10, 2)
+        occ = f"{symbol.upper().replace('.', '')}270115C{int(strike * 1000):08d}"
+        options.append((occ, strike, dte, bid, ask, delta, 800 + i * 200, 40 + i * 10))
+    return {
+        "spot": spot,
+        "div": 0.012 if is_etf else 0.008,
+        "rsi": 32.0 if seed % 3 == 0 else 48.0,
+        "dma": -0.08 if seed % 3 == 0 else 0.02,
+        "dd": 0.16 if seed % 3 == 0 else 0.07,
+        "bounce": 0.05,
+        "iv": 0.22,
+        "iv_pct": 0.20,
+        "is_etf": is_etf,
+        "options": options,
+    }
 
 
 class PermissionDeniedOpraError(RuntimeError):
@@ -684,11 +718,13 @@ class WebullClient:
                 sym = SymbologyNormalizer.to_canonical(raw_sym)
                 spec = mock_specs.get(sym.upper())
                 if not spec:
-                    continue
+                    spec = _synthetic_offline_spec(sym)
                 spot = spec["spot"]
                 div = spec["div"]
                 is_etf = spec.get("is_etf", False)
                 for opt_sym, strike, dte, bid, ask, delta, oi, vol in spec["options"]:
+                    if not keep_scan_delta(delta):
+                        continue
                     candidates.append(StrategyCandidate(
                         symbol=opt_sym,
                         underlying=sym.upper(),
@@ -720,7 +756,7 @@ class WebullClient:
             try:
                 raw_contracts = self.query_options_contracts(sym)
                 c_list = parse_webull_contracts_response({"data": raw_contracts})
-                candidates.extend(c_list)
+                candidates.extend(c for c in c_list if keep_scan_delta(c.delta))
             except Exception as e:
                 logger.error("Failed to query live contracts for %s: %s", sym, e)
 
