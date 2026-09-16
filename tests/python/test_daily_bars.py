@@ -4,6 +4,7 @@ import time
 import unittest
 from pathlib import Path
 
+from tests.python.conftest import block_network
 from src.leaps_scanner.data.store.daily_bars import DailyBarCache, market_session_date
 from src.leaps_scanner.data.store.prices import PriceBar
 from src.leaps_scanner.data.public_delayed import RateLimiter
@@ -14,6 +15,9 @@ def _bar(day: str, close: float = 100.0) -> PriceBar:
 
 
 class TestDailyBarCache(unittest.TestCase):
+    def setUp(self):
+        block_network()
+
     def test_hit_same_session_miss_next_session(self):
         session = {"d": "2026-09-16"}
         cache = DailyBarCache(session_date_fn=lambda: session["d"])

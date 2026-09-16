@@ -143,10 +143,18 @@ def occ_symbol(underlying: str, expiry: str, strike: float, cp: str = "C") -> st
     return f"{root}{yy}{m}{d}{cp.upper()}{int(round(strike * 1000)):08d}"
 
 
-def parse_nasdaq_last_trade(blob: Optional[str]) -> Optional[float]:
-    if not blob:
+def parse_nasdaq_last_trade(blob: Any) -> Optional[float]:
+    if blob is None:
         return None
-    match = _LAST_TRADE_RE.search(blob)
+    if isinstance(blob, (int, float)):
+        return float(blob)
+    text = str(blob).strip().replace(",", "")
+    if not text or text in ("--", "N/A", "na", "None"):
+        return None
+    direct = _parse_num(text)
+    if direct is not None:
+        return direct
+    match = _LAST_TRADE_RE.search(text)
     if not match:
         return None
     return _parse_num(match.group(1))
@@ -427,10 +435,8 @@ class PublicDelayedClient:
         if should_stop and should_stop():
             return sym, []
         store = PriceStore()
-        metrics = None
         if bars:
             store.add_bars(sym, bars)
-            metrics = store.get_metrics(sym)
         if should_stop and should_stop():
             return sym, []
         try:
@@ -446,6 +452,7 @@ class PublicDelayedClient:
             spot = nasdaq_spot
         if spot <= 0:
             return sym, []
+        metrics = store.get_metrics(sym, spot_override=spot) if bars else None
         chosen = _select_contracts(rows, spot)
         is_etf = sym.upper() in _ETF_SET
         hv = metrics.hv_252 if metrics and metrics.hv_252 > 0 else 0.25

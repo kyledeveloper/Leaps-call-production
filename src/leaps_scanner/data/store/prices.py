@@ -169,16 +169,19 @@ class PriceStore:
     def get_bars(self, symbol: str) -> List[PriceBar]:
         return list(self._store.get(symbol, []))
 
-    def get_metrics(self, symbol: str) -> PriceMetrics:
+    def get_metrics(self, symbol: str, spot_override: Optional[float] = None) -> PriceMetrics:
         """
         Compute daily metrics for symbol.
         Enforces minimum 200 bars requirement for valid Strategy 3 signals.
+        If spot_override is supplied (> 0), recalibrates the latest close price and all
+        derived technical indicators (200DMA, drawdown, bounce, RSI) so they align
+        perfectly with real-time market quote.
         """
         bars = self._store.get(symbol, [])
         bar_count = len(bars)
 
         if bar_count < 200:
-            spot = bars[-1].close if bars else 0.0
+            spot = float(spot_override) if spot_override and spot_override > 0 else (bars[-1].close if bars else 0.0)
             return PriceMetrics(
                 symbol=symbol,
                 spot=spot,
@@ -203,7 +206,12 @@ class PriceStore:
         highs = [b.high for b in bars]
         lows = [b.low for b in bars]
 
-        spot = closes[-1]
+        if spot_override is not None and spot_override > 0:
+            closes[-1] = float(spot_override)
+            spot = float(spot_override)
+        else:
+            spot = closes[-1]
+
         rsi_14 = calculate_rsi(closes, period=14)
         sma_200 = calculate_sma(closes, period=200)
 
@@ -211,8 +219,8 @@ class PriceStore:
 
         # 52-week window (last 252 bars or all available bars)
         w52_bars = bars[-252:]
-        high_52w = max(b.high for b in w52_bars)
-        low_52w = min(b.low for b in w52_bars)
+        high_52w = max(max(b.high for b in w52_bars), spot)
+        low_52w = min(min(b.low for b in w52_bars), spot)
 
         drawdown_52w_high = (high_52w - spot) / high_52w if high_52w > 0 else 0.0
         bounce_52w_low = (spot - low_52w) / low_52w if low_52w > 0 else 0.0

@@ -37,6 +37,10 @@ def default_daily_bar_cache_path() -> Path:
     return repo / "data" / "daily_bars.json"
 
 
+import time
+import uuid
+
+
 @dataclass(frozen=True)
 class DailyBarSnapshot:
     symbol: str
@@ -44,19 +48,25 @@ class DailyBarSnapshot:
     spot: float
     div_yield: float
     bars: List[PriceBar]
+    cached_at: float = 0.0
 
 
 class DailyBarCache:
-    """In-memory + optional disk cache keyed by canonical symbol."""
+    """In-memory + optional disk cache keyed by canonical symbol with configurable TTL."""
 
     def __init__(
         self,
         persist_path: Optional[str] = None,
         session_date_fn: Optional[Callable[[], str]] = None,
+        time_fn: Optional[Callable[[], float]] = None,
+        ttl_seconds: Optional[float] = None,
     ):
         self._store: Dict[str, DailyBarSnapshot] = {}
         self._path = Path(persist_path) if persist_path else None
         self._session_date_fn = session_date_fn or market_session_date
+        self._time_fn = time_fn or time.time
+        default_ttl = float(os.environ.get("LEAPS_DAILY_BAR_CACHE_TTL", 3600.0))
+        self.ttl_seconds = float(ttl_seconds if ttl_seconds is not None else default_ttl)
         self._lock = threading.Lock()
         if self._path:
             self.load()
@@ -67,9 +77,14 @@ class DailyBarCache:
     def get(self, symbol: str) -> Optional[DailyBarSnapshot]:
         key = str(symbol).upper()
         session = self.current_session()
+        now = self._time_fn()
         with self._lock:
             snap = self._store.get(key)
-            if snap is None or snap.session_date != session or not snap.bars:
+            if snap is None or not snap.bars:
+                return None
+            if snap.session_date != session:
+                return None
+            if self.ttl_seconds > 0 and (now - snap.cached_at) > self.ttl_seconds:
                 return None
             return snap
 
@@ -80,6 +95,7 @@ class DailyBarCache:
         bars: List[PriceBar],
         div_yield: float,
         session_date: Optional[str] = None,
+        cached_at: Optional[float] = None,
     ) -> DailyBarSnapshot:
         key = str(symbol).upper()
         snap = DailyBarSnapshot(
@@ -88,6 +104,7 @@ class DailyBarCache:
             spot=float(spot or 0.0),
             div_yield=float(div_yield or 0.0),
             bars=list(bars or []),
+            cached_at=float(cached_at if cached_at is not None else self._time_fn()),
         )
         with self._lock:
             self._store[key] = snap
@@ -125,6 +142,7 @@ class DailyBarCache:
                 spot=float(row.get("spot") or 0.0),
                 div_yield=float(row.get("div_yield") or 0.0),
                 bars=bars,
+                cached_at=float(row.get("cached_at") or 0.0),
             )
         with self._lock:
             self._store = loaded
@@ -133,17 +151,37 @@ class DailyBarCache:
         if not self._path:
             return
         with self._lock:
-            payload = {
-                sym: {
-                    "session_date": snap.session_date,
-                    "spot": snap.spot,
-                    "div_yield": snap.div_yield,
-                    "bars": [asdict(b) for b in snap.bars],
-                }
-                for sym, snap in self._store.items()
-            }
+            items = list(self._store.items())
             path = self._path
+        # Serialize outside the lock to prevent thread starvation
+        payload = {
+            sym: {
+                "session_date": snap.session_date,
+                "spot": snap.spot,
+                "div_yield": snap.div_yield,
+                "cached_at": snap.cached_at,
+                "bars": [
+                    {
+                        "trade_date": b.trade_date,
+                        "close": b.close,
+                        "high": b.high,
+                        "low": b.low,
+                        "volume": b.volume,
+                        "open": b.open,
+                    }
+                    for b in snap.bars
+                ],
+            }
+            for sym, snap in items
+        }
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload), encoding="utf-8")
-        tmp.replace(path)
+        tmp = path.with_name(f"{path.stem}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+        try:
+            tmp.write_text(json.dumps(payload), encoding="utf-8")
+            tmp.replace(path)
+        finally:
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
