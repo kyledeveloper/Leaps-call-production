@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.leaps_scanner.data.webull import WebullClient
 from src.leaps_scanner.data.public_delayed import PublicDelayedClient
 from src.leaps_scanner.data.store.iv_history import IVHistoryStore, default_iv_history_path
+from src.leaps_scanner.data.store.daily_bars import DailyBarCache, default_daily_bar_cache_path
 from src.leaps_scanner.scoring.ranker import MemoryRanker, RankedItem, StrategyCandidate
 from src.leaps_scanner.data.rebalancer import get_universe_manager
 from src.leaps_scanner.data.universe import SymbologyNormalizer
@@ -82,6 +83,7 @@ class AppState:
         )
         self.universe_manager = get_universe_manager(offline_mode=offline_mode)
         self.iv_store = IVHistoryStore(persist_path=str(default_iv_history_path()))
+        self.bar_cache = DailyBarCache(persist_path=str(default_daily_bar_cache_path()))
         self.candidates: List[StrategyCandidate] = []
         self.ranker: Optional[MemoryRanker] = None
         self.last_scan_time: Optional[str] = None
@@ -177,6 +179,47 @@ class AppState:
     def _scan_worker(self, symbols: List[str], seq: Optional[int] = None) -> None:
         collected: List[StrategyCandidate] = []
         total = len(symbols)
+
+        def should_stop() -> bool:
+            with self._lock:
+                if seq is not None and seq != self._scan_seq:
+                    return True
+                return bool(self._scan_cancel)
+
+        def on_symbol_done(done: int, total_n: int, sym: str, batch: List[StrategyCandidate]) -> None:
+            with self._lock:
+                if seq is not None and seq != self._scan_seq:
+                    return
+                if self._scan_cancel:
+                    self.scan_status = "idle"
+                    return
+                collected.extend(batch)
+                self.candidates = list(collected)
+                self.ranker = MemoryRanker(self.candidates)
+                self.last_scan_time = datetime.now(timezone.utc).isoformat()
+                self.scan_progress = {"done": done, "total": total_n, "symbol": sym}
+                self.scanned_symbols = list(symbols)
+
+        if self.source == "delayed":
+            try:
+                self.client.get_leaps_candidates(
+                    symbols,
+                    progress_cb=on_symbol_done,
+                    should_stop=should_stop,
+                )
+            except Exception:
+                pass
+            with self._lock:
+                if seq is not None and seq != self._scan_seq:
+                    return
+                if self._scan_cancel:
+                    self.scan_status = "idle"
+                    return
+                asof_day = datetime.now(timezone.utc).date().isoformat()
+                self.iv_store.ingest_from_candidates(collected, asof_day)
+                self.scan_status = "done"
+            return
+
         for i, sym in enumerate(symbols):
             with self._lock:
                 if seq is not None and seq != self._scan_seq:
@@ -301,7 +344,7 @@ class AppState:
 
             elif source == "delayed":
                 _forget_env_secrets()
-                self.client = PublicDelayedClient(iv_store=self.iv_store)
+                self.client = PublicDelayedClient(iv_store=self.iv_store, bar_cache=self.bar_cache)
                 self.universe_manager = get_universe_manager(offline_mode=True)
                 self.offline_mode = False
                 self.source = "delayed"

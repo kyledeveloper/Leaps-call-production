@@ -26,6 +26,8 @@
 
 Delayed / Webull 每次扫描会把各标的最接近 ATM 的 IV 追加到 `data/iv_history.json`，大约 90 个交易日后策略二切回真 IV 分位。
 
+公开延迟按标的并发拉取（默认 8 线程，全局间隔 0.12s；可用 `LEAPS_FETCH_WORKERS` / `LEAPS_FETCH_MIN_INTERVAL`）。Yahoo 日线按美东交易日缓存（`data/daily_bars.json`，不入库）。期权链每次扫描仍会重拉。
+
 ## 运行
 
 需要 Python 3.9+。
@@ -47,7 +49,7 @@ PYTHONPATH=. python -m src.leaps_scanner.cli --strategy deep_itm --universe etfs
 
 看板上的 α 滑条在内存里重排（不重新拉网）。状态筛选默认 PASS + WATCH。右上角 **EN / 中文** 开关，选择存在 `localStorage`。
 
-扫描分档：**ETF**（12）· **道指**（30）· **核心并集**（标普100 ∪ 纳指100 ∪ 道指 ∪ ETF）。公开延迟在后台扫。
+扫描分档：**ETF**（12）· **道指**（30）· **标普100** · **纳指100** · **核心并集**。公开延迟在后台扫。
 
 ## 测试
 

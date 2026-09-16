@@ -43,6 +43,8 @@ venv/
 # Accumulated ATM IV warehouse (strategy 2)
 data/iv_history.json
 data/iv_history.tmp
+data/daily_bars.json
+data/daily_bars.tmp
 
 # Secrets & Local Environment
 .env

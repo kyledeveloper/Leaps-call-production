@@ -12,12 +12,15 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -26,6 +29,7 @@ from src.leaps_scanner.core.iv_solver import solve_implied_volatility
 from src.leaps_scanner.core.rates import RateCurve
 from src.leaps_scanner.data.store.prices import PriceBar, PriceStore
 from src.leaps_scanner.data.store.iv_history import IVDataPoint, IVHistoryStore
+from src.leaps_scanner.data.store.daily_bars import DailyBarCache
 from src.leaps_scanner.data.universe import CORE_ETFS, SymbologyNormalizer
 from src.leaps_scanner.data.funnel import keep_scan_delta
 from src.leaps_scanner.scoring.ranker import StrategyCandidate
@@ -38,6 +42,48 @@ _ETF_SET = {s.upper() for s in CORE_ETFS}
 _SSL = ssl.create_default_context()
 
 FetchFn = Callable[[str, Dict[str, str]], Tuple[int, bytes]]
+ProgressCb = Callable[[int, int, str, List[StrategyCandidate]], None]
+StopFn = Callable[[], bool]
+
+
+class RateLimiter:
+    """Global minimum spacing between HTTP starts. Shared across worker threads."""
+
+    def __init__(self, min_interval_s: float = 0.12):
+        self.min_interval_s = max(0.0, float(min_interval_s))
+        self._lock = threading.Lock()
+        self._next = 0.0
+
+    def wait(self) -> None:
+        if self.min_interval_s <= 0:
+            return
+        with self._lock:
+            now = time.monotonic()
+            start = max(self._next, now)
+            self._next = start + self.min_interval_s
+            delay = start - now
+        if delay > 0:
+            time.sleep(delay)
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return default
 
 
 def _default_fetch(url: str, headers: Dict[str, str]) -> Tuple[int, bytes]:
@@ -201,16 +247,32 @@ class PublicDelayedClient:
     app_key = None
     app_secret = None
 
-    def __init__(self, fetch_fn: Optional[FetchFn] = None, iv_store: Optional[IVHistoryStore] = None):
+    def __init__(
+        self,
+        fetch_fn: Optional[FetchFn] = None,
+        iv_store: Optional[IVHistoryStore] = None,
+        bar_cache: Optional[DailyBarCache] = None,
+        max_workers: Optional[int] = None,
+        min_interval_s: Optional[float] = None,
+    ):
+        self._custom_fetch = fetch_fn is not None
         self._fetch = fetch_fn or _default_fetch
         self.offline_mode = False
         self.source = "delayed"
         self.rates = RateCurve()
         self.iv_store = iv_store if iv_store is not None else IVHistoryStore()
+        self.bar_cache = bar_cache
+        default_workers = _env_int("LEAPS_FETCH_WORKERS", 8)
+        default_interval = 0.0 if self._custom_fetch else _env_float("LEAPS_FETCH_MIN_INTERVAL", 0.12)
+        self.max_workers = max(1, int(max_workers if max_workers is not None else default_workers))
+        interval = default_interval if min_interval_s is None else min_interval_s
+        self.rate_limiter = RateLimiter(interval)
+        self._iv_lock = threading.Lock()
 
     def _get_json(self, url: str, headers: Dict[str, str], retries: int = 2) -> dict:
         last_err = "empty"
         for attempt in range(retries + 1):
+            self.rate_limiter.wait()
             status, body = self._fetch(url, headers)
             if status == 429:
                 time.sleep(0.8 * (attempt + 1))
@@ -226,6 +288,10 @@ class PublicDelayedClient:
         raise RuntimeError(f"public delayed fetch failed ({last_err}) for {url.split('?')[0]}")
 
     def _yahoo_chart(self, symbol: str) -> Tuple[float, List[PriceBar], float]:
+        if self.bar_cache is not None:
+            hit = self.bar_cache.get(symbol)
+            if hit is not None:
+                return hit.spot, list(hit.bars), hit.div_yield
         ticker = urllib.parse.quote(symbol)
         url = (
             f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
@@ -237,7 +303,10 @@ class PublicDelayedClient:
             "Referer": f"https://finance.yahoo.com/quote/{ticker}",
         }
         payload = self._get_json(url, headers)
-        return parse_yahoo_chart(payload)
+        spot, bars, div_yield = parse_yahoo_chart(payload)
+        if self.bar_cache is not None and bars:
+            self.bar_cache.put(symbol, spot, bars, div_yield)
+        return spot, bars, div_yield
 
     def _nasdaq_chain(self, symbol: str, asof: datetime) -> Tuple[List[dict], Optional[float]]:
         ticker = urllib.parse.quote(symbol)
@@ -270,105 +339,179 @@ class PublicDelayedClient:
             raise RuntimeError(f"nasdaq chain empty for {symbol}")
         return rows, last
 
-    def get_leaps_candidates(self, symbols: List[str]) -> List[StrategyCandidate]:
-        asof = datetime.now(timezone.utc)
-        store = PriceStore()
-        out: List[StrategyCandidate] = []
-        for raw in symbols:
-            sym = SymbologyNormalizer.to_canonical(raw)
-            try:
-                spot, bars, div_yield = self._yahoo_chart(sym)
-            except Exception as exc:
-                logger.warning("Yahoo chart failed for %s: %s", sym, exc)
-                spot, bars, div_yield = 0.0, [], 0.0
-            if bars:
-                store.add_bars(sym, bars)
-            metrics = store.get_metrics(sym) if bars else None
-            try:
-                rows, nasdaq_spot = self._nasdaq_chain(sym, asof)
-            except Exception as exc:
-                logger.warning("Nasdaq chain failed for %s: %s", sym, exc)
-                continue
-            if spot <= 0 and nasdaq_spot:
-                spot = nasdaq_spot
-            if spot <= 0:
-                continue
-            chosen = _select_contracts(rows, spot)
-            is_etf = sym.upper() in _ETF_SET
-            hv = metrics.hv_252 if metrics and metrics.hv_252 > 0 else 0.25
-            hv20 = metrics.hv_20 if metrics and metrics.hv_20 > 0 else hv
-            hv_pct = metrics.hv_percentile if metrics else None
-            hv_z = metrics.hv_z_score if metrics else 0.0
-            chg20 = metrics.pct_change_20d if metrics else 0.0
-            rsi = metrics.rsi_14 if metrics else 50.0
-            dma = metrics.pct_to_200dma if metrics else 0.0
-            dd = metrics.drawdown_52w_high if metrics else 0.0
-            bounce = metrics.bounce_52w_low if metrics else 0.0
-            hist_days = metrics.bar_count if metrics else 0
-            symbol_rows: List[StrategyCandidate] = []
-            atm_iv: Optional[float] = None
-            atm_dist = 1e9
-            for row in chosen:
-                if row["strike"] / spot < 0.65:
-                    continue
-                t_years = row["dte"] / 365.25
-                r = self.rates.get_rate(t_years)
-                mid = (row["bid"] + row["ask"]) / 2.0
-                iv_res = solve_implied_volatility(mid, spot, row["strike"], t_years, r, div_yield, initial_guess=max(0.12, hv))
-                iv = iv_res.iv if iv_res.iv is not None else (hv if hv > 0 else None)
-                greeks_vol = iv if iv is not None else hv
-                greeks_vol = max(float(greeks_vol or 0.0), 0.20)
-                try:
-                    greeks = calculate_american_greeks(spot, row["strike"], t_years, r, div_yield, greeks_vol)
-                    delta = greeks.delta
-                except Exception:
-                    delta = max(0.05, min(0.95, 0.5 + 0.5 * (spot - row["strike"]) / max(spot, 1.0)))
-                if not keep_scan_delta(delta):
-                    continue
-                if iv is not None:
-                    dist = abs(row["strike"] / spot - 1.0)
-                    if dist < atm_dist:
-                        atm_dist = dist
-                        atm_iv = float(iv)
-                symbol_rows.append(StrategyCandidate(
-                    symbol=row["symbol"],
-                    underlying=sym.upper(),
-                    strike=row["strike"],
-                    spot=spot,
-                    dte=row["dte"],
-                    bid=row["bid"],
-                    ask=row["ask"],
-                    delta=delta,
-                    open_interest=row["open_interest"],
-                    volume=row["volume"],
-                    dividend_yield=div_yield,
-                    iv=iv,
-                    iv_percentile=None,
-                    iv_rank=None,
-                    rsi_14=rsi,
-                    pct_to_200dma=dma,
-                    drawdown_52w_high=dd,
-                    bounce_52w_low=bounce,
-                    is_etf=is_etf,
-                    hv_252=hv,
-                    hv_20=hv20,
-                    hv_percentile=hv_pct,
-                    hv_z_score=hv_z,
-                    pct_change_20d=chg20,
-                    valid_history_days=hist_days,
-                    data_quality="DELAYED",
-                ))
-            asof_day = asof.date().isoformat()
+    def _apply_iv_metrics(
+        self,
+        sym: str,
+        symbol_rows: List[StrategyCandidate],
+        atm_iv: Optional[float],
+        hv: float,
+        asof_day: str,
+    ) -> None:
+        with self._iv_lock:
             if atm_iv is not None:
                 self.iv_store.add_data_point(sym, IVDataPoint(trade_date=asof_day, atm_iv=atm_iv))
             ivm = self.iv_store.get_metrics(sym, atm_iv if atm_iv is not None else hv)
-            for cand in symbol_rows:
-                cand.iv_history_days = ivm.valid_days
-                if not ivm.is_degraded:
-                    cand.iv_percentile = ivm.iv_percentile
-                    cand.iv_rank = ivm.iv_rank
-                    cand.iv_z_score = ivm.iv_z_score
-            out.extend(symbol_rows)
-            time.sleep(0.12)
+        for cand in symbol_rows:
+            cand.iv_history_days = ivm.valid_days
+            if not ivm.is_degraded:
+                cand.iv_percentile = ivm.iv_percentile
+                cand.iv_rank = ivm.iv_rank
+                cand.iv_z_score = ivm.iv_z_score
+
+    def _scan_symbol(
+        self,
+        raw: str,
+        asof: datetime,
+        should_stop: Optional[StopFn] = None,
+    ) -> Tuple[str, List[StrategyCandidate]]:
+        sym = SymbologyNormalizer.to_canonical(raw)
+        if should_stop and should_stop():
+            return sym, []
+        try:
+            spot, bars, div_yield = self._yahoo_chart(sym)
+        except Exception as exc:
+            logger.warning("Yahoo chart failed for %s: %s", sym, exc)
+            spot, bars, div_yield = 0.0, [], 0.0
+        store = PriceStore()
+        metrics = None
+        if bars:
+            store.add_bars(sym, bars)
+            metrics = store.get_metrics(sym)
+        try:
+            rows, nasdaq_spot = self._nasdaq_chain(sym, asof)
+        except Exception as exc:
+            logger.warning("Nasdaq chain failed for %s: %s", sym, exc)
+            return sym, []
+        if nasdaq_spot and nasdaq_spot > 0:
+            spot = nasdaq_spot
+        if spot <= 0:
+            return sym, []
+        chosen = _select_contracts(rows, spot)
+        is_etf = sym.upper() in _ETF_SET
+        hv = metrics.hv_252 if metrics and metrics.hv_252 > 0 else 0.25
+        hv20 = metrics.hv_20 if metrics and metrics.hv_20 > 0 else hv
+        hv_pct = metrics.hv_percentile if metrics else None
+        hv_z = metrics.hv_z_score if metrics else 0.0
+        chg20 = metrics.pct_change_20d if metrics else 0.0
+        rsi = metrics.rsi_14 if metrics else 50.0
+        dma = metrics.pct_to_200dma if metrics else 0.0
+        dd = metrics.drawdown_52w_high if metrics else 0.0
+        bounce = metrics.bounce_52w_low if metrics else 0.0
+        hist_days = metrics.bar_count if metrics else 0
+        symbol_rows: List[StrategyCandidate] = []
+        atm_iv: Optional[float] = None
+        atm_dist = 1e9
+        for row in chosen:
+            if row["strike"] / spot < 0.65:
+                continue
+            t_years = row["dte"] / 365.25
+            r = self.rates.get_rate(t_years)
+            mid = (row["bid"] + row["ask"]) / 2.0
+            iv_res = solve_implied_volatility(
+                mid, spot, row["strike"], t_years, r, div_yield, initial_guess=max(0.12, hv)
+            )
+            iv = iv_res.iv if iv_res.iv is not None else (hv if hv > 0 else None)
+            greeks_vol = iv if iv is not None else hv
+            greeks_vol = max(float(greeks_vol or 0.0), 0.20)
+            try:
+                greeks = calculate_american_greeks(spot, row["strike"], t_years, r, div_yield, greeks_vol)
+                delta = greeks.delta
+            except Exception:
+                delta = max(0.05, min(0.95, 0.5 + 0.5 * (spot - row["strike"]) / max(spot, 1.0)))
+            if not keep_scan_delta(delta):
+                continue
+            if iv is not None:
+                dist = abs(row["strike"] / spot - 1.0)
+                if dist < atm_dist:
+                    atm_dist = dist
+                    atm_iv = float(iv)
+            symbol_rows.append(StrategyCandidate(
+                symbol=row["symbol"],
+                underlying=sym.upper(),
+                strike=row["strike"],
+                spot=spot,
+                dte=row["dte"],
+                bid=row["bid"],
+                ask=row["ask"],
+                delta=delta,
+                open_interest=row["open_interest"],
+                volume=row["volume"],
+                dividend_yield=div_yield,
+                iv=iv,
+                iv_percentile=None,
+                iv_rank=None,
+                rsi_14=rsi,
+                pct_to_200dma=dma,
+                drawdown_52w_high=dd,
+                bounce_52w_low=bounce,
+                is_etf=is_etf,
+                hv_252=hv,
+                hv_20=hv20,
+                hv_percentile=hv_pct,
+                hv_z_score=hv_z,
+                pct_change_20d=chg20,
+                valid_history_days=hist_days,
+                data_quality="DELAYED",
+            ))
+        self._apply_iv_metrics(sym, symbol_rows, atm_iv, hv, asof.date().isoformat())
+        return sym, symbol_rows
+
+    def get_leaps_candidates(
+        self,
+        symbols: List[str],
+        progress_cb: Optional[ProgressCb] = None,
+        should_stop: Optional[StopFn] = None,
+    ) -> List[StrategyCandidate]:
+        asof = datetime.now(timezone.utc)
+        names = [SymbologyNormalizer.to_canonical(s) for s in symbols]
+        total = len(names)
+        out: List[StrategyCandidate] = []
+        if total == 0:
+            return out
+
+        completed = 0
+        collect_lock = threading.Lock()
+        workers = min(self.max_workers, total)
+
+        def consume(sym: str, batch: List[StrategyCandidate]) -> None:
+            nonlocal completed
+            with collect_lock:
+                completed += 1
+                done = completed
+                out.extend(batch)
+            if progress_cb:
+                progress_cb(done, total, sym, batch)
+
+        if workers <= 1:
+            for raw in names:
+                if should_stop and should_stop():
+                    break
+                sym, batch = self._scan_symbol(raw, asof, should_stop=should_stop)
+                consume(sym, batch)
+        else:
+            pool = ThreadPoolExecutor(max_workers=workers)
+            try:
+                futures = {
+                    pool.submit(self._scan_symbol, raw, asof, should_stop): raw
+                    for raw in names
+                }
+                for fut in as_completed(futures):
+                    if should_stop and should_stop():
+                        for pending in futures:
+                            pending.cancel()
+                        break
+                    try:
+                        sym, batch = fut.result()
+                    except Exception as exc:
+                        raw = futures[fut]
+                        logger.warning("Delayed scan failed for %s: %s", raw, exc)
+                        consume(str(raw), [])
+                        continue
+                    consume(sym, batch)
+            finally:
+                pool.shutdown(wait=False, cancel_futures=True)
+
         self.iv_store.flush()
+        if self.bar_cache is not None:
+            self.bar_cache.flush()
         return out

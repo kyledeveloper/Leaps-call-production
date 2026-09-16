@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 import unittest
 from datetime import datetime, timezone
 
@@ -11,6 +13,7 @@ from src.leaps_scanner.data.public_delayed import (
     occ_symbol,
     PublicDelayedClient,
 )
+from src.leaps_scanner.data.store.daily_bars import DailyBarCache
 from src.leaps_scanner.api.server import AppState, create_api_handler_class
 
 
@@ -117,6 +120,84 @@ class TestPublicDelayedParsers(unittest.TestCase):
         self.assertIn(code, (200, 202))
         res = json.loads(body.decode())
         self.assertEqual(res["source"], "delayed")
+
+    def test_daily_bar_cache_skips_yahoo_on_second_scan(self):
+        calls = []
+
+        def fake_fetch(url, headers):
+            calls.append(url)
+            if "finance.yahoo.com" in url or "query1.finance.yahoo.com" in url:
+                return 200, json.dumps(YAHOO_CHART_FIXTURE).encode()
+            if "nasdaq.com" in url:
+                return 200, json.dumps(NASDAQ_FIXTURE).encode()
+            return 404, b""
+
+        cache = DailyBarCache(session_date_fn=lambda: "2026-09-16")
+        client = PublicDelayedClient(
+            fetch_fn=fake_fetch, bar_cache=cache, max_workers=1, min_interval_s=0
+        )
+        first = client.get_leaps_candidates(["AAPL", "MSFT"])
+        self.assertGreaterEqual(len(first), 1)
+        yahoo_first = sum(1 for u in calls if "finance.yahoo.com" in u)
+        nasdaq_first = sum(1 for u in calls if "nasdaq.com" in u)
+        self.assertEqual(yahoo_first, 2)
+        self.assertGreaterEqual(nasdaq_first, 2)
+
+        calls.clear()
+        second = client.get_leaps_candidates(["AAPL", "MSFT"])
+        self.assertGreaterEqual(len(second), 1)
+        yahoo_second = sum(1 for u in calls if "finance.yahoo.com" in u)
+        nasdaq_second = sum(1 for u in calls if "nasdaq.com" in u)
+        self.assertEqual(yahoo_second, 0)
+        self.assertGreaterEqual(nasdaq_second, 2)
+
+    def test_controlled_concurrency_runs_symbols_in_parallel(self):
+        lock = threading.Lock()
+        in_flight = 0
+        max_flight = 0
+
+        def fake_fetch(url, headers):
+            nonlocal in_flight, max_flight
+            with lock:
+                in_flight += 1
+                max_flight = max(max_flight, in_flight)
+            time.sleep(0.05)
+            with lock:
+                in_flight -= 1
+            if "finance.yahoo.com" in url or "query1.finance.yahoo.com" in url:
+                return 200, json.dumps(YAHOO_CHART_FIXTURE).encode()
+            if "nasdaq.com" in url:
+                return 200, json.dumps(NASDAQ_FIXTURE).encode()
+            return 404, b""
+
+        client = PublicDelayedClient(fetch_fn=fake_fetch, max_workers=4, min_interval_s=0)
+        names = ["AAPL", "MSFT", "NVDA", "AMZN"]
+        t0 = time.monotonic()
+        cands = client.get_leaps_candidates(names)
+        elapsed = time.monotonic() - t0
+        self.assertGreaterEqual(len(cands), 1)
+        self.assertGreaterEqual(max_flight, 2)
+        # Sequential 4 names * 2 HTTP * 50ms = 400ms. Parallel should beat that.
+        self.assertLess(elapsed, 0.32)
+
+    def test_progress_callback_counts_all_symbols(self):
+        def fake_fetch(url, headers):
+            if "finance.yahoo.com" in url or "query1.finance.yahoo.com" in url:
+                return 200, json.dumps(YAHOO_CHART_FIXTURE).encode()
+            if "nasdaq.com" in url:
+                return 200, json.dumps(NASDAQ_FIXTURE).encode()
+            return 404, b""
+
+        seen = []
+        client = PublicDelayedClient(fetch_fn=fake_fetch, max_workers=3, min_interval_s=0)
+
+        def on_progress(done, total, sym, batch):
+            seen.append((done, total, sym, len(batch)))
+
+        client.get_leaps_candidates(["AAPL", "MSFT", "NVDA"], progress_cb=on_progress)
+        self.assertEqual(len(seen), 3)
+        self.assertEqual(seen[-1][0], 3)
+        self.assertEqual(seen[-1][1], 3)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,8 @@ Webull keys must not be committed or pasted into chat. `.env` is gitignored.
 
 ATM IV from Delayed/Webull scans is appended to `data/iv_history.json` so strategy 2 can graduate from the HV proxy after ~90 trading days.
 
+Delayed scans pull names in parallel (default 8 workers, 0.12s global spacing; `LEAPS_FETCH_WORKERS` / `LEAPS_FETCH_MIN_INTERVAL`). Yahoo daily bars are reused until the US session date rolls (`data/daily_bars.json`, gitignored). Option chains are still fetched each scan.
+
 ## Run
 
 Python 3.9+.
@@ -47,7 +49,7 @@ PYTHONPATH=. python -m src.leaps_scanner.cli --strategy deep_itm --universe etfs
 
 Dashboard: α slider re-ranks in memory (no network). Status filter defaults to PASS + WATCH. EN / 中文 toggle is in the header (saved in `localStorage`).
 
-Scan universe tiers: **ETFs** (12) · **DJIA** (30) · **Core** (SP100 ∪ NDX ∪ DJIA ∪ ETFs). Delayed scans run in the background.
+Scan universe tiers: **ETFs** (12) · **DJIA** (30) · **SP100** · **NDX** · **Core** (union). Delayed scans run in the background.
 
 ## Tests
 

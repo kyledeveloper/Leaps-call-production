@@ -187,6 +187,28 @@ class TestAPIServer(unittest.TestCase):
         self.assertEqual(self.state.scan_tier, "ndx")
         self.state.scan_status = "idle"
 
+    def test_delayed_scan_passes_full_symbol_list(self):
+        class FakeDelayed:
+            def __init__(self):
+                self.calls = []
+
+            def get_leaps_candidates(self, symbols, progress_cb=None, should_stop=None):
+                self.calls.append(list(symbols))
+                for i, sym in enumerate(symbols, 1):
+                    if progress_cb:
+                        progress_cb(i, len(symbols), sym, [])
+                return []
+
+        fake = FakeDelayed()
+        self.state.source = "delayed"
+        self.state.client = fake
+        self.state._scan_seq = 7
+        self.state._scan_cancel = False
+        self.state._scan_worker(["AAPL", "MSFT", "NVDA"], seq=7)
+        self.assertEqual(fake.calls, [["AAPL", "MSFT", "NVDA"]])
+        self.assertEqual(self.state.scan_status, "done")
+        self.assertEqual(self.state.scan_progress["done"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()
