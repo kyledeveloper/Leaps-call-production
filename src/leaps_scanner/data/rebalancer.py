@@ -36,8 +36,25 @@ USER_AGENT = "LeapsScanner/1.0 (quant-contact@internal.lan; dev@leaps-call.local
 # Strict regex white-list for equity symbols: 1-5 letters optionally followed by dot + 1-2 letters
 TICKER_REGEX = re.compile(r"^[A-Z]{1,5}(\.[A-Z]{1,2})?$")
 
+INDEX_ALIASES: Dict[str, str] = {
+    "ndx": "nasdaq100",
+    "npx": "nasdaq100",
+    "nasdaq": "nasdaq100",
+    "oex": "sp100",
+    "sp": "sp100",
+    "dow": "djia",
+    "dowjones": "djia",
+}
+
+
+def normalize_index_name(name: str) -> str:
+    """Normalize index aliases (e.g. ndx/npx -> nasdaq100, oex -> sp100) to canonical index keys."""
+    s = (name or "").strip().lower()
+    return INDEX_ALIASES.get(s, s)
+
 
 class RebalanceValidationError(Exception):
+
     """Raised when scraped or ingested constituents violate integrity or cardinality bounds."""
     pass
 
@@ -97,7 +114,9 @@ class WikipediaConstituentFetcher:
     URL_MAP = {
         "djia": "https://en.wikipedia.org/wiki/Dow_Jones_Industrial_Average",
         "sp100": "https://en.wikipedia.org/wiki/S%26P_100",
-        "nasdaq100": "https://en.wikipedia.org/wiki/Nasdaq-100"
+        "nasdaq100": "https://en.wikipedia.org/wiki/Nasdaq-100",
+        "ndx": "https://en.wikipedia.org/wiki/Nasdaq-100",
+        "npx": "https://en.wikipedia.org/wiki/Nasdaq-100",
     }
 
     def __init__(self, offline_mode: bool = False, timeout: float = 3.0):
@@ -127,8 +146,9 @@ class WikipediaConstituentFetcher:
         parser = _TableHTMLParser()
         parser.feed(html_content)
 
-        idx = index_name.lower().strip()
+        idx = normalize_index_name(index_name)
         extracted_symbols: List[str] = []
+
 
         for table in parser.tables:
             if not table:
@@ -161,8 +181,9 @@ class WikipediaConstituentFetcher:
                 extracted_symbols = current_candidates
                 break
 
-        # Cardinality Gatekeeper checks
-        count = len(extracted_symbols)
+        # Cardinality Gatekeeper checks (enforce on deduplicated set)
+        deduped = sorted(list(set(extracted_symbols)))
+        count = len(deduped)
         if idx == "djia":
             if count != 30:
                 raise RebalanceValidationError(f"DJIA cardinality violation: expected exactly 30, got {count}")
@@ -176,14 +197,16 @@ class WikipediaConstituentFetcher:
             if count == 0:
                 raise RebalanceValidationError(f"No constituents found for index: {index_name}")
 
-        return sorted(list(set(extracted_symbols)))
+        return deduped
+
 
     def fetch_online(self, index_name: str) -> List[str]:
         """Fetch remote URL and return parsed constituents."""
         if self.offline_mode:
             raise RebalanceValidationError("Offline mode enabled; cannot fetch remote URL")
 
-        url = self.URL_MAP.get(index_name.lower().strip())
+        idx = normalize_index_name(index_name)
+        url = self.URL_MAP.get(idx)
         if not url:
             raise RebalanceValidationError(f"No known URL for index: {index_name}")
 
@@ -198,9 +221,10 @@ class WikipediaConstituentFetcher:
             with urllib.request.urlopen(req, timeout=self.timeout) as response:
                 html_bytes = response.read()
                 html_content = html_bytes.decode("utf-8", errors="replace")
-                return self.parse_html_table(html_content, index_name=index_name)
+                return self.parse_html_table(html_content, index_name=idx)
         except Exception as e:
             raise RebalanceValidationError(f"Failed to fetch {index_name} from {url}: {e}") from e
+
 
 
 class DynamicUniverseManager:
@@ -343,7 +367,7 @@ class DynamicUniverseManager:
 
     def get_constituents(self, index_name: str) -> List[str]:
         self._check_and_reload_if_modified()
-        idx = index_name.lower().strip()
+        idx = normalize_index_name(index_name)
         return sorted(list(set(self._indices.get(idx, []))))
 
     def get_master_universe(self) -> Set[str]:
@@ -369,7 +393,7 @@ class DynamicUniverseManager:
         Applies new constituents to specified index, records diff events,
         and saves updated cache atomically.
         """
-        idx = index_name.lower().strip()
+        idx = normalize_index_name(index_name)
         old_set = set(self._indices.get(idx, []))
         new_set = set(new_constituents)
 
@@ -400,29 +424,31 @@ class DynamicUniverseManager:
         Synchronizes an index by fetching fresh constituents from the remote source.
         Returns rebalance diff on success.
         """
+        idx = normalize_index_name(index_name)
         if fetcher is None:
             fetcher = WikipediaConstituentFetcher(offline_mode=self.offline_mode)
 
         try:
-            fresh = fetcher.fetch_online(index_name)
+            fresh = fetcher.fetch_online(idx)
             diff = self.apply_rebalance(
-                index_name=index_name,
+                index_name=idx,
                 new_constituents=fresh,
                 reason=f"Automated sync from {fetcher.__class__.__name__}"
             )
             return {
                 "status": "ok",
-                "index": index_name,
+                "index": idx,
                 "added": diff["added"],
                 "removed": diff["removed"]
             }
         except Exception as e:
-            logger.error(f"Sync failed for index {index_name}: {e}")
+            logger.error(f"Sync failed for index {idx}: {e}")
             return {
                 "status": "error",
-                "index": index_name,
+                "index": idx,
                 "message": str(e)
             }
+
 
 
 _GLOBAL_UNIVERSE_MANAGER: Optional[DynamicUniverseManager] = None

@@ -54,7 +54,8 @@ def format_ascii_table(title: str, headers: List[str], rows: List[List[str]]) ->
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="LEAPS Call Quantitative Scanner CLI")
     parser.add_argument("--symbols", type=str, default="SPY,QQQ,AAPL,NVDA", help="Comma-separated ticker symbols")
-    parser.add_argument("--universe", type=str, default=None, choices=["sp100", "nasdaq100", "djia", "etfs", "adrs", "all"], help="Predefined universe: sp100, nasdaq100, djia, etfs, adrs, all")
+    parser.add_argument("--universe", type=str, default=None, choices=["sp100", "nasdaq100", "ndx", "npx", "oex", "djia", "etfs", "adrs", "all"], help="Predefined universe: sp100, nasdaq100, ndx, npx, oex, djia, etfs, adrs, all")
+
     parser.add_argument("--sync-universe", action="store_true", help="Check remote sources and sync index constituents")
     parser.add_argument("--alpha", type=float, default=0.5, help="Execution slippage alpha in [0.0, 1.0]")
     parser.add_argument("--strategy", type=str, default="all", choices=["all", "deep_itm", "vol_discount", "oversold"], help="Strategy filter")

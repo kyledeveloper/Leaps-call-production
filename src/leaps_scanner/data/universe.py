@@ -100,14 +100,14 @@ class SymbologyNormalizer:
 def get_universe(category: str = "all") -> List[str]:
     """
     Retrieve sorted ticker list by category.
-    Categories: 'sp100', 'nasdaq100', 'djia', 'etfs', 'adrs', 'all'
+    Categories: 'sp100', 'nasdaq100', 'ndx', 'npx', 'djia', 'etfs', 'adrs', 'all'
     """
     cat = category.lower().strip()
-    if cat == "sp100":
+    if cat in ("sp100", "oex"):
         return sorted(list(set(SP100_COMPONENTS)))
-    elif cat == "nasdaq100":
+    elif cat in ("nasdaq100", "ndx", "npx"):
         return sorted(list(set(NASDAQ100_COMPONENTS)))
-    elif cat == "djia":
+    elif cat in ("djia", "dow"):
         return sorted(list(set(DJIA_COMPONENTS)))
     elif cat == "etfs":
         return sorted(list(set(CORE_ETFS)))
@@ -115,6 +115,7 @@ def get_universe(category: str = "all") -> List[str]:
         return sorted(list(set(SELECTED_ADRS)))
     else:
         return sorted(list(FULL_CORE_UNIVERSE))
+
 
 
 def is_in_core_universe(symbol: str) -> bool:

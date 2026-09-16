@@ -22,8 +22,24 @@ from src.leaps_scanner.data.universe import SymbologyNormalizer
 
 
 DEFAULT_SCAN_SYMBOLS = ["SPY", "QQQ", "AAPL", "NVDA", "MSFT"]
-SCAN_TIERS = ("etfs", "djia", "core")
+CANONICAL_SCAN_TIERS = ("etfs", "djia", "sp100", "ndx", "core")
+SCAN_TIER_ALIASES: Dict[str, str] = {
+    "nasdaq100": "ndx",
+    "npx": "ndx",
+    "oex": "sp100",
+}
+SCAN_TIERS = CANONICAL_SCAN_TIERS + tuple(SCAN_TIER_ALIASES.keys())
+
+
+def normalize_scan_tier(tier: Optional[str]) -> Optional[str]:
+    if not tier:
+        return None
+    t = tier.strip().lower()
+    return SCAN_TIER_ALIASES.get(t, t)
+
+
 ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
+
 
 
 def _load_dotenv(path: Path = ENV_PATH) -> None:
@@ -82,14 +98,19 @@ class AppState:
         self._lock = threading.Lock()
 
     def resolve_scan_symbols(self, tier: Optional[str] = None) -> List[str]:
-        chosen = (tier or self.scan_tier or "etfs").strip().lower()
-        if chosen not in SCAN_TIERS:
-            chosen = "etfs"
+        raw = (tier or self.scan_tier or "etfs").strip().lower()
+        if raw not in SCAN_TIERS:
+            raw = "etfs"
+        chosen = normalize_scan_tier(raw) or "etfs"
         self.scan_tier = chosen
         if chosen == "etfs":
             names = self.universe_manager.get_constituents("etfs")
         elif chosen == "djia":
             names = self.universe_manager.get_constituents("djia")
+        elif chosen == "sp100":
+            names = self.universe_manager.get_constituents("sp100")
+        elif chosen == "ndx":
+            names = self.universe_manager.get_constituents("nasdaq100")
         else:
             names = sorted(self.universe_manager.get_master_universe())
         names = [SymbologyNormalizer.to_canonical(s) for s in names]
@@ -98,7 +119,8 @@ class AppState:
     def run_scan(self, symbols: Optional[List[str]] = None, tier: Optional[str] = None) -> int:
         """Synchronous scan used by tests and sandbox mode switches."""
         if tier:
-            self.scan_tier = tier
+            normalized = normalize_scan_tier(tier)
+            self.scan_tier = normalized or "etfs"
         syms = [SymbologyNormalizer.to_canonical(s) for s in symbols] if symbols else self.resolve_scan_symbols()
         self._scan_worker(syms)
         return len(self.candidates)
@@ -112,19 +134,25 @@ class AppState:
         Scan the selected universe tier.
         Sandbox runs inline. Delayed/Webull run in a background thread so the UI stays alive.
         """
+        target_tier = None
         if tier:
-            if tier not in SCAN_TIERS:
-                return 400, {**self.public_config(), "error": "invalid_tier", "message": "tier must be etfs, djia, or core"}
-            self.scan_tier = tier
+            raw = tier.strip().lower()
+            if raw not in SCAN_TIERS:
+                return 400, {**self.public_config(), "error": "invalid_tier", "message": "tier must be etfs, djia, sp100, ndx, or core"}
+            target_tier = normalize_scan_tier(raw) or "etfs"
+
         with self._lock:
             if self.scan_status == "running":
                 return 409, {**self.public_config(), "error": "scan_in_progress", "message": "A scan is already running."}
+            if target_tier:
+                self.scan_tier = target_tier
             syms = [SymbologyNormalizer.to_canonical(s) for s in symbols] if symbols else self.resolve_scan_symbols()
             self.scanned_symbols = list(syms)
             self.scan_status = "running"
             self.scan_progress = {"done": 0, "total": len(syms), "symbol": None}
             self._scan_cancel = False
             async_scan = self.source in ("delayed", "webull")
+
         if async_scan:
             self._scan_thread = threading.Thread(target=self._scan_worker, args=(syms,), daemon=True)
             self._scan_thread.start()
@@ -209,8 +237,11 @@ class AppState:
             "universe": {
                 "etfs": len(self.universe_manager.get_constituents("etfs")),
                 "djia": len(self.universe_manager.get_constituents("djia")),
+                "sp100": len(self.universe_manager.get_constituents("sp100")),
+                "ndx": len(self.universe_manager.get_constituents("nasdaq100")),
                 "core": len(self.universe_manager.get_master_universe()),
             },
+
             "strategies": ["deep_itm", "vol_discount", "oversold"],
         }
 
@@ -453,10 +484,12 @@ def create_api_handler_class(state: AppState):
                     "indices": {
                         "sp100": len(state.universe_manager.get_constituents("sp100")),
                         "nasdaq100": len(state.universe_manager.get_constituents("nasdaq100")),
+                        "ndx": len(state.universe_manager.get_constituents("nasdaq100")),
                         "djia": len(state.universe_manager.get_constituents("djia")),
                         "etfs": len(state.universe_manager.get_constituents("etfs")),
                         "adrs": len(state.universe_manager.get_constituents("adrs"))
                     },
+
                     "master_count": len(state.universe_manager.get_master_universe()),
                     "rebalance_history": state.universe_manager.get_rebalance_history()[-10:],
                     "last_synced": getattr(state.universe_manager, "_last_synced", None)

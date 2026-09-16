@@ -133,7 +133,44 @@ class TestUniverseExpansion(unittest.TestCase):
         res_jpm = evaluate_oversold_underlying(metrics_jpm)
         self.assertEqual(res_jpm.status, GuardStatus.PASS)
 
+    def test_universe_aliases_and_canonicalization(self):
+        from src.leaps_scanner.data.universe import (
+            get_universe,
+            SP100_COMPONENTS,
+            NASDAQ100_COMPONENTS
+        )
+        from src.leaps_scanner.data.rebalancer import (
+            normalize_index_name,
+            get_universe_manager
+        )
+
+        # 1. universe.py category aliases
+        ndx_list = get_universe("ndx")
+        npx_list = get_universe("npx")
+        nasdaq_list = get_universe("nasdaq100")
+        sp_list = get_universe("sp100")
+
+        self.assertEqual(ndx_list, sorted(list(set(NASDAQ100_COMPONENTS))))
+        self.assertEqual(npx_list, sorted(list(set(NASDAQ100_COMPONENTS))))
+        self.assertEqual(ndx_list, nasdaq_list)
+        self.assertEqual(sp_list, sorted(list(set(SP100_COMPONENTS))))
+
+        # 2. rebalancer.py normalize_index_name
+        self.assertEqual(normalize_index_name("ndx"), "nasdaq100")
+        self.assertEqual(normalize_index_name("npx"), "nasdaq100")
+        self.assertEqual(normalize_index_name("nasdaq100"), "nasdaq100")
+        self.assertEqual(normalize_index_name("sp100"), "sp100")
+        self.assertEqual(normalize_index_name("oex"), "sp100")
+        self.assertEqual(normalize_index_name("djia"), "djia")
+
+        # 3. DynamicUniverseManager alias resolution
+        mgr = get_universe_manager(offline_mode=True)
+        self.assertEqual(len(mgr.get_constituents("ndx")), len(mgr.get_constituents("nasdaq100")))
+        self.assertEqual(len(mgr.get_constituents("npx")), len(mgr.get_constituents("nasdaq100")))
+        self.assertEqual(len(mgr.get_constituents("sp100")), len(SP100_COMPONENTS))
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

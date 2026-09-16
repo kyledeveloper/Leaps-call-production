@@ -71,7 +71,54 @@ class TestDynamicRebalancer(unittest.TestCase):
         with self.assertRaises(RebalanceValidationError):
             fetcher.parse_html_table(excess_html, index_name="djia")
 
+        # SP100 table (< 95)
+        sp_under_rows = "".join(f"<tr><td>SYM{i}</td><td>Company {i}</td></tr>" for i in range(94))
+        sp_under_html = f"""
+        <table class="wikitable">
+          <thead><tr><th>Symbol</th><th>Company</th></tr></thead>
+          <tbody>{sp_under_rows}</tbody>
+        </table>
+        """
+        with self.assertRaises(RebalanceValidationError):
+            fetcher.parse_html_table(sp_under_html, index_name="sp100")
+
+        # SP100 table (> 110)
+        sp_over_rows = "".join(f"<tr><td>SYM{i}</td><td>Company {i}</td></tr>" for i in range(115))
+        sp_over_html = f"""
+        <table class="wikitable">
+          <thead><tr><th>Symbol</th><th>Company</th></tr></thead>
+          <tbody>{sp_over_rows}</tbody>
+        </table>
+        """
+        with self.assertRaises(RebalanceValidationError):
+            fetcher.parse_html_table(sp_over_html, index_name="sp100")
+
+        # NDX / NPX alias table (< 95)
+        ndx_under_rows = "".join(f"<tr><td>SYM{i}</td><td>Company {i}</td></tr>" for i in range(90))
+        ndx_under_html = f"""
+        <table class="wikitable">
+          <thead><tr><th>Ticker</th><th>Company</th></tr></thead>
+          <tbody>{ndx_under_rows}</tbody>
+        </table>
+        """
+        with self.assertRaises(RebalanceValidationError):
+            fetcher.parse_html_table(ndx_under_html, index_name="ndx")
+        with self.assertRaises(RebalanceValidationError):
+            fetcher.parse_html_table(ndx_under_html, index_name="npx")
+
+        # NDX / NPX table with duplicates: 98 raw rows, but only 80 unique tickers (< 95)
+        dup_rows = "".join(f"<tr><td>SYM{i % 80}</td><td>Company</td></tr>" for i in range(98))
+        dup_html = f"""
+        <table class="wikitable">
+          <thead><tr><th>Ticker</th><th>Company</th></tr></thead>
+          <tbody>{dup_rows}</tbody>
+        </table>
+        """
+        with self.assertRaises(RebalanceValidationError):
+            fetcher.parse_html_table(dup_html, index_name="npx")
+
     def test_dynamic_rebalance_detection_and_multi_index_union(self):
+
         from src.leaps_scanner.data.rebalancer import DynamicUniverseManager
 
         with tempfile.TemporaryDirectory() as tmp_dir:

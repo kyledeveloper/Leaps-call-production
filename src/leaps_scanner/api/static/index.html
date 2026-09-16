@@ -367,6 +367,7 @@
       font-weight: 600;
       font-size: 13px;
       cursor: pointer;
+      white-space: nowrap;
     }
     .toggle button.on-sandbox { background: rgba(251, 191, 36, 0.2); color: var(--accent-amber); }
     .toggle button.on-delayed { background: rgba(56, 189, 248, 0.2); color: var(--accent-blue); }
@@ -396,12 +397,15 @@
       .header { align-items: stretch; }
       .status-badges { justify-content: flex-start; }
     }
-    @media (max-width: 800px) {
-      .cred-grid { grid-template-columns: 1fr; }
-      .source-row { flex-direction: column; align-items: stretch; }
+    @media (max-width: 960px) {
+      .source-row { flex-direction: column; align-items: stretch; gap: 10px; }
       .toggle { width: 100%; border-radius: 12px; }
       .toggle button { flex: 1 1 auto; padding: 8px 10px; font-size: 12px; }
+    }
+    @media (max-width: 800px) {
+      .cred-grid { grid-template-columns: 1fr; }
       .slider-header { flex-direction: column; gap: 4px; }
+
       .slider-legend { font-size: 11px; gap: 8px; }
       .tab-full { display: none; }
       .tab-short { display: inline; }
@@ -431,8 +435,9 @@
       </div>
       <span class="badge badge-online" id="engineStatus" data-i18n="statusSandbox">Sandbox Mode</span>
       <span class="badge" style="background: rgba(147, 51, 234, 0.15); color: #c084fc; border: 1px solid rgba(147, 51, 234, 0.3);" id="universeBadge" data-i18n="universeLoading">Universe: Loading...</span>
-      <button class="btn" style="background: #334155; color: #f8fafc;" id="btnSync" onclick="triggerUniverseSync(event)">⚡ Sync Rebalance</button>
-      <button class="btn" id="btnScan" onclick="triggerScan()">🔄 Refresh Scan</button>
+      <button class="btn" style="background: #334155; color: #f8fafc;" id="btnSync" onclick="triggerUniverseSync(event)" data-i18n="syncRebalance">⚡ Sync Rebalance</button>
+      <button class="btn" id="btnScan" onclick="triggerScan()" data-i18n="refreshScan">🔄 Refresh Scan</button>
+
     </div>
   </div>
 
@@ -461,8 +466,11 @@
       <div class="toggle" role="group" aria-label="Scan universe">
         <button type="button" id="tierEtfs" class="on-delayed" onclick="setScanTier('etfs')" data-i18n="tierEtfs">ETFs</button>
         <button type="button" id="tierDjia" onclick="setScanTier('djia')" data-i18n="tierDjia">DJIA</button>
+        <button type="button" id="tierSp100" onclick="setScanTier('sp100')" data-i18n="tierSp100">SP100</button>
+        <button type="button" id="tierNdx" onclick="setScanTier('ndx')" data-i18n="tierNdx">NDX</button>
         <button type="button" id="tierCore" onclick="setScanTier('core')" data-i18n="tierCore">Core union</button>
       </div>
+
     </div>
   </div>
 
@@ -585,10 +593,13 @@
         connectLive: 'Connect live',
         connecting: 'Connecting…',
         scanUniverse: 'Scan universe',
-        scanHintDefault: 'Wired to universe_manager. ETFs 12 · DJIA 30 · Core = SP100 ∪ NDX ∪ DJIA ∪ ETFs. Delayed public scans in the background.',
+        scanHintDefault: 'Wired to universe_manager. ETFs 12 · DJIA 30 · SP100 101 · NDX 101 · Core union 140+. Delayed public scans in the background.',
         tierEtfs: 'ETFs',
         tierDjia: 'DJIA',
+        tierSp100: 'SP100',
+        tierNdx: 'NDX',
         tierCore: 'Core union',
+
         alphaLabel: 'Execution Price Parameter (α Slippage Slider)',
         alphaDisplay: 'α = {alpha} (Midpoint + {pct}% Spread)',
         alphaAggressive: '0.0 (Aggressive Mid)',
@@ -669,10 +680,13 @@
         connectLive: '连接实盘',
         connecting: '连接中…',
         scanUniverse: '扫描股票池',
-        scanHintDefault: '接入 universe_manager。ETF 12 · 道指 30 · 核心 = 标普100 ∪ 纳指100 ∪ 道指 ∪ ETF。公开延迟在后台扫描。',
+        scanHintDefault: '接入 universe_manager。ETF 12 · 道指 30 · 标普100 101 · 纳指100 101 · 核心并集 140+。公开延迟在后台扫描。',
         tierEtfs: 'ETF',
         tierDjia: '道指',
+        tierSp100: '标普100',
+        tierNdx: '纳指100',
         tierCore: '核心并集',
+
         alphaLabel: '执行价参数（α 滑点滑条）',
         alphaDisplay: 'α = {alpha}（中间价 + {pct}% 价差）',
         alphaAggressive: '0.0（激进中间价）',
@@ -940,17 +954,44 @@
       return st;
     }
 
+    const TIER_CONFIG = {
+      etfs: { id: 'tierEtfs', labelKey: 'tierEtfs', fallbackN: 12, uniKeys: ['etfs'] },
+      djia: { id: 'tierDjia', labelKey: 'tierDjia', fallbackN: 30, uniKeys: ['djia'] },
+      sp100: { id: 'tierSp100', labelKey: 'tierSp100', fallbackN: 101, uniKeys: ['sp100'] },
+      ndx: { id: 'tierNdx', labelKey: 'tierNdx', fallbackN: 101, uniKeys: ['ndx', 'nasdaq100'] },
+      core: { id: 'tierCore', labelKey: 'tierCore', fallbackN: 140, uniKeys: ['core'] }
+    };
+
+    function canonicalizeTier(raw) {
+      if (!raw) return 'etfs';
+      const s = String(raw).toLowerCase().trim();
+      if (s === 'nasdaq100' || s === 'npx') return 'ndx';
+      if (s === 'oex') return 'sp100';
+      return TIER_CONFIG[s] ? s : 'etfs';
+    }
+
     function paintScanTier(tier, cfg) {
-      const tierName = tier || (cfg && cfg.scan_tier) || 'etfs';
-      document.getElementById('tierEtfs').className = tierName === 'etfs' ? 'on-delayed' : '';
-      document.getElementById('tierDjia').className = tierName === 'djia' ? 'on-delayed' : '';
-      document.getElementById('tierCore').className = tierName === 'core' ? 'on-delayed' : '';
+      const rawTier = tier || (cfg && cfg.scan_tier) || 'etfs';
+      const tierName = canonicalizeTier(rawTier);
+
+      Object.keys(TIER_CONFIG).forEach(k => {
+        const el = document.getElementById(TIER_CONFIG[k].id);
+        if (el) el.className = (k === tierName) ? 'on-delayed' : '';
+      });
+
       const hint = document.getElementById('scanHint');
       const uni = (cfg && cfg.universe) || {};
-      const n = tierName === 'etfs' ? (uni.etfs || 12) : tierName === 'djia' ? (uni.djia || 30) : (uni.core || 140);
+      const targetMeta = TIER_CONFIG[tierName] || TIER_CONFIG.etfs;
+      let n = targetMeta.fallbackN;
+      for (const k of targetMeta.uniKeys) {
+        if (uni[k] != null && uni[k] > 0) {
+          n = uni[k];
+          break;
+        }
+      }
       const prog = (cfg && cfg.scan_progress) || {};
       const status = cfg && cfg.scan_status;
-      const tierLabel = t(tierName === 'etfs' ? 'tierEtfs' : tierName === 'djia' ? 'tierDjia' : 'tierCore');
+      const tierLabel = t(targetMeta.labelKey);
       if (status === 'running') {
         hint.innerText = t('scanning', { tier: tierLabel, done: prog.done || 0, total: prog.total || n })
           + (prog.symbol ? ` · ${prog.symbol}` : '')
@@ -963,6 +1004,7 @@
         });
       }
     }
+
 
     function startScanPoll() {
       if (scanPollTimer) return;
@@ -1163,6 +1205,11 @@
           body: JSON.stringify({ tier })
         });
         const cfg = await res.json();
+        if (res.status === 409) {
+          paintScanTier(lastCfg && lastCfg.scan_tier, lastCfg);
+          startScanPoll();
+          return;
+        }
         await applyConfig(cfg);
         if (res.status === 202 || cfg.scan_status === 'running') startScanPoll();
         await loadBoards(currentAlpha);
@@ -1170,6 +1217,7 @@
         document.getElementById('scanHint').innerText = t('scanStartFailed');
       }
     }
+
 
     function switchBoard(key, btn) {
       currentBoardKey = key;
@@ -1336,8 +1384,9 @@
               etfs: data.indices.etfs || 0,
               djia: data.indices.djia,
               sp100: data.indices.sp100,
-              ndx: data.indices.nasdaq100,
+              ndx: data.indices.nasdaq100 || data.indices.ndx,
               core: data.master_count
+
             });
           }
         }
