@@ -167,7 +167,6 @@ def evaluate_deep_itm(
                 theta_tier = GuardStatus.REJECT
                 reasons.append(f"HIGH_THETA_DRAG_{theta_daily_pct:.3%}/d")
 
-    tiers = [strike_tier, delta_tier, ratio_tier, lev_tier, carry_tier, dte_tier]
     gates: Dict[str, GuardStatus] = {
         "strike": strike_tier,
         "delta": delta_tier,
@@ -176,13 +175,14 @@ def evaluate_deep_itm(
         "carry": carry_tier,
         "dte": dte_tier,
         "theta": GuardStatus.PASS,
-        "liquidity": GuardStatus.PASS,
+        "oi": GuardStatus.PASS,
+        "spread": GuardStatus.PASS,
+        "volume": GuardStatus.PASS,
     }
     if theta_tier is not None:
-        tiers.append(theta_tier)
         gates["theta"] = theta_tier
 
-    # 6. Shared liquidity (zero-bid, OI, spread). Optional so unit tests can omit quotes.
+    # 6. Shared liquidity split into OI / spread / volume for independent toggles.
     if ask > 0:
         liq = evaluate_liquidity_guard(
             bid=bid,
@@ -192,8 +192,9 @@ def evaluate_deep_itm(
             bid_size=bid_size,
             ask_size=ask_size,
         )
-        tiers.append(liq.status)
-        gates["liquidity"] = liq.status
+        gates["spread"] = liq.spread_status
+        gates["oi"] = liq.oi_status
+        gates["volume"] = liq.volume_status
         reasons.extend(liq.reasons)
 
     status = fold_gates(gates)

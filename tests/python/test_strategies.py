@@ -102,6 +102,21 @@ class TestStrategies(unittest.TestCase):
         )
         self.assertEqual(res.status, GuardStatus.REJECT)
         self.assertTrue(any("ZERO_BID" in r for r in res.reasons))
+        self.assertEqual(res.gates["spread"], GuardStatus.REJECT)
+        self.assertEqual(res.gates["oi"], GuardStatus.PASS)
+        self.assertEqual(res.gates["volume"], GuardStatus.PASS)
+
+    def test_strategy_one_liquidity_components_independent(self):
+        from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
+        from src.leaps_scanner.strategies.guards import GuardStatus
+        low_oi = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80,
+            bid=27.4, ask=28.0, open_interest=40, volume=80, ask_size=20,
+        )
+        self.assertEqual(low_oi.gates["oi"], GuardStatus.REJECT)
+        self.assertEqual(low_oi.gates["spread"], GuardStatus.PASS)
+        self.assertEqual(low_oi.gates["volume"], GuardStatus.PASS)
+        self.assertNotIn("liquidity", low_oi.gates)
 
     def test_strategy_one_runs_when_iv_unavailable(self):
         from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm

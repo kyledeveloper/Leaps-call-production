@@ -546,12 +546,12 @@
     let scanPollTimer = null;
     let lastCfg = null;
     const FILTER_IDS = {
-      deep_itm: ['strike','delta','intrinsic','leverage','carry','theta','dte','liquidity'],
+      deep_itm: ['strike','delta','intrinsic','leverage','carry','theta','dte','oi','spread','volume'],
       vol_discount: ['iv_history','iv_percentile','iv_hv','hv_proxy','regime_b','crash','strike','dte','earnings'],
       oversold: ['universe','bars','rsi','dma','dma_hv','drawdown','bounce','confluence','strike','dte']
     };
     const SIGNAL_IDS = ['rsi','dma','dma_hv','drawdown','bounce'];
-    const FILTER_STORE = 'leaps_filters_v1';
+    const FILTER_STORE = 'leaps_filters_v2';
     let enabledFilters = {};
     (function initFilters() {
       let saved = {};
@@ -810,7 +810,9 @@
           ["Carry  extrinsic/(P×T)", "< 15%/yr", "15 – 35%/yr", "≥ 35%/yr"],
           ["Theta |Θ_day| / P_exec", "< 0.03%/day", "0.03 – 0.10%/day", "≥ 0.10%/day"],
           ["DTE", "≥ 300", "250 – 300", "< 250"],
-          ["Liquidity", "OI / spread / size OK", "Soft OI or spread", "Zero bid, crossed, low OI"]
+          ["OI", "≥ 300", "100 – 299", "< 100"],
+          ["Spread", "rel ≤ 6% or half ≤ max($0.75, 2.5%×mid)", "rel ≤ 10% or half ≤ max($1.50, 5%×mid)", "rel > 10% and half too wide; zero bid / crossed"],
+          ["Volume", "vol ≥ 50 or 20d avg ≥ 20 or size ≥ 10", "vol ≥ 10 and OI ≥ 100", "thin tape"]
         ]
       },
       vol_discount: {
@@ -858,7 +860,9 @@
           ["年化磨损 extrinsic/(P×T)", "< 15%/年", "15 – 35%/年", "≥ 35%/年"],
           ["Theta |Θ日| / P_exec", "< 0.03%/日", "0.03 – 0.10%/日", "≥ 0.10%/日"],
           ["剩余天数", "≥ 300", "250 – 300", "< 250"],
-          ["流动性", "持仓量 / 价差 / 盘口正常", "持仓或价差偏软", "零买、交叉盘、持仓过低"]
+          ["持仓量 OI", "≥ 300", "100 – 299", "< 100"],
+          ["价差 Spread", "相对 ≤ 6% 或半价差 ≤ max($0.75, 2.5%×中间价)", "相对 ≤ 10% 或半价差 ≤ max($1.50, 5%×中间价)", "相对 > 10% 且半价差过宽；零买 / 交叉盘"],
+          ["成交 Volume", "量 ≥ 50 或 20日均 ≥ 20 或盘口 ≥ 10", "量 ≥ 10 且 OI ≥ 100", "盘口过薄"]
         ]
       },
       vol_discount: {
