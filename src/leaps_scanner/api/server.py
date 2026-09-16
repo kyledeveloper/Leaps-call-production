@@ -176,6 +176,13 @@ class AppState:
         payload["message"] = f"Scanned {self.scan_tier} ({len(self.scanned_symbols)} names)."
         return 200, payload
 
+    def cancel_scan(self) -> None:
+        with self._lock:
+            self._scan_seq += 1
+            self._scan_cancel = True
+            self.scan_status = "idle"
+            self.scan_progress = {"done": 0, "total": 0, "symbol": None}
+
     def _scan_worker(self, symbols: List[str], seq: Optional[int] = None) -> None:
         collected: List[StrategyCandidate] = []
         total = len(symbols)
@@ -201,19 +208,25 @@ class AppState:
                 self.scanned_symbols = list(symbols)
 
         if self.source == "delayed":
+            scan_err = None
             try:
                 self.client.get_leaps_candidates(
                     symbols,
                     progress_cb=on_symbol_done,
                     should_stop=should_stop,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                scan_err = exc
+                logger.exception("Delayed scan worker error: %s", exc)
             with self._lock:
                 if seq is not None and seq != self._scan_seq:
                     return
                 if self._scan_cancel:
                     self.scan_status = "idle"
+                    return
+                if scan_err is not None:
+                    self.last_error = f"scan_failed: {scan_err}"
+                    self.scan_status = "error"
                     return
                 asof_day = datetime.now(timezone.utc).date().isoformat()
                 self.iv_store.ingest_from_candidates(collected, asof_day)
@@ -321,13 +334,15 @@ class AppState:
         if source not in ("sandbox", "delayed", "webull"):
             return 400, {**self.public_config(), "error": "invalid_source", "message": "source must be sandbox, delayed, or webull"}
 
-        self._scan_cancel = True
+        with self._lock:
+            self._scan_seq += 1
+            self._scan_cancel = True
+            self.scan_status = "idle"
+            self.scan_progress = {"done": 0, "total": 0, "symbol": None}
+            self.scanned_symbols = []
         thread = self._scan_thread
         if thread is not None and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=2.0)
-        with self._lock:
-            self.scan_status = "idle"
-            self._scan_cancel = False
 
         scan_after: Optional[str] = None
         with self._lock:

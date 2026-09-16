@@ -54,16 +54,27 @@ class RateLimiter:
         self._lock = threading.Lock()
         self._next = 0.0
 
-    def wait(self) -> None:
+    def wait(self, should_stop: Optional[StopFn] = None) -> None:
         if self.min_interval_s <= 0:
             return
+        if should_stop and should_stop():
+            return
         with self._lock:
+            if should_stop and should_stop():
+                return
             now = time.monotonic()
             start = max(self._next, now)
             self._next = start + self.min_interval_s
             delay = start - now
         if delay > 0:
-            time.sleep(delay)
+            step = 0.05
+            remaining = delay
+            while remaining > 0:
+                if should_stop and should_stop():
+                    return
+                sleep_time = min(step, remaining)
+                time.sleep(sleep_time)
+                remaining -= sleep_time
 
 
 def _env_int(name: str, default: int) -> int:
@@ -269,13 +280,33 @@ class PublicDelayedClient:
         self.rate_limiter = RateLimiter(interval)
         self._iv_lock = threading.Lock()
 
-    def _get_json(self, url: str, headers: Dict[str, str], retries: int = 2) -> dict:
+    def _get_json(
+        self,
+        url: str,
+        headers: Dict[str, str],
+        retries: int = 2,
+        should_stop: Optional[StopFn] = None,
+    ) -> dict:
         last_err = "empty"
         for attempt in range(retries + 1):
-            self.rate_limiter.wait()
+            if should_stop and should_stop():
+                raise InterruptedError("fetch cancelled")
+            self.rate_limiter.wait(should_stop=should_stop)
+            if should_stop and should_stop():
+                raise InterruptedError("fetch cancelled")
             status, body = self._fetch(url, headers)
+            if should_stop and should_stop():
+                raise InterruptedError("fetch cancelled")
             if status == 429:
-                time.sleep(0.8 * (attempt + 1))
+                backoff = 0.8 * (attempt + 1)
+                step = 0.05
+                remaining = backoff
+                while remaining > 0:
+                    if should_stop and should_stop():
+                        raise InterruptedError("fetch cancelled")
+                    sleep_time = min(step, remaining)
+                    time.sleep(sleep_time)
+                    remaining -= sleep_time
                 last_err = "rate_limited"
                 continue
             if status != 200 or not body:
@@ -287,7 +318,13 @@ class PublicDelayedClient:
                 last_err = str(type(exc).__name__)
         raise RuntimeError(f"public delayed fetch failed ({last_err}) for {url.split('?')[0]}")
 
-    def _yahoo_chart(self, symbol: str) -> Tuple[float, List[PriceBar], float]:
+    def _yahoo_chart(
+        self,
+        symbol: str,
+        should_stop: Optional[StopFn] = None,
+    ) -> Tuple[float, List[PriceBar], float]:
+        if should_stop and should_stop():
+            return 0.0, [], 0.0
         if self.bar_cache is not None:
             hit = self.bar_cache.get(symbol)
             if hit is not None:
@@ -302,13 +339,20 @@ class PublicDelayedClient:
             "Accept": "application/json",
             "Referer": f"https://finance.yahoo.com/quote/{ticker}",
         }
-        payload = self._get_json(url, headers)
+        payload = self._get_json(url, headers, should_stop=should_stop)
         spot, bars, div_yield = parse_yahoo_chart(payload)
-        if self.bar_cache is not None and bars:
+        if not (should_stop and should_stop()) and self.bar_cache is not None and bars:
             self.bar_cache.put(symbol, spot, bars, div_yield)
         return spot, bars, div_yield
 
-    def _nasdaq_chain(self, symbol: str, asof: datetime) -> Tuple[List[dict], Optional[float]]:
+    def _nasdaq_chain(
+        self,
+        symbol: str,
+        asof: datetime,
+        should_stop: Optional[StopFn] = None,
+    ) -> Tuple[List[dict], Optional[float]]:
+        if should_stop and should_stop():
+            return [], None
         ticker = urllib.parse.quote(symbol)
         start = (asof + timedelta(days=250)).date().isoformat()
         end = (asof + timedelta(days=1100)).date().isoformat()
@@ -316,6 +360,8 @@ class PublicDelayedClient:
         rows: List[dict] = []
         asset_classes = ["etf", "stocks"] if symbol.upper() in _ETF_SET else ["stocks", "etf"]
         for asset in asset_classes:
+            if should_stop and should_stop():
+                return [], None
             url = (
                 "https://api.nasdaq.com/api/quote/"
                 f"{ticker}/option-chain?assetclass={asset}&limit=0"
@@ -328,7 +374,9 @@ class PublicDelayedClient:
                 "Origin": "https://www.nasdaq.com",
             }
             try:
-                payload = self._get_json(url, headers)
+                payload = self._get_json(url, headers, should_stop=should_stop)
+            except InterruptedError:
+                return [], None
             except Exception:
                 continue
             last = parse_nasdaq_last_trade((payload.get("data") or {}).get("lastTrade")) or last
@@ -336,6 +384,8 @@ class PublicDelayedClient:
             if rows:
                 break
         if not rows and last is None:
+            if should_stop and should_stop():
+                return [], None
             raise RuntimeError(f"nasdaq chain empty for {symbol}")
         return rows, last
 
@@ -368,19 +418,29 @@ class PublicDelayedClient:
         if should_stop and should_stop():
             return sym, []
         try:
-            spot, bars, div_yield = self._yahoo_chart(sym)
+            spot, bars, div_yield = self._yahoo_chart(sym, should_stop=should_stop)
+        except InterruptedError:
+            return sym, []
         except Exception as exc:
             logger.warning("Yahoo chart failed for %s: %s", sym, exc)
             spot, bars, div_yield = 0.0, [], 0.0
+        if should_stop and should_stop():
+            return sym, []
         store = PriceStore()
         metrics = None
         if bars:
             store.add_bars(sym, bars)
             metrics = store.get_metrics(sym)
+        if should_stop and should_stop():
+            return sym, []
         try:
-            rows, nasdaq_spot = self._nasdaq_chain(sym, asof)
+            rows, nasdaq_spot = self._nasdaq_chain(sym, asof, should_stop=should_stop)
+        except InterruptedError:
+            return sym, []
         except Exception as exc:
             logger.warning("Nasdaq chain failed for %s: %s", sym, exc)
+            return sym, []
+        if should_stop and should_stop():
             return sym, []
         if nasdaq_spot and nasdaq_spot > 0:
             spot = nasdaq_spot
@@ -402,6 +462,8 @@ class PublicDelayedClient:
         atm_iv: Optional[float] = None
         atm_dist = 1e9
         for row in chosen:
+            if should_stop and should_stop():
+                return sym, []
             if row["strike"] / spot < 0.65:
                 continue
             t_years = row["dte"] / 365.25
@@ -453,6 +515,8 @@ class PublicDelayedClient:
                 valid_history_days=hist_days,
                 data_quality="DELAYED",
             ))
+        if should_stop and should_stop():
+            return sym, []
         self._apply_iv_metrics(sym, symbol_rows, atm_iv, hv, asof.date().isoformat())
         return sym, symbol_rows
 
@@ -480,7 +544,10 @@ class PublicDelayedClient:
                 done = completed
                 out.extend(batch)
             if progress_cb:
-                progress_cb(done, total, sym, batch)
+                try:
+                    progress_cb(done, total, sym, batch)
+                except Exception as cb_err:
+                    logger.warning("Progress callback error for %s: %s", sym, cb_err)
 
         if workers <= 1:
             for raw in names:
@@ -509,9 +576,19 @@ class PublicDelayedClient:
                         continue
                     consume(sym, batch)
             finally:
-                pool.shutdown(wait=False, cancel_futures=True)
+                for pending in futures:
+                    pending.cancel()
+                # Clean shutdown waiting for active cooperative checkpoints so no zombie threads escape
+                pool.shutdown(wait=True, cancel_futures=True)
 
-        self.iv_store.flush()
-        if self.bar_cache is not None:
-            self.bar_cache.flush()
+        if not (should_stop and should_stop()):
+            try:
+                self.iv_store.flush()
+            except Exception as exc:
+                logger.warning("Failed to flush iv_store: %s", exc)
+            if self.bar_cache is not None:
+                try:
+                    self.bar_cache.flush()
+                except Exception as exc:
+                    logger.warning("Failed to flush bar_cache: %s", exc)
         return out
