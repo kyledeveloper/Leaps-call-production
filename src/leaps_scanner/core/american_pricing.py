@@ -58,7 +58,7 @@ def _bs_phi(
     Auxiliary phi function for Bjerksund-Stensland.
     Computes discounted probability integral over early exercise boundary.
     """
-    lambda_val = -r_t + gamma * b_t + 0.5 * gamma * (gamma - 1.0) * variance
+    lambda_val = min(700.0, -r_t + gamma * b_t + 0.5 * gamma * (gamma - 1.0) * variance)
     sqrt_var = math.sqrt(variance)
     d = -(math.log(s / h) + (b_t + (gamma - 0.5) * variance)) / sqrt_var
     kappa = (2.0 * b_t) / variance + (2.0 * gamma - 1.0)
@@ -87,16 +87,17 @@ def bjerksund_stensland_2002(
     eur_call = black_scholes_call(spot, strike, t, r, q, sigma)
 
     b = r - q
-    # When cost of carry b >= r (i.e. q <= 0), early exercise is never optimal
-    if b >= r or q <= 1e-7:
+    r_t = r * t
+    b_t = b * t
+
+    # When cost of carry b >= r (i.e. q <= 0), or dividend yield is microscopic, early exercise is never optimal
+    if b >= r or (q * t) <= 1e-7 or abs(r_t - b_t) <= 1e-7:
         return eur_call
 
     if sigma <= 1e-4:
         return max(eur_call, spot - strike)
 
     variance = sigma * sigma * t
-    r_t = r * t
-    b_t = b * t
 
     disc = (b_t / variance - 0.5) ** 2 + (2.0 * r_t) / variance
     if disc < 0:
@@ -109,7 +110,11 @@ def bjerksund_stensland_2002(
     b_infinity = (beta / (beta - 1.0)) * strike
     b_0 = strike if b_t == r_t else max(strike, (r_t / (r_t - b_t)) * strike)
 
+    if abs(b_infinity - b_0) < 1e-7:
+        return eur_call
+
     ht = -(b_t + 2.0 * math.sqrt(variance)) * (b_0 / (b_infinity - b_0))
+    ht = min(700.0, max(-700.0, ht))
     i_trigger = b_0 + (b_infinity - b_0) * (1.0 - math.exp(ht))
 
     # Immediate exercise check

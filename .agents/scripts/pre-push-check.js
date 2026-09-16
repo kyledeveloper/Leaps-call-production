@@ -28,7 +28,9 @@ const SECRET_PATTERNS = [
   { name: 'Private Key Header', regex: /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/ },
   { name: 'Slack Token', regex: /xox[baprs]-[0-9a-zA-Z]{10,48}/ },
   { name: 'Stripe Secret Key', regex: /sk_live_[0-9a-zA-Z]{24}/ },
-  { name: 'Google API Key', regex: /AIza[0-9A-Za-z\-_]{35}/ }
+  { name: 'Google API Key', regex: /AIza[0-9A-Za-z\-_]{35}/ },
+  { name: 'Webull App Key', regex: /\b(?:us|hk|jp|sg|au)\.[a-f0-9]{32}\b/i },
+  { name: 'Webull App Secret / Token', regex: /(?:webull_app_secret|app_secret|webull.*token)\s*[:=]\s*['"][a-f0-9]{32}['"]/i }
 ];
 
 // Sensitive file patterns
@@ -40,6 +42,10 @@ const SENSITIVE_FILE_PATTERNS = [
       if (/\.env\.(example|sample|template|test)$/i.test(base)) return false;
       return /^\.env(?:\..+)?$/i.test(base);
     }
+  },
+  {
+    type: 'WEBULL_TOKEN_FILE',
+    test: (file) => /(?:^|\/)\.webull_token\.json$/i.test(file) || /\bwebull.*\.token\b/i.test(file)
   },
   {
     type: 'PRIVATE_KEY_FILE',

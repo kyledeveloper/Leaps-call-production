@@ -3,8 +3,16 @@ Command Line Interface for LEAPS Call Quant Scanner.
 Outputs formatted financial strategy boards to terminal and supports launching web dashboard.
 """
 import argparse
+import os
 import sys
+from pathlib import Path
 from typing import List, Optional
+
+# Ensure repository root is on sys.path for direct script execution
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
 from src.leaps_scanner.api.server import AppState, run_server
 from src.leaps_scanner.data.universe import get_universe, SymbologyNormalizer
 from src.leaps_scanner.data.rebalancer import get_universe_manager

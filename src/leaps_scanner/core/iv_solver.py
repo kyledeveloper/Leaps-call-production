@@ -116,7 +116,7 @@ def solve_implied_volatility(
 
     # Pure intrinsic (zero extrinsic) check
     if abs(price - intrinsic) < 1e-4:
-        return IVResult(iv=0.001, status="ZERO_EXTRINSIC")
+        return IVResult(iv=None, status="ZERO_EXTRINSIC")
 
     def model_price(vol: float) -> float:
         return bjerksund_stensland_2002(spot, strike, t, r, q, max(1e-4, vol))

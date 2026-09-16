@@ -44,3 +44,5 @@ venv/
 .env
 .env.local
 .env.*.local
+.webull_token.json
+*.token

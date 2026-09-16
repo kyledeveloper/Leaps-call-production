@@ -104,10 +104,22 @@ def evaluate_unusual_flow(inp: UnusualFlowInput) -> UnusualFlowResult:
     mid = (inp.bid + inp.ask) / 2.0
     dollar_volume = mid * CONTRACT_MULTIPLIER * inp.volume
 
-    if inp.open_interest > 0:
-        vol_oi_ratio = inp.volume / float(inp.open_interest)
-    else:
-        vol_oi_ratio = float(inp.volume)
+    # 4. Open interest validity check (Defensive Clause 4)
+    if inp.open_interest <= 0:
+        reasons.append("NON_POSITIVE_OPEN_INTEREST")
+        return UnusualFlowResult(
+            symbol=canonical_symbol,
+            status=GuardStatus.REJECT,
+            vol_oi_ratio=0.0,
+            dollar_volume=dollar_volume,
+            volume=inp.volume,
+            open_interest=inp.open_interest,
+            buyer_aggressor_tag=False,
+            caveat_notice=CAVEAT_NOTICE,
+            reasons=reasons
+        )
+
+    vol_oi_ratio = inp.volume / float(inp.open_interest)
 
     # Tier 1: Vol/OI Ratio
     # Pass: >= 3.0 and OI >= 50

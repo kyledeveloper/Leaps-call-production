@@ -61,6 +61,7 @@ class StrategyCandidate:
     valid_history_days: int = 252
     days_to_earnings: Optional[int] = None
     liquidity_status: GuardStatus = GuardStatus.PASS
+    data_quality: str = "REALTIME"
 
 
 @dataclass(frozen=True)
@@ -225,6 +226,37 @@ class MemoryRanker:
                     strategy_name="vol_discount",
                     iv_percentile=c.iv_percentile,
                     regime=vol_c_res.regime
+                ))
+            else:
+                # Defensive Clause 3: Symmetrical telemetry - record REJECT instead of silent drop
+                reject_reasons = []
+                if c.iv is None:
+                    reject_reasons.append("ZERO_EXTRINSIC_IV_UNAVAILABLE")
+                if c.iv_percentile is None:
+                    reject_reasons.append("MISSING_IV_PERCENTILE")
+                vol_discount_items.append(RankedItem(
+                    symbol=c.symbol,
+                    underlying=c.underlying,
+                    strike=c.strike,
+                    spot=c.spot,
+                    dte=c.dte,
+                    bid=c.bid,
+                    ask=c.ask,
+                    p_exec=pexec_res.p_exec,
+                    p_sell=rt_res.p_sell,
+                    round_trip_per_contract=rt_res.round_trip_per_contract,
+                    delta=c.delta,
+                    intrinsic_per_share=carry_res.intrinsic_per_share,
+                    extrinsic_per_share=carry_res.extrinsic_per_share,
+                    carry_cost=carry_res.total_annualized_carry,
+                    effective_leverage=leverage,
+                    status=GuardStatus.REJECT,
+                    reasons=reject_reasons,
+                    open_interest=c.open_interest,
+                    volume=c.volume,
+                    strategy_name="vol_discount",
+                    iv_percentile=c.iv_percentile,
+                    regime="NONE"
                 ))
 
             # 3. Strategy 3: Blue-Chip Oversold Confluence

@@ -15,6 +15,11 @@ class AmericanGreeks:
     vega: float
     rho: float
 
+    @property
+    def theta_daily(self) -> float:
+        """Daily time decay sensitivity per calendar day (theta / 365.25)."""
+        return self.theta / 365.25
+
 
 def calculate_american_greeks(
     spot: float,

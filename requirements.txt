@@ -1,0 +1,5 @@
+# LEAPS Call Quantitative Scanner Requirements
+# Core quant engine has ZERO mandatory runtime external dependencies (Pure Standard Library)
+#
+# Optional development and testing tools:
+pytest>=7.0.0
