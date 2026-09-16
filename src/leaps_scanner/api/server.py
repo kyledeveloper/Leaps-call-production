@@ -58,12 +58,12 @@ class AppState:
         ):
             offline_mode = True
         self.offline_mode = offline_mode
+        if offline_mode:
+            _forget_env_secrets()
         self.client = WebullClient(
             offline_mode=offline_mode,
             token_file=None,
         )
-        if offline_mode:
-            _forget_env_secrets()
         self.universe_manager = get_universe_manager(offline_mode=offline_mode)
         self.iv_store = IVHistoryStore(persist_path=str(default_iv_history_path()))
         self.candidates: List[StrategyCandidate] = []
@@ -263,8 +263,8 @@ class AppState:
                 scan_after = "async"
 
             else:
-                key = (app_key or (getattr(self.client, "app_key", None) if self.client else None) or "").strip()
-                secret = (app_secret or (getattr(self.client, "app_secret", None) if self.client else None) or "").strip()
+                key = (app_key or (getattr(self.client, "app_key", None) if self.client and not getattr(self.client, "offline_mode", True) else None) or "").strip()
+                secret = (app_secret or (getattr(self.client, "app_secret", None) if self.client and not getattr(self.client, "offline_mode", True) else None) or "").strip()
                 if not key or not secret:
                     self.last_error = "missing_credentials"
                     return 400, {

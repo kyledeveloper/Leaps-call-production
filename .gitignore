@@ -44,3 +44,7 @@ venv/
 data/iv_history.json
 data/iv_history.tmp
 
+# Secrets & Local Environment
+.env
+.env.*
+.webull_token.json
