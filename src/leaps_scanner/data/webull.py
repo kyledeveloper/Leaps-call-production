@@ -142,6 +142,8 @@ class TokenBucketRateLimiter:
         self._lock = threading.Lock()
 
     def acquire(self, tokens: float = 1.0, block: bool = False, timeout: Optional[float] = None) -> bool:
+        if tokens > self.capacity:
+            raise ValueError(f"Requested tokens ({tokens}) exceeds bucket capacity ({self.capacity})")
         start_time = time.monotonic()
         while True:
             with self._lock:
@@ -207,7 +209,7 @@ class SafePaginationIterator:
 
         while current_page < self.max_pages:
             items, next_key = self.fetch_page_fn(pagination_key)
-            for item in items:
+            for item in (items or []):
                 yield item
 
             if not next_key:
@@ -238,6 +240,7 @@ class SingleFlightAuthManager:
         self._token: Optional[str] = None
         self._expiry_time: float = 0.0
         self._lock = threading.Lock()
+        self._refresh_lock = threading.Lock()
         self._load_from_file()
 
     def _load_from_file(self):
@@ -284,13 +287,20 @@ class SingleFlightAuthManager:
             if self._token is not None and now < self._expiry_time:
                 return self._token
 
-        # Fetch outside mutex to prevent lock starvation
-        new_token = self._refresh_fn()
+        # Serialize refresh attempts with single-flight mutex to avoid 2FA herd storm
+        with self._refresh_lock:
+            # Double-checked locking: another thread may have acquired fresh token
+            with self._lock:
+                now = time.monotonic()
+                if self._token is not None and now < self._expiry_time:
+                    return self._token
 
-        with self._lock:
-            self._token = new_token
-            self._expiry_time = time.monotonic() + self._ttl_seconds
-            return self._token
+            new_token = self._refresh_fn()
+
+            with self._lock:
+                self._token = new_token
+                self._expiry_time = time.monotonic() + self._ttl_seconds
+                return self._token
 
 
 def parse_webull_chain_response(payload: dict) -> List[StrategyCandidate]:
@@ -434,7 +444,10 @@ class WebullClient:
         self.rate_limiter = TokenBucketRateLimiter(rate=5.0, capacity=5.0)
         self.permission_breaker = FailFastPermissionBreaker()
 
-        t_file = token_file or os.path.join(os.getcwd(), ".webull_token.json")
+        if self.offline_mode:
+            t_file = token_file
+        else:
+            t_file = token_file or os.path.join(os.getcwd(), ".webull_token.json")
         self.auth = SingleFlightAuthManager(refresh_fn=self._refresh_token, token_file=t_file)
 
     def _refresh_token(self) -> str:
@@ -484,6 +497,7 @@ class WebullClient:
         body_dict: Optional[Dict[str, Any]] = None,
         require_auth: bool = True
     ) -> Tuple[int, Any]:
+        self.permission_breaker.check_permission()
         self.rate_limiter.acquire(tokens=1.0, block=True)
 
         req_headers, _ = WebullSigner.calc_signature(
@@ -517,8 +531,6 @@ class WebullClient:
         )
 
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
 
         try:
             with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:

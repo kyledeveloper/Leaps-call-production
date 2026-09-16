@@ -122,7 +122,7 @@ class TestWebullAdapter(unittest.TestCase):
     def test_log_sanitizer(self):
         from src.leaps_scanner.data.webull import LogSanitizer
         raw_headers = {
-            "x-app-key": "us.45a4bd81dd25a0f9403b2c0be28869f9",
+            "x-app-key": "us.test_dummy_app_key_placeholder",
             "x-signature": "abcdef1234567890abcdef1234567890=",
             "x-access-token": "secret_live_token_999",
             "Content-Type": "application/json"
@@ -212,6 +212,49 @@ class TestWebullAdapter(unittest.TestCase):
         all_items = list(iterator)
         self.assertEqual(len(all_items), 3)
         self.assertEqual([it["id"] for it in all_items], [1, 2, 3])
+
+        # Test guard against fetch returning None items
+        nil_iterator = SafePaginationIterator(fetch_page_fn=lambda k: (None, None))
+        self.assertEqual(list(nil_iterator), [])
+
+    def test_token_bucket_capacity_exceeded(self):
+        from src.leaps_scanner.data.webull import TokenBucketRateLimiter
+        limiter = TokenBucketRateLimiter(rate=5.0, capacity=2.0)
+        with self.assertRaises(ValueError):
+            limiter.acquire(tokens=3.0)
+
+    def test_single_flight_concurrent_refresh(self):
+        import concurrent.futures
+        import threading
+        import time
+        from src.leaps_scanner.data.webull import SingleFlightAuthManager
+
+        refresh_count = 0
+        lock = threading.Lock()
+
+        def slow_refresh():
+            nonlocal refresh_count
+            time.sleep(0.02)
+            with lock:
+                refresh_count += 1
+            return "shared_concurrent_token"
+
+        auth = SingleFlightAuthManager(refresh_fn=slow_refresh, ttl_seconds=3600.0)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [executor.submit(auth.get_token) for _ in range(8)]
+            results = [f.result() for f in futures]
+
+        self.assertEqual(refresh_count, 1)
+        for tok in results:
+            self.assertEqual(tok, "shared_concurrent_token")
+
+    def test_http_request_aborts_when_permission_breaker_tripped(self):
+        from src.leaps_scanner.data.webull import WebullClient, PermissionDeniedOpraError
+        client = WebullClient(offline_mode=True)
+        client.permission_breaker.record_error(403, "MARKET_DATA_NOT_SUBSCRIBED")
+        with self.assertRaises(PermissionDeniedOpraError):
+            client._http_request("/market-data/test")
 
 
 if __name__ == "__main__":
