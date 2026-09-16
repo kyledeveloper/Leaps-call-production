@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from src.leaps_scanner.data.webull import WebullClient
 from src.leaps_scanner.data.public_delayed import PublicDelayedClient
+from src.leaps_scanner.data.store.iv_history import IVHistoryStore, default_iv_history_path
 from src.leaps_scanner.scoring.ranker import MemoryRanker, RankedItem, StrategyCandidate
 from src.leaps_scanner.data.rebalancer import get_universe_manager
 from src.leaps_scanner.data.universe import SymbologyNormalizer
@@ -64,6 +65,7 @@ class AppState:
         if offline_mode:
             _forget_env_secrets()
         self.universe_manager = get_universe_manager(offline_mode=offline_mode)
+        self.iv_store = IVHistoryStore(persist_path=str(default_iv_history_path()))
         self.candidates: List[StrategyCandidate] = []
         self.ranker: Optional[MemoryRanker] = None
         self.last_scan_time: Optional[str] = None
@@ -156,6 +158,9 @@ class AppState:
                 self.scan_progress = {"done": i + 1, "total": total, "symbol": sym}
                 self.scanned_symbols = list(symbols)
         with self._lock:
+            if self.source in ("delayed", "webull"):
+                asof_day = datetime.now(timezone.utc).date().isoformat()
+                self.iv_store.ingest_from_candidates(collected, asof_day)
             self.scan_status = "done"
 
     def get_boards(self, alpha: float = 0.5) -> Dict[str, List[Dict[str, Any]]]:
@@ -206,7 +211,7 @@ class AppState:
                 "djia": len(self.universe_manager.get_constituents("djia")),
                 "core": len(self.universe_manager.get_master_universe()),
             },
-            "strategies": ["deep_itm", "vol_discount", "oversold", "unusual_flow"],
+            "strategies": ["deep_itm", "vol_discount", "oversold"],
         }
 
     def set_mode(
@@ -249,7 +254,7 @@ class AppState:
 
             elif source == "delayed":
                 _forget_env_secrets()
-                self.client = PublicDelayedClient()
+                self.client = PublicDelayedClient(iv_store=self.iv_store)
                 self.universe_manager = get_universe_manager(offline_mode=True)
                 self.offline_mode = False
                 self.source = "delayed"

@@ -57,45 +57,6 @@ class TestFinancialEdgeCases(unittest.TestCase):
         self.assertEqual(res.status, 'ZERO_EXTRINSIC')
         self.assertIsNone(res.iv)
 
-    def test_unusual_flow_non_positive_open_interest_guard(self):
-        from src.leaps_scanner.strategies.unusual_flow import evaluate_unusual_flow, UnusualFlowInput
-
-        flow_input_zero = UnusualFlowInput(
-            symbol='AAPL270115C00220000',
-            underlying='AAPL',
-            spot=220.0,
-            strike=220.0,
-            dte=360.0,
-            bid=19.5,
-            ask=20.5,
-            volume=600,
-            open_interest=0,
-            is_etf=False,
-            liquidity_status=GuardStatus.PASS
-        )
-        res_zero = evaluate_unusual_flow(flow_input_zero)
-        self.assertEqual(res_zero.status, GuardStatus.REJECT)
-        self.assertEqual(res_zero.vol_oi_ratio, 0.0)
-        self.assertIn('NON_POSITIVE_OPEN_INTEREST', res_zero.reasons)
-
-        flow_input_neg = UnusualFlowInput(
-            symbol='AAPL270115C00220000',
-            underlying='AAPL',
-            spot=220.0,
-            strike=220.0,
-            dte=360.0,
-            bid=19.5,
-            ask=20.5,
-            volume=600,
-            open_interest=-5,
-            is_etf=False,
-            liquidity_status=GuardStatus.PASS
-        )
-        res_neg = evaluate_unusual_flow(flow_input_neg)
-        self.assertEqual(res_neg.status, GuardStatus.REJECT)
-        self.assertEqual(res_neg.vol_oi_ratio, 0.0)
-        self.assertIn('NON_POSITIVE_OPEN_INTEREST', res_neg.reasons)
-
     def test_greeks_theta_daily_property(self):
         from src.leaps_scanner.core.greeks import calculate_american_greeks
 
@@ -133,8 +94,8 @@ class TestFinancialEdgeCases(unittest.TestCase):
 
         self.assertEqual(len(boards['deep_itm']), 1)
         self.assertEqual(len(boards['oversold']), 1)
-        self.assertEqual(len(boards['unusual_flow']), 1)
         self.assertEqual(len(boards['vol_discount']), 1)
+        self.assertNotIn('unusual_flow', boards)
         item = boards['vol_discount'][0]
         self.assertEqual(item.status, GuardStatus.REJECT)
         self.assertTrue(any('IV_UNAVAILABLE' in r or 'MISSING_IV' in r for r in item.reasons))

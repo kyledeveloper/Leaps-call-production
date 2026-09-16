@@ -10,10 +10,9 @@ STRATEGY_STRIKE_RATIOS: Dict[str, Tuple[float, float]] = {
     "deep_itm": (0.65, 0.85),       # Stock-replacement zone; 0.50S is prepaid equity
     "vol_discount": (0.70, 1.25),   # Long vega ATM / near-money contracts
     "oversold": (0.50, 1.25),       # Mean-reversion ITM/ATM LEAPS
-    "unusual_flow": (0.70, 1.35)    # Far-dated institutional flow
 }
 
-DEFAULT_RATIO_RANGE = (0.50, 1.35)
+DEFAULT_RATIO_RANGE = (0.50, 1.25)
 # Calls with delta above this are prepaid stock — skip ingest, ranking, and boards.
 MAX_CALL_DELTA = 0.90
 

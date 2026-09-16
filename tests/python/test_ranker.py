@@ -91,7 +91,7 @@ class TestRankerAndMemoryReordering(unittest.TestCase):
         self.assertIn("deep_itm", boards)
         self.assertIn("vol_discount", boards)
         self.assertIn("oversold", boards)
-        self.assertIn("unusual_flow", boards)
+        self.assertNotIn("unusual_flow", boards)
 
         # In vol_discount board, AAPL should pass Regime A
         self.assertEqual(len(boards["vol_discount"]), 1)
@@ -102,11 +102,6 @@ class TestRankerAndMemoryReordering(unittest.TestCase):
         self.assertEqual(len(boards["oversold"]), 1)
         self.assertEqual(boards["oversold"][0].strategy_name, "oversold")
         self.assertGreaterEqual(boards["oversold"][0].confluence_score, 2.0)
-
-        # In unusual_flow board, Vol/OI is 2000/500 = 4.0, Dollar Vol is 33 * 100 * 2000 = $6.6M -> PASS!
-        self.assertEqual(len(boards["unusual_flow"]), 1)
-        self.assertEqual(boards["unusual_flow"][0].strategy_name, "unusual_flow")
-        self.assertAlmostEqual(boards["unusual_flow"][0].vol_oi_ratio, 4.0)
 
 if __name__ == "__main__":
     unittest.main()

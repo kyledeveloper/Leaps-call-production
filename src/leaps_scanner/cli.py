@@ -57,7 +57,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--universe", type=str, default=None, choices=["sp100", "nasdaq100", "djia", "etfs", "adrs", "all"], help="Predefined universe: sp100, nasdaq100, djia, etfs, adrs, all")
     parser.add_argument("--sync-universe", action="store_true", help="Check remote sources and sync index constituents")
     parser.add_argument("--alpha", type=float, default=0.5, help="Execution slippage alpha in [0.0, 1.0]")
-    parser.add_argument("--strategy", type=str, default="all", choices=["all", "deep_itm", "vol_discount", "oversold", "unusual_flow"], help="Strategy filter")
+    parser.add_argument("--strategy", type=str, default="all", choices=["all", "deep_itm", "vol_discount", "oversold"], help="Strategy filter")
     parser.add_argument("--serve", action="store_true", help="Launch interactive Web Dashboard HTTP server")
     parser.add_argument("--port", type=int, default=8000, help="Web Dashboard port")
     parser.add_argument("--offline", action="store_true", default=False, help="Force offline sandbox mode (default: online/live data)")
@@ -160,28 +160,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             for it in items
         ]
         print(format_ascii_table("Strategy 3: Blue-Chip Oversold Confluence", headers, rows))
-
-    # 4. Unusual Flow Board
-    if args.strategy in ("all", "unusual_flow"):
-        items = boards.get("unusual_flow", [])
-        headers = ["Symbol", "Underlying", "Strike", "DTE", "P_exec", "Vol / OI", "Vol/OI Ratio", "Dollar Vol", "Status"]
-        rows = [
-            [
-                it["symbol"],
-                it["underlying"],
-                f"${it['strike']:.1f}",
-                f"{int(it['dte'])}d",
-                f"${it['p_exec']:.2f}",
-                f"{it['volume']} / {it['open_interest']}",
-                f"{it.get('vol_oi_ratio', 0.0):.2f}x",
-                f"${it.get('dollar_volume', 0.0):,.0f}",
-                it["status"]
-            ]
-            for it in items
-        ]
-        print(format_ascii_table("Strategy 4: Unusual Far-Dated Options Flow", headers, rows))
-        print("Note: Far-dated flow includes rollovers, tax-loss harvesting, and structured hedging;")
-        print("      signals direction with lower certainty than short-dated UOA.")
 
     return 0
 

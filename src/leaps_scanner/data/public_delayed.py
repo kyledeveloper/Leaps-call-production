@@ -25,6 +25,7 @@ from src.leaps_scanner.core.greeks import calculate_american_greeks
 from src.leaps_scanner.core.iv_solver import solve_implied_volatility
 from src.leaps_scanner.core.rates import RateCurve
 from src.leaps_scanner.data.store.prices import PriceBar, PriceStore
+from src.leaps_scanner.data.store.iv_history import IVDataPoint, IVHistoryStore
 from src.leaps_scanner.data.universe import CORE_ETFS, SymbologyNormalizer
 from src.leaps_scanner.data.funnel import keep_scan_delta
 from src.leaps_scanner.scoring.ranker import StrategyCandidate
@@ -200,11 +201,12 @@ class PublicDelayedClient:
     app_key = None
     app_secret = None
 
-    def __init__(self, fetch_fn: Optional[FetchFn] = None):
+    def __init__(self, fetch_fn: Optional[FetchFn] = None, iv_store: Optional[IVHistoryStore] = None):
         self._fetch = fetch_fn or _default_fetch
         self.offline_mode = False
         self.source = "delayed"
         self.rates = RateCurve()
+        self.iv_store = iv_store if iv_store is not None else IVHistoryStore()
 
     def _get_json(self, url: str, headers: Dict[str, str], retries: int = 2) -> dict:
         last_err = "empty"
@@ -294,11 +296,18 @@ class PublicDelayedClient:
             chosen = _select_contracts(rows, spot)
             is_etf = sym.upper() in _ETF_SET
             hv = metrics.hv_252 if metrics and metrics.hv_252 > 0 else 0.25
+            hv20 = metrics.hv_20 if metrics and metrics.hv_20 > 0 else hv
+            hv_pct = metrics.hv_percentile if metrics else None
+            hv_z = metrics.hv_z_score if metrics else 0.0
+            chg20 = metrics.pct_change_20d if metrics else 0.0
             rsi = metrics.rsi_14 if metrics else 50.0
             dma = metrics.pct_to_200dma if metrics else 0.0
             dd = metrics.drawdown_52w_high if metrics else 0.0
             bounce = metrics.bounce_52w_low if metrics else 0.0
             hist_days = metrics.bar_count if metrics else 0
+            symbol_rows: List[StrategyCandidate] = []
+            atm_iv: Optional[float] = None
+            atm_dist = 1e9
             for row in chosen:
                 if row["strike"] / spot < 0.65:
                     continue
@@ -312,12 +321,16 @@ class PublicDelayedClient:
                 try:
                     greeks = calculate_american_greeks(spot, row["strike"], t_years, r, div_yield, greeks_vol)
                     delta = greeks.delta
-                    delta = greeks.delta
                 except Exception:
                     delta = max(0.05, min(0.95, 0.5 + 0.5 * (spot - row["strike"]) / max(spot, 1.0)))
                 if not keep_scan_delta(delta):
                     continue
-                out.append(StrategyCandidate(
+                if iv is not None:
+                    dist = abs(row["strike"] / spot - 1.0)
+                    if dist < atm_dist:
+                        atm_dist = dist
+                        atm_iv = float(iv)
+                symbol_rows.append(StrategyCandidate(
                     symbol=row["symbol"],
                     underlying=sym.upper(),
                     strike=row["strike"],
@@ -338,8 +351,24 @@ class PublicDelayedClient:
                     bounce_52w_low=bounce,
                     is_etf=is_etf,
                     hv_252=hv,
+                    hv_20=hv20,
+                    hv_percentile=hv_pct,
+                    hv_z_score=hv_z,
+                    pct_change_20d=chg20,
                     valid_history_days=hist_days,
                     data_quality="DELAYED",
                 ))
+            asof_day = asof.date().isoformat()
+            if atm_iv is not None:
+                self.iv_store.add_data_point(sym, IVDataPoint(trade_date=asof_day, atm_iv=atm_iv))
+            ivm = self.iv_store.get_metrics(sym, atm_iv if atm_iv is not None else hv)
+            for cand in symbol_rows:
+                cand.iv_history_days = ivm.valid_days
+                if not ivm.is_degraded:
+                    cand.iv_percentile = ivm.iv_percentile
+                    cand.iv_rank = ivm.iv_rank
+                    cand.iv_z_score = ivm.iv_z_score
+            out.extend(symbol_rows)
             time.sleep(0.12)
+        self.iv_store.flush()
         return out

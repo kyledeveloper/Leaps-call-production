@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -145,6 +145,9 @@
       text-transform: uppercase;
     }
     .strategy-help[open] summary::after { content: "Hide ▴"; }
+    html[data-lang="zh"] .strategy-help summary::after { content: "展开 ▾"; text-transform: none; }
+    html[data-lang="zh"] .strategy-help[open] summary::after { content: "收起 ▴"; }
+    .lang-toggle button.on-lang { background: rgba(56, 189, 248, 0.2); color: var(--accent-blue); }
     .help-body { padding: 0 16px 16px; }
     .help-body p { color: var(--text-muted); font-size: 13px; margin-bottom: 12px; max-width: 72ch; }
     .factor-table {
@@ -391,43 +394,47 @@
 
   <div class="header">
     <div class="title-group">
-      <h1>🦅 LEAPS Call Quant Scanner</h1>
-      <p>Multi-Strategy Quantitative Screening for Far-Dated Call Options (DTE ≥ 250d)</p>
+      <h1>🦅 <span data-i18n="appTitle">LEAPS Call Quant Scanner</span></h1>
+      <p data-i18n="appSubtitle">Multi-Strategy Quantitative Screening for Far-Dated Call Options (DTE ≥ 250d)</p>
     </div>
     <div class="status-badges">
-      <span class="badge badge-online" id="engineStatus">Sandbox Mode</span>
-      <span class="badge" style="background: rgba(147, 51, 234, 0.15); color: #c084fc; border: 1px solid rgba(147, 51, 234, 0.3);" id="universeBadge">Universe: Loading...</span>
-      <button class="btn" style="background: #334155; color: #f8fafc;" onclick="triggerUniverseSync(event)">⚡ Sync Rebalance</button>
-      <button class="btn" onclick="triggerScan()">🔄 Refresh Scan</button>
+      <div class="toggle lang-toggle" role="group" aria-label="Language">
+        <button type="button" id="langEn" class="on-lang" onclick="setLang('en')">EN</button>
+        <button type="button" id="langZh" onclick="setLang('zh')">中文</button>
+      </div>
+      <span class="badge badge-online" id="engineStatus" data-i18n="statusSandbox">Sandbox Mode</span>
+      <span class="badge" style="background: rgba(147, 51, 234, 0.15); color: #c084fc; border: 1px solid rgba(147, 51, 234, 0.3);" id="universeBadge" data-i18n="universeLoading">Universe: Loading...</span>
+      <button class="btn" style="background: #334155; color: #f8fafc;" id="btnSync" onclick="triggerUniverseSync(event)">⚡ Sync Rebalance</button>
+      <button class="btn" id="btnScan" onclick="triggerScan()">🔄 Refresh Scan</button>
     </div>
   </div>
 
   <div class="source-panel">
     <div class="source-row">
       <div>
-        <strong>Market data source</strong>
-        <div class="hint" id="sourceHint">Sandbox fixtures by default. Delayed public uses Yahoo daily bars + Nasdaq OPRA delayed chains — no keys. Webull still needs OpenAPI keys.</div>
+        <strong data-i18n="marketDataSource">Market data source</strong>
+        <div class="hint" id="sourceHint" data-i18n="sourceHintDefault">Sandbox fixtures by default. Delayed public uses Yahoo daily bars + Nasdaq OPRA delayed chains — no keys. Webull still needs OpenAPI keys.</div>
       </div>
       <div class="toggle" role="group" aria-label="Data source">
-        <button type="button" id="btnSandbox" class="on-sandbox" onclick="switchSource('sandbox')">Sandbox</button>
-        <button type="button" id="btnDelayed" onclick="switchSource('delayed')">Delayed public</button>
-        <button type="button" id="btnLive" onclick="switchSource('webull')">Live Webull</button>
+        <button type="button" id="btnSandbox" class="on-sandbox" onclick="switchSource('sandbox')" data-i18n="btnSandbox">Sandbox</button>
+        <button type="button" id="btnDelayed" onclick="switchSource('delayed')" data-i18n="btnDelayed">Delayed public</button>
+        <button type="button" id="btnLive" onclick="switchSource('webull')" data-i18n="btnLive">Live Webull</button>
       </div>
     </div>
     <form id="credForm" class="cred-grid" style="display:none;" onsubmit="connectLive(event)">
       <input id="appKey" type="text" autocomplete="off" spellcheck="false" placeholder="WEBULL_APP_KEY" />
       <input id="appSecret" type="password" autocomplete="new-password" placeholder="WEBULL_APP_SECRET" />
-      <button class="btn" type="submit" id="btnConnect">Connect live</button>
+      <button class="btn" type="submit" id="btnConnect" data-i18n="connectLive">Connect live</button>
     </form>
     <div class="source-row">
       <div>
-        <strong>Scan universe</strong>
-        <div class="hint" id="scanHint">Wired to universe_manager. ETFs 12 · DJIA 30 · Core = SP100 ∪ NDX ∪ DJIA ∪ ETFs. Delayed public scans in the background.</div>
+        <strong data-i18n="scanUniverse">Scan universe</strong>
+        <div class="hint" id="scanHint" data-i18n="scanHintDefault">Wired to universe_manager. ETFs 12 · DJIA 30 · Core = SP100 ∪ NDX ∪ DJIA ∪ ETFs. Delayed public scans in the background.</div>
       </div>
       <div class="toggle" role="group" aria-label="Scan universe">
-        <button type="button" id="tierEtfs" class="on-delayed" onclick="setScanTier('etfs')">ETFs</button>
-        <button type="button" id="tierDjia" onclick="setScanTier('djia')">DJIA</button>
-        <button type="button" id="tierCore" onclick="setScanTier('core')">Core union</button>
+        <button type="button" id="tierEtfs" class="on-delayed" onclick="setScanTier('etfs')" data-i18n="tierEtfs">ETFs</button>
+        <button type="button" id="tierDjia" onclick="setScanTier('djia')" data-i18n="tierDjia">DJIA</button>
+        <button type="button" id="tierCore" onclick="setScanTier('core')" data-i18n="tierCore">Core union</button>
       </div>
     </div>
   </div>
@@ -436,28 +443,27 @@
   <div class="panel">
     <div class="slider-box">
       <div class="slider-header">
-        <span>Execution Price Parameter (α Slippage Slider)</span>
+        <span data-i18n="alphaLabel">Execution Price Parameter (α Slippage Slider)</span>
         <span class="alpha-val" id="alphaDisplay">α = 0.50 (Midpoint + 50% Spread)</span>
       </div>
       <input type="range" id="alphaSlider" min="0" max="1" step="0.05" value="0.5" oninput="handleAlphaChange(this.value)">
       <div class="slider-legend">
-        <span>0.0 (Aggressive Mid)</span>
-        <span>0.5 (Conservative Mid)</span>
-        <span>1.0 (Worst-case Ask)</span>
+        <span data-i18n="alphaAggressive">0.0 (Aggressive Mid)</span>
+        <span data-i18n="alphaConservative">0.5 (Conservative Mid)</span>
+        <span data-i18n="alphaAsk">1.0 (Worst-case Ask)</span>
       </div>
     </div>
     <div class="panel-meta">
-      <div><strong>Re-rank Latency:</strong> <span id="rerankTime" class="num">&lt; 1 ms</span></div>
-      <div><strong>Network Re-fetch:</strong> 0 KB (Zero Network Memory Recalculation)</div>
+      <div><strong data-i18n="rerankLatency">Re-rank Latency:</strong> <span id="rerankTime" class="num">&lt; 1 ms</span></div>
+      <div data-i18n="networkRefetch"><strong>Network Re-fetch:</strong> 0 KB (Zero Network Memory Recalculation)</div>
     </div>
   </div>
 
   <!-- Strategy Board Tabs -->
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchBoard('deep_itm', this)"><span class="tab-full">1. Deep ITM Stock Replacement</span><span class="tab-short">1. Deep ITM</span></button>
-    <button class="tab-btn" onclick="switchBoard('vol_discount', this)"><span class="tab-full">2. Volatility Discount</span><span class="tab-short">2. Vol Discount</span></button>
-    <button class="tab-btn" onclick="switchBoard('oversold', this)"><span class="tab-full">3. Blue-Chip Oversold Confluence</span><span class="tab-short">3. Oversold</span></button>
-    <button class="tab-btn" onclick="switchBoard('unusual_flow', this)"><span class="tab-full">4. Unusual Far-Dated Flow</span><span class="tab-short">4. Unusual Flow</span></button>
+    <button class="tab-btn active" onclick="switchBoard('deep_itm', this)"><span class="tab-full" data-i18n="tab1Full">1. Deep ITM Stock Replacement</span><span class="tab-short" data-i18n="tab1Short">1. Deep ITM</span></button>
+    <button class="tab-btn" onclick="switchBoard('vol_discount', this)"><span class="tab-full" data-i18n="tab2Full">2. Volatility Discount</span><span class="tab-short" data-i18n="tab2Short">2. Vol Discount</span></button>
+    <button class="tab-btn" onclick="switchBoard('oversold', this)"><span class="tab-full" data-i18n="tab3Full">3. Blue-Chip Oversold Confluence</span><span class="tab-short" data-i18n="tab3Short">3. Oversold</span></button>
   </div>
 
   <details class="strategy-help" id="strategyHelp">
@@ -468,7 +474,7 @@
   </details>
 
   <div class="status-filter" role="group" aria-label="Status filter">
-    <span class="filter-label">Status</span>
+    <span class="filter-label" data-i18n="statusLabel">Status</span>
     <button type="button" class="status-chip on" data-status="PASS" onclick="toggleStatusFilter('PASS')">PASS <span id="countPass">0</span></button>
     <button type="button" class="status-chip on" data-status="WATCH" onclick="toggleStatusFilter('WATCH')">WATCH <span id="countWatch">0</span></button>
     <button type="button" class="status-chip" data-status="REJECT" onclick="toggleStatusFilter('REJECT')">REJECT <span id="countReject">0</span></button>
@@ -491,6 +497,216 @@
     let cachedBoards = {};
     const visibleStatuses = new Set(['PASS', 'WATCH']);
     let scanPollTimer = null;
+    let lastCfg = null;
+    const LANG_KEY = 'leaps_lang';
+    let lang = 'en';
+    try {
+      const saved = localStorage.getItem(LANG_KEY);
+      if (saved === 'zh' || saved === 'en') lang = saved;
+      else if ((navigator.language || '').toLowerCase().startsWith('zh')) lang = 'zh';
+    } catch (e) {
+      if ((navigator.language || '').toLowerCase().startsWith('zh')) lang = 'zh';
+    }
+
+    const I18N = {
+      en: {
+        pageTitle: 'LEAPS Call Quantitative Scanner',
+        appTitle: 'LEAPS Call Quant Scanner',
+        appSubtitle: 'Multi-Strategy Quantitative Screening for Far-Dated Call Options (DTE ≥ 250d)',
+        statusSandbox: 'Sandbox Mode',
+        statusDelayed: 'Delayed public',
+        statusLive: 'Live Webull',
+        universeLoading: 'Universe: Loading...',
+        universeBadge: 'ETFs: {etfs} | DJIA: {djia} | SP100: {sp100} | NDX: {ndx} | Core: {core}',
+        syncRebalance: '⚡ Sync Rebalance',
+        syncing: 'Syncing...',
+        refreshScan: '🔄 Refresh Scan',
+        marketDataSource: 'Market data source',
+        sourceHintDefault: 'Sandbox fixtures by default. Delayed public uses Yahoo daily bars + Nasdaq OPRA delayed chains — no keys. Webull still needs OpenAPI keys.',
+        btnSandbox: 'Sandbox',
+        btnDelayed: 'Delayed public',
+        btnLive: 'Live Webull',
+        connectLive: 'Connect live',
+        connecting: 'Connecting…',
+        scanUniverse: 'Scan universe',
+        scanHintDefault: 'Wired to universe_manager. ETFs 12 · DJIA 30 · Core = SP100 ∪ NDX ∪ DJIA ∪ ETFs. Delayed public scans in the background.',
+        tierEtfs: 'ETFs',
+        tierDjia: 'DJIA',
+        tierCore: 'Core union',
+        alphaLabel: 'Execution Price Parameter (α Slippage Slider)',
+        alphaDisplay: 'α = {alpha} (Midpoint + {pct}% Spread)',
+        alphaAggressive: '0.0 (Aggressive Mid)',
+        alphaConservative: '0.5 (Conservative Mid)',
+        alphaAsk: '1.0 (Worst-case Ask)',
+        rerankLatency: 'Re-rank Latency:',
+        networkRefetch: 'Network Re-fetch: 0 KB (Zero Network Memory Recalculation)',
+        tab1Full: '1. Deep ITM Stock Replacement',
+        tab1Short: '1. Deep ITM',
+        tab2Full: '2. Volatility Discount',
+        tab2Short: '2. Vol Discount',
+        tab3Full: '3. Blue-Chip Oversold Confluence',
+        tab3Short: '3. Oversold',
+        statusLabel: 'Status',
+        filterDefault: 'Default: PASS + WATCH',
+        filterEmpty: 'No scanned contracts on this board.',
+        filterNone: 'No status selected — click PASS / WATCH / REJECT.',
+        filterShowing: 'Showing {shown} of {total}',
+        filterHidden: ' · {hidden} hidden',
+        helpFilter: 'Filter',
+        colSymbol: 'Symbol',
+        colUnderlying: 'Underlying',
+        colStrikeSpot: 'Strike / Spot',
+        colDte: 'DTE',
+        colBidAsk: 'Bid / Ask',
+        colPexec: 'P_exec (α)',
+        colDelta: 'Delta',
+        colLeverage: 'Eff. Leverage',
+        colIntrinsic: 'Intrinsic %',
+        colCarry: 'Carry Cost',
+        colTheta: 'Θ / day',
+        colStatus: 'Status',
+        colIvPct: 'IV Percentile',
+        colRegime: 'Regime',
+        colConfluence: 'Confluence Score',
+        spot: 'Spot',
+        emptyBoard: 'No candidate opportunities found for this strategy.',
+        emptyFilter: 'No rows match the status filter. REJECT is hidden by default.',
+        scanning: 'Scanning {tier} · {done}/{total}',
+        contractsSoFar: ' · {n} contracts so far',
+        scanSummary: '{tier} · {names} names · {n} contracts',
+        liveScan: 'Live Webull scan · {n} contracts · {key}',
+        delayedScan: 'Yahoo history + Nasdaq delayed OPRA · {n} LEAPS calls · ~15 min delay, not NBBO.',
+        missingCreds: 'Live Webull needs App Key and App Secret. Or use Delayed public (no keys).',
+        feedFailed: 'Feed failed. Staying on sandbox.',
+        sandboxHint: 'Sandbox fixtures (not the tape). Delayed public needs no keys. Do not paste Webull keys into chat.',
+        pasteKeys: 'Paste Webull OpenAPI keys, then Connect live. Prefer Delayed public if you do not want to send keys.',
+        fetchingDelayed: 'Fetching Yahoo bars + Nasdaq delayed LEAPS chains. This can take a short while…',
+        loadingSandbox: 'Loading sandbox…',
+        switchFailed: 'Could not switch data source.',
+        contactingWebull: 'Contacting Webull. If the token is PENDING, approve OpenAPI access in the Webull app.',
+        liveConnectFailed: 'Live connect failed before Webull answered. Stay on sandbox or try Delayed public.',
+        scanStartFailed: 'Could not start universe scan.',
+        syncDone: 'Index rebalance finished.\\nMaster pool: {n}\\nTimestamp: {ts}',
+        syncError: 'Rebalance sync error: {err}',
+        keyHint: 'key {hint}'
+      },
+      zh: {
+        pageTitle: '美股 LEAPS 看涨期权量化扫描器',
+        appTitle: 'LEAPS 看涨期权量化扫描器',
+        appSubtitle: '远月看涨期权多策略量化筛选（到期日 ≥ 250 天）',
+        statusSandbox: '沙盒模式',
+        statusDelayed: '公开延迟行情',
+        statusLive: 'Webull 实盘',
+        universeLoading: '股票池：加载中…',
+        universeBadge: 'ETF: {etfs} | 道指: {djia} | 标普100: {sp100} | 纳指100: {ndx} | 核心: {core}',
+        syncRebalance: '⚡ 同步成分股',
+        syncing: '同步中…',
+        refreshScan: '🔄 重新扫描',
+        marketDataSource: '行情数据源',
+        sourceHintDefault: '默认使用沙盒样本。公开延迟走 Yahoo 日线 + Nasdaq OPRA 延迟期权链，无需密钥。Webull 仍需 OpenAPI 密钥。',
+        btnSandbox: '沙盒',
+        btnDelayed: '公开延迟',
+        btnLive: 'Webull 实盘',
+        connectLive: '连接实盘',
+        connecting: '连接中…',
+        scanUniverse: '扫描股票池',
+        scanHintDefault: '接入 universe_manager。ETF 12 · 道指 30 · 核心 = 标普100 ∪ 纳指100 ∪ 道指 ∪ ETF。公开延迟在后台扫描。',
+        tierEtfs: 'ETF',
+        tierDjia: '道指',
+        tierCore: '核心并集',
+        alphaLabel: '执行价参数（α 滑点滑条）',
+        alphaDisplay: 'α = {alpha}（中间价 + {pct}% 价差）',
+        alphaAggressive: '0.0（激进中间价）',
+        alphaConservative: '0.5（保守中间价）',
+        alphaAsk: '1.0（最差卖一）',
+        rerankLatency: '重排延迟：',
+        networkRefetch: '网络重拉：0 KB（内存重算，不重新请求）',
+        tab1Full: '1. 深度实值代正股',
+        tab1Short: '1. 深度实值',
+        tab2Full: '2. 波动率洼地',
+        tab2Short: '2. 波动率',
+        tab3Full: '3. 蓝筹超跌共振',
+        tab3Short: '3. 超跌',
+        statusLabel: '状态',
+        filterDefault: '默认：PASS + WATCH',
+        filterEmpty: '此策略榜暂无已扫描合约。',
+        filterNone: '未选择状态 — 点击 PASS / WATCH / REJECT。',
+        filterShowing: '显示 {shown} / {total}',
+        filterHidden: ' · 隐藏 {hidden} 条',
+        helpFilter: '筛选条件',
+        colSymbol: '合约',
+        colUnderlying: '标的',
+        colStrikeSpot: '行权价 / 现价',
+        colDte: '剩余天数',
+        colBidAsk: '买 / 卖',
+        colPexec: '执行价 P_exec (α)',
+        colDelta: 'Delta',
+        colLeverage: '有效杠杆',
+        colIntrinsic: '内在价值占比',
+        colCarry: '年化磨损',
+        colTheta: '日 Theta',
+        colStatus: '状态',
+        colIvPct: 'IV 分位',
+        colRegime: '状态机',
+        colConfluence: '共振分数',
+        spot: '现价',
+        emptyBoard: '该策略暂无候选机会。',
+        emptyFilter: '没有符合状态筛选的行。默认隐藏 REJECT。',
+        scanning: '正在扫描 {tier} · {done}/{total}',
+        contractsSoFar: ' · 已有 {n} 张合约',
+        scanSummary: '{tier} · {names} 只标的 · {n} 张合约',
+        liveScan: 'Webull 实盘扫描 · {n} 张合约 · {key}',
+        delayedScan: 'Yahoo 历史 + Nasdaq 延迟 OPRA · {n} 张 LEAPS · 约 15 分钟延迟，非 NBBO。',
+        missingCreds: 'Webull 实盘需要 App Key 和 App Secret。也可改用公开延迟（无需密钥）。',
+        feedFailed: '行情接入失败，仍停留在沙盒。',
+        sandboxHint: '沙盒样本（不是盘口）。公开延迟无需密钥。请勿把 Webull 密钥贴到聊天里。',
+        pasteKeys: '粘贴 Webull OpenAPI 密钥后点连接实盘。不想提交密钥请用公开延迟。',
+        fetchingDelayed: '正在拉取 Yahoo 日线 + Nasdaq 延迟 LEAPS 链，稍等片刻…',
+        loadingSandbox: '正在加载沙盒…',
+        switchFailed: '无法切换数据源。',
+        contactingWebull: '正在连接 Webull。若 token 为 PENDING，请在 Webull App 里批准 OpenAPI 授权。',
+        liveConnectFailed: '连接在 Webull 应答前失败。可留在沙盒或改用公开延迟。',
+        scanStartFailed: '无法启动股票池扫描。',
+        syncDone: '成分股同步完成。\\n核心池规模：{n}\\n时间：{ts}',
+        syncError: '成分股同步出错：{err}',
+        keyHint: '密钥 {hint}'
+      }
+    };
+
+    function t(key, vars) {
+      let s = (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
+      if (vars) Object.keys(vars).forEach(k => { s = s.split('{' + k + '}').join(vars[k]); });
+      return s;
+    }
+
+    function applyStaticI18n() {
+      document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+      document.documentElement.dataset.lang = lang;
+      document.title = t('pageTitle');
+      document.querySelectorAll('[data-i18n]').forEach(el => { el.innerText = t(el.dataset.i18n); });
+      const enBtn = document.getElementById('langEn');
+      const zhBtn = document.getElementById('langZh');
+      if (enBtn) enBtn.className = lang === 'en' ? 'on-lang' : '';
+      if (zhBtn) zhBtn.className = lang === 'zh' ? 'on-lang' : '';
+      paintAlphaDisplay();
+    }
+
+    function paintAlphaDisplay() {
+      const el = document.getElementById('alphaDisplay');
+      if (!el) return;
+      el.innerText = t('alphaDisplay', { alpha: currentAlpha.toFixed(2), pct: Math.round(currentAlpha * 100) });
+    }
+
+    function setLang(next) {
+      lang = next === 'zh' ? 'zh' : 'en';
+      try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
+      applyStaticI18n();
+      paintStrategyHelp(currentBoardKey);
+      renderActiveBoard();
+      if (lastCfg) applyConfig(lastCfg);
+      fetchUniverseStats();
+    }
+
 
     const STRATEGY_HELP = {
       deep_itm: {
@@ -509,12 +725,13 @@
       },
       vol_discount: {
         title: "2. Volatility discount — long vega in cheap IV",
-        blurb: "Buy LEAPS when ATM IV is historically cheap. Regime A is a quiet bottom (no crash). Regime B is post-crash relative value. Needs ≥ 90 days of IV history; Delayed public currently has no IV percentile so this board degrades.",
+        blurb: "Buy LEAPS when vol is historically cheap. With ≥90 days of stored ATM IV this uses real IV percentile (can PASS). Until then Delayed uses realized HV20 percentile as a proxy and caps at WATCH (never PASS). Regime A is a quiet bottom; Regime B is post-crash relative value.",
         rows: [
-          ["IV history", "≥ 90 daily ATM IV pts", "—", "< 90 days → strategy off"],
+          ["IV history", "≥ 90 daily ATM IV pts → real IV path", "HV proxy while collecting", "< 90 days and no HV → off"],
           ["Regime A IV percentile", "< 20%", "20 – 30%", "≥ 30%"],
           ["Regime A IV / HV252", "< 0.85", "0.85 – 1.00", "≥ 1.00"],
-          ["Regime B (crash)", "IV %ile < 40% or z < 0", "—", "Still rich after crash"],
+          ["HV proxy (no IV hist)", "—", "HV20 %ile < 30% and HV20/HV252 < 1.0 (WATCH only)", "HV20 %ile ≥ 30%"],
+          ["Regime B (crash)", "IV %ile < 40% or z < 0", "HV %ile < 40% or z < 0 (WATCH)", "Still rich after crash"],
           ["Crash definition", "—", "—", "−15% 20d or −20% from 52w high"],
           ["Strike / spot", "0.70S – 1.25S", "—", "Outside window"],
           ["DTE", "≥ 300", "250 – 300", "< 250"],
@@ -536,48 +753,90 @@
           ["Strike / spot", "0.50S – 1.25S", "—", "Outside window"],
           ["DTE", "≥ 250", "—", "< 250"]
         ]
-      },
-      unusual_flow: {
-        title: "4. Unusual far-dated flow",
-        blurb: "Spot large prints in LEAPS calls. Needs Vol/OI, dollar volume, and contract count together. Buyer-aggressor tagging is off (midpoint prints are not NBBO). Far-dated flow includes rollovers, tax-loss harvesting, and structured hedges — weaker directional signal than short-dated UOA. Delayed Nasdaq volume is often missing.",
+      }
+    };
+
+    const STRATEGY_HELP_ZH = {
+      deep_itm: {
+        title: "1. 深度实值 — 代正股 / PMCC 底仓",
+        blurb: "用远月、适度深度实值看涨代替 100 股。目标是高 Delta 仍留杠杆，而不是预付正股。Delta > 0.90 扫描前即剔除。不依赖 IV（条款 4）；缺 IV 时跳过 Theta 门。",
         rows: [
-          ["Strike / spot", "0.70S – 1.35S", "—", "Outside window"],
-          ["DTE", "≥ 250", "—", "< 250"],
-          ["Vol / OI", "≥ 3.0 and OI ≥ 50", "≥ 2.0", "< 2.0"],
-          ["Dollar volume (stock)", "≥ $250k", "≥ $100k", "< $100k"],
-          ["Dollar volume (ETF)", "≥ $1.0M", "≥ $250k", "< $250k"],
-          ["Contract volume (stock)", "≥ 500", "≥ 200", "< 200"],
-          ["Contract volume (ETF)", "≥ 2,000", "≥ 500", "< 500"],
-          ["Open interest", "> 0", "—", "≤ 0"]
+          ["行权价 / 现价", "0.65S – 0.85S", "—", "窗外"],
+          ["Delta", "0.70 – 0.85", "0.85 – 0.90", "< 0.70；> 0.90 不入库"],
+          ["内在价值 / P_exec", "≥ 65%", "55 – 65%", "< 55%"],
+          ["有效杠杆", "2.5x – 4.5x", "2.0–2.5x 或 4.5–5.5x", "< 2.0x 或 > 5.5x"],
+          ["年化磨损 extrinsic/(P×T)", "< 15%/年", "15 – 35%/年", "≥ 35%/年"],
+          ["Theta |Θ日| / P_exec", "< 0.03%/日", "0.03 – 0.10%/日", "≥ 0.10%/日"],
+          ["剩余天数", "≥ 300", "250 – 300", "< 250"],
+          ["流动性", "持仓量 / 价差 / 盘口正常", "持仓或价差偏软", "零买、交叉盘、持仓过低"]
+        ]
+      },
+      vol_discount: {
+        title: "2. 波动率洼地 — 在便宜波动上做多 Vega",
+        blurb: "ATM IV 历史偏低时买入 LEAPS。存满 ≥90 天 ATM IV 后走真 IV 分位（可以 PASS）。此前 Delayed 用已实现 HV20 分位顶上，最高只给 WATCH。Regime A 是安静底部；Regime B 是暴跌后的相对便宜。",
+        rows: [
+          ["IV 历史", "≥ 90 个交易日 ATM IV → 真 IV 路径", "收集期用 HV 代理", "< 90 天且无 HV → 关闭"],
+          ["Regime A IV 分位", "< 20%", "20 – 30%", "≥ 30%"],
+          ["Regime A IV / HV252", "< 0.85", "0.85 – 1.00", "≥ 1.00"],
+          ["HV 代理（无 IV 历史）", "—", "HV20 分位 < 30% 且 HV20/HV252 < 1.0（仅 WATCH）", "HV20 分位 ≥ 30%"],
+          ["Regime B（暴跌）", "IV 分位 < 40% 或 z < 0", "HV 分位 < 40% 或 z < 0（WATCH）", "暴跌后仍然偏贵"],
+          ["暴跌定义", "—", "—", "20 日 −15% 或距 52 周高 −20%"],
+          ["行权价 / 现价", "0.70S – 1.25S", "—", "窗外"],
+          ["剩余天数", "≥ 300", "250 – 300", "< 250"],
+          ["财报（Regime A）", "—", "10 天内 → WATCH", "—"]
+        ]
+      },
+      oversold: {
+        title: "3. 蓝筹超跌共振",
+        blurb: "核心池标的回调后做均值回归 LEAPS。四个技术面打分（RSI、200 日均、52 周高、距 52 周低反弹）。PASS 需要分数 ≥ 2.0 且至少一个核心信号。要求属于核心股票池且 ≥ 200 根日线。",
+        rows: [
+          ["股票池", "标普100 ∪ 纳指100 ∪ 道指 ∪ ETF", "—", "不在核心池"],
+          ["日线根数", "≥ 200", "—", "< 200"],
+          ["RSI(14)", "≤ 30（核心 +1.0）", "≤ 40（弱 +0.5）", "—"],
+          ["相对 200 日均（HV20≤40%）", "≤ −10%", "≤ −6%", "—"],
+          ["相对 200 日均（HV20>40%）", "≤ −15%", "≤ −8%", "—"],
+          ["距 52 周高回撤", "≥ 15%", "≥ 10%", "—"],
+          ["距 52 周低反弹", "≥ 3%（若回撤≥10%）", "0 – 3%", "—"],
+          ["共振分数", "≥ 2.0 且 ≥1 个核心", "1.0 – 2.0", "< 1.0"],
+          ["行权价 / 现价", "0.50S – 1.25S", "—", "窗外"],
+          ["剩余天数", "≥ 250", "—", "< 250"]
         ]
       }
     };
 
     function paintStrategyHelp(key) {
-      const spec = STRATEGY_HELP[key] || STRATEGY_HELP.deep_itm;
+      const pack = lang === 'zh' ? STRATEGY_HELP_ZH : STRATEGY_HELP;
+      const spec = pack[key] || pack.deep_itm;
       document.getElementById('helpTitle').innerText = spec.title;
       const rows = spec.rows.map(r =>
         `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`
       ).join('');
       document.getElementById('helpBody').innerHTML =
         `<p>${spec.blurb}</p>` +
-        `<div class="table-container"><table class="factor-table"><thead><tr><th>Filter</th><th>PASS</th><th>WATCH</th><th>REJECT</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        `<div class="table-container"><table class="factor-table"><thead><tr><th>${t('helpFilter')}</th><th>PASS</th><th>WATCH</th><th>REJECT</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     }
 
     function paintScanTier(tier, cfg) {
-      const t = tier || (cfg && cfg.scan_tier) || 'etfs';
-      document.getElementById('tierEtfs').className = t === 'etfs' ? 'on-delayed' : '';
-      document.getElementById('tierDjia').className = t === 'djia' ? 'on-delayed' : '';
-      document.getElementById('tierCore').className = t === 'core' ? 'on-delayed' : '';
+      const tierName = tier || (cfg && cfg.scan_tier) || 'etfs';
+      document.getElementById('tierEtfs').className = tierName === 'etfs' ? 'on-delayed' : '';
+      document.getElementById('tierDjia').className = tierName === 'djia' ? 'on-delayed' : '';
+      document.getElementById('tierCore').className = tierName === 'core' ? 'on-delayed' : '';
       const hint = document.getElementById('scanHint');
       const uni = (cfg && cfg.universe) || {};
-      const n = t === 'etfs' ? (uni.etfs || 12) : t === 'djia' ? (uni.djia || 30) : (uni.core || 140);
+      const n = tierName === 'etfs' ? (uni.etfs || 12) : tierName === 'djia' ? (uni.djia || 30) : (uni.core || 140);
       const prog = (cfg && cfg.scan_progress) || {};
       const status = cfg && cfg.scan_status;
+      const tierLabel = t(tierName === 'etfs' ? 'tierEtfs' : tierName === 'djia' ? 'tierDjia' : 'tierCore');
       if (status === 'running') {
-        hint.innerText = `Scanning ${t} · ${prog.done || 0}/${prog.total || n}` + (prog.symbol ? ` · ${prog.symbol}` : '') + ` · ${cfg.candidate_count || 0} contracts so far`;
+        hint.innerText = t('scanning', { tier: tierLabel, done: prog.done || 0, total: prog.total || n })
+          + (prog.symbol ? ` · ${prog.symbol}` : '')
+          + t('contractsSoFar', { n: cfg.candidate_count || 0 });
       } else {
-        hint.innerText = `${t} · ${cfg && cfg.scan_symbol_count ? cfg.scan_symbol_count : n} names · ${cfg && cfg.candidate_count != null ? cfg.candidate_count : 0} contracts`;
+        hint.innerText = t('scanSummary', {
+          tier: tierLabel,
+          names: cfg && cfg.scan_symbol_count ? cfg.scan_symbol_count : n,
+          n: cfg && cfg.candidate_count != null ? cfg.candidate_count : 0
+        });
       }
     }
 
@@ -600,6 +859,7 @@
     }
 
     async function applyConfig(cfg) {
+      lastCfg = cfg;
       const statusEl = document.getElementById('engineStatus');
       const hint = document.getElementById('sourceHint');
       const sandboxBtn = document.getElementById('btnSandbox');
@@ -612,26 +872,26 @@
       liveBtn.className = source === 'webull' && !cfg.offline_mode ? 'on-live' : '';
       form.style.display = source === 'webull' && (cfg.error === 'missing_credentials' || cfg.last_error === 'missing_credentials' || cfg.error === 'auth_failed') ? 'grid' : 'none';
       if (source === 'webull' && !cfg.offline_mode) {
-        statusEl.innerText = 'Live Webull';
+        statusEl.innerText = t('statusLive');
         hint.className = 'hint ok';
-        hint.innerText = `Live Webull scan · ${cfg.candidate_count || 0} contracts · ${cfg.credential_hint ? 'key ' + cfg.credential_hint : ''}`;
+        hint.innerText = t('liveScan', { n: cfg.candidate_count || 0, key: cfg.credential_hint ? t('keyHint', { hint: cfg.credential_hint }) : '' });
       } else if (source === 'delayed') {
-        statusEl.innerText = 'Delayed public';
+        statusEl.innerText = t('statusDelayed');
         hint.className = 'hint ok';
-        hint.innerText = cfg.message || `Yahoo history + Nasdaq delayed OPRA · ${cfg.candidate_count || 0} LEAPS calls · ~15 min delay, not NBBO.`;
+        hint.innerText = t('delayedScan', { n: cfg.candidate_count || 0 });
       } else if (cfg.error === 'missing_credentials' || cfg.last_error === 'missing_credentials') {
-        statusEl.innerText = 'Sandbox Offline';
+        statusEl.innerText = t('statusSandbox');
         hint.className = 'hint error';
-        hint.innerText = cfg.message || 'Live Webull needs App Key and App Secret. Or use Delayed public (no keys).';
+        hint.innerText = t('missingCreds');
         form.style.display = 'grid';
       } else if (cfg.error === 'auth_failed' || cfg.last_error === 'auth_failed' || cfg.error === 'delayed_failed') {
-        statusEl.innerText = 'Sandbox Offline';
+        statusEl.innerText = t('statusSandbox');
         hint.className = 'hint error';
-        hint.innerText = cfg.message || 'Feed failed. Staying on sandbox.';
+        hint.innerText = t('feedFailed');
       } else {
-        statusEl.innerText = 'Sandbox Offline';
+        statusEl.innerText = t('statusSandbox');
         hint.className = 'hint';
-        hint.innerText = 'Sandbox fixtures (not the tape). Delayed public needs no keys. Do not paste Webull keys into chat.';
+        hint.innerText = t('sandboxHint');
       }
       paintScanTier(cfg.scan_tier, cfg);
       if (cfg.scan_status === 'running') startScanPoll();
@@ -658,16 +918,14 @@
         const secret = document.getElementById('appSecret').value.trim();
         if (!key && !secret) {
           hint.className = 'hint';
-          hint.innerText = 'Paste Webull OpenAPI keys, then Connect live. Prefer Delayed public if you do not want to send keys.';
+          hint.innerText = t('pasteKeys');
           return;
         }
         return connectLive();
       }
       form.style.display = 'none';
       hint.className = 'hint';
-      hint.innerText = source === 'delayed'
-        ? 'Fetching Yahoo bars + Nasdaq delayed LEAPS chains. This can take a short while…'
-        : 'Loading sandbox…';
+      hint.innerText = source === 'delayed' ? t('fetchingDelayed') : t('loadingSandbox');
       try {
         const res = await fetch('/api/v1/mode', {
           method: 'POST',
@@ -679,7 +937,7 @@
         if (res.ok) await loadBoards(currentAlpha);
       } catch (e) {
         hint.className = 'hint error';
-        hint.innerText = 'Could not switch data source.';
+        hint.innerText = t('switchFailed');
       }
     }
 
@@ -688,9 +946,9 @@
       const hint = document.getElementById('sourceHint');
       const btn = document.getElementById('btnConnect');
       btn.disabled = true;
-      btn.innerText = 'Connecting…';
+      btn.innerText = t('connecting');
       hint.className = 'hint';
-      hint.innerText = 'Contacting Webull. If the token is PENDING, approve OpenAPI access in the Webull app.';
+      hint.innerText = t('contactingWebull');
       const payload = { source: 'webull', offline: false };
       if (!reuseSaved) {
         payload.app_key = document.getElementById('appKey').value.trim();
@@ -710,10 +968,10 @@
         }
       } catch (e) {
         hint.className = 'hint error';
-        hint.innerText = 'Live connect failed before Webull answered. Stay on sandbox or try Delayed public.';
+        hint.innerText = t('liveConnectFailed');
       } finally {
         btn.disabled = false;
-        btn.innerText = 'Connect live';
+        btn.innerText = t('connectLive');
       }
     }
 
@@ -735,7 +993,7 @@
 
     async function handleAlphaChange(val) {
       currentAlpha = parseFloat(val);
-      document.getElementById('alphaDisplay').innerText = `α = ${currentAlpha.toFixed(2)}`;
+      paintAlphaDisplay();
 
       const t0 = performance.now();
       try {
@@ -785,7 +1043,7 @@
         if (res.status === 202 || cfg.scan_status === 'running') startScanPoll();
         await loadBoards(currentAlpha);
       } catch (e) {
-        document.getElementById('scanHint').innerText = 'Could not start universe scan.';
+        document.getElementById('scanHint').innerText = t('scanStartFailed');
       }
     }
 
@@ -823,11 +1081,11 @@
       const hidden = allItems.length - items.length;
       const meta = document.getElementById('filterMeta');
       if (!allItems.length) {
-        meta.innerText = 'No scanned contracts on this board.';
+        meta.innerText = t('filterEmpty');
       } else if (!visibleStatuses.size) {
-        meta.innerText = 'No status selected — click PASS / WATCH / REJECT.';
+        meta.innerText = t('filterNone');
       } else {
-        meta.innerText = `Showing ${items.length} of ${allItems.length}` + (hidden ? ` · ${hidden} hidden` : '');
+        meta.innerText = t('filterShowing', { shown: items.length, total: allItems.length }) + (hidden ? t('filterHidden', { hidden: hidden }) : '');
       }
       const thead = document.getElementById('tableHeader');
       const tbody = document.getElementById('tableBody');
@@ -835,62 +1093,50 @@
       // Set headers based on board
       if (currentBoardKey === 'deep_itm') {
         thead.innerHTML = `
-          <th>Symbol</th>
-          <th>Underlying</th>
-          <th>Strike / Spot</th>
-          <th>DTE</th>
-          <th>Bid / Ask</th>
-          <th>P_exec (α)</th>
-          <th>Delta</th>
-          <th>Eff. Leverage</th>
-          <th>Intrinsic %</th>
-          <th>Carry Cost</th>
-          <th>Θ / day</th>
-          <th>Status</th>
+          <th>${t('colSymbol')}</th>
+          <th>${t('colUnderlying')}</th>
+          <th>${t('colStrikeSpot')}</th>
+          <th>${t('colDte')}</th>
+          <th>${t('colBidAsk')}</th>
+          <th>${t('colPexec')}</th>
+          <th>${t('colDelta')}</th>
+          <th>${t('colLeverage')}</th>
+          <th>${t('colIntrinsic')}</th>
+          <th>${t('colCarry')}</th>
+          <th>${t('colTheta')}</th>
+          <th>${t('colStatus')}</th>
         `;
       } else if (currentBoardKey === 'vol_discount') {
         thead.innerHTML = `
-          <th>Symbol</th>
-          <th>Underlying</th>
-          <th>Strike / Spot</th>
-          <th>DTE</th>
-          <th>P_exec (α)</th>
-          <th>IV Percentile</th>
-          <th>Regime</th>
-          <th>Carry Cost</th>
-          <th>Status</th>
+          <th>${t('colSymbol')}</th>
+          <th>${t('colUnderlying')}</th>
+          <th>${t('colStrikeSpot')}</th>
+          <th>${t('colDte')}</th>
+          <th>${t('colPexec')}</th>
+          <th>${t('colIvPct')}</th>
+          <th>${t('colRegime')}</th>
+          <th>${t('colCarry')}</th>
+          <th>${t('colStatus')}</th>
         `;
       } else if (currentBoardKey === 'oversold') {
         thead.innerHTML = `
-          <th>Symbol</th>
-          <th>Underlying</th>
-          <th>Strike / Spot</th>
-          <th>DTE</th>
-          <th>P_exec (α)</th>
-          <th>Confluence Score</th>
-          <th>Carry Cost</th>
-          <th>Status</th>
-        `;
-      } else if (currentBoardKey === 'unusual_flow') {
-        thead.innerHTML = `
-          <th>Symbol</th>
-          <th>Underlying</th>
-          <th>Strike / Spot</th>
-          <th>DTE</th>
-          <th>P_exec (α)</th>
-          <th>Volume / OI</th>
-          <th>Vol / OI Ratio</th>
-          <th>Dollar Volume</th>
-          <th>Status</th>
+          <th>${t('colSymbol')}</th>
+          <th>${t('colUnderlying')}</th>
+          <th>${t('colStrikeSpot')}</th>
+          <th>${t('colDte')}</th>
+          <th>${t('colPexec')}</th>
+          <th>${t('colConfluence')}</th>
+          <th>${t('colCarry')}</th>
+          <th>${t('colStatus')}</th>
         `;
       }
 
       if (allItems.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 32px;">No candidate opportunities found for this strategy.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('emptyBoard')}</td></tr>`;
         return;
       }
       if (items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 32px;">No rows match the status filter. REJECT is hidden by default.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('emptyFilter')}</td></tr>`;
         return;
       }
 
@@ -901,7 +1147,7 @@
             <tr>
               <td><strong>${it.symbol}</strong></td>
               <td>${it.underlying}</td>
-              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">Spot: $${it.spot.toFixed(1)}</span></td>
+              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
               <td class="num">${Math.round(it.dte)}d</td>
               <td class="num">$${it.bid.toFixed(2)} / $${it.ask.toFixed(2)}</td>
               <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${it.p_exec.toFixed(2)}</td>
@@ -918,7 +1164,7 @@
             <tr>
               <td><strong>${it.symbol}</strong></td>
               <td>${it.underlying}</td>
-              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">Spot: $${it.spot.toFixed(1)}</span></td>
+              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
               <td class="num">${Math.round(it.dte)}d</td>
               <td class="num">$${it.p_exec.toFixed(2)}</td>
               <td class="num">${it.iv_percentile !== null ? (it.iv_percentile * 100).toFixed(1) + '%' : 'N/A'}</td>
@@ -932,7 +1178,7 @@
             <tr>
               <td><strong>${it.symbol}</strong></td>
               <td>${it.underlying}</td>
-              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">Spot: $${it.spot.toFixed(1)}</span></td>
+              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
               <td class="num">${Math.round(it.dte)}d</td>
               <td class="num">$${it.p_exec.toFixed(2)}</td>
               <td class="num" style="color: var(--accent-green); font-weight: 600;">${it.confluence_score.toFixed(1)} / 4.0</td>
@@ -940,21 +1186,17 @@
               <td>${statusBadge}</td>
             </tr>
           `;
-        } else {
-          return `
+        }
+        return `
             <tr>
               <td><strong>${it.symbol}</strong></td>
               <td>${it.underlying}</td>
-              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">Spot: $${it.spot.toFixed(1)}</span></td>
+              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
               <td class="num">${Math.round(it.dte)}d</td>
               <td class="num">$${it.p_exec.toFixed(2)}</td>
-              <td class="num">${it.volume.toLocaleString()} / ${it.open_interest.toLocaleString()}</td>
-              <td class="num" style="color: var(--accent-amber); font-weight: 600;">${it.vol_oi_ratio.toFixed(2)}x</td>
-              <td class="num">$${it.dollar_volume.toLocaleString()}</td>
               <td>${statusBadge}</td>
             </tr>
           `;
-        }
       }).join('');
     }
 
@@ -965,7 +1207,13 @@
           const data = await res.json();
           const uBadge = document.getElementById('universeBadge');
           if (uBadge && data.indices) {
-            uBadge.innerText = `ETFs: ${data.indices.etfs || 0} | DJIA: ${data.indices.djia} | SP100: ${data.indices.sp100} | NDX: ${data.indices.nasdaq100} | Core: ${data.master_count}`;
+            uBadge.innerText = t('universeBadge', {
+              etfs: data.indices.etfs || 0,
+              djia: data.indices.djia,
+              sp100: data.indices.sp100,
+              ndx: data.indices.nasdaq100,
+              core: data.master_count
+            });
           }
         }
       } catch (e) {
@@ -976,25 +1224,26 @@
     async function triggerUniverseSync(evt) {
       const btn = evt ? evt.target : null;
       if (btn) {
-        btn.innerText = "Syncing...";
+        btn.innerText = t('syncing');
         btn.disabled = true;
       }
       try {
         const res = await fetch('/api/v1/universe/sync', { method: 'POST' });
         const data = await res.json();
-        alert(`Index Rebalance Sync Finished!\nMaster Pool Size: ${data.master_count}\nTimestamp: ${data.timestamp}`);
+        alert(t('syncDone', { n: data.master_count, ts: data.timestamp }));
         await fetchUniverseStats();
       } catch (e) {
-        alert("Rebalance sync error: " + e);
+        alert(t('syncError', { err: e }));
       } finally {
         if (btn) {
-          btn.innerText = "⚡ Sync Rebalance";
+          btn.innerText = t('syncRebalance');
           btn.disabled = false;
         }
       }
     }
 
     // Initialize
+    applyStaticI18n();
     paintStrategyHelp(currentBoardKey);
     fetchConfig();
     fetchUniverseStats();

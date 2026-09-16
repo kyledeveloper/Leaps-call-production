@@ -130,7 +130,7 @@ class MockOptionDataProvider(OptionDataProvider):
             )
         )
 
-        # 4. Unusual volume spike candidate (Strategy 4 target: Vol/OI >= 3.0, Vol >= 500)
+        # High-volume far-dated contract (liquidity / activity fixture)
         otm_strike = round(s * 1.15, 2)
         chain.append(
             OptionQuote(

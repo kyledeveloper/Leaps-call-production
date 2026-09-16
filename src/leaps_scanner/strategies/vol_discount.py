@@ -24,6 +24,9 @@ class VolDiscountUnderlyingMetrics:
     iv_z_score: float
     valid_history_days: int
     is_degraded: bool
+    hv_20: float = 0.0
+    hv_percentile: Optional[float] = None
+    hv_z_score: float = 0.0
     reasons: List[str] = field(default_factory=list)
 
 
@@ -47,6 +50,69 @@ class VolDiscountContractResult:
     reasons: List[str] = field(default_factory=list)
 
 
+def _cap_watch(status: GuardStatus) -> GuardStatus:
+    return GuardStatus.WATCH if status == GuardStatus.PASS else status
+
+
+def _evaluate_realized_vol_proxy(
+    symbol: str,
+    metrics: VolDiscountUnderlyingMetrics,
+    is_crash: bool,
+    reasons: List[str],
+) -> VolDiscountUnderlyingResult:
+    """HV20 percentile + HV20/HV252 stand in for IV until the warehouse has 90 days. Never PASS."""
+    reasons = list(reasons)
+    if "REALIZED_VOL_PROXY" not in reasons:
+        reasons.append("REALIZED_VOL_PROXY")
+    hv_ratio = (metrics.hv_20 / metrics.hv_252) if metrics.hv_252 > 0 else 1.0
+    hv_pct = float(metrics.hv_percentile)
+
+    if is_crash:
+        if hv_pct < 0.40 or metrics.hv_z_score < 0.0:
+            status = GuardStatus.WATCH
+        else:
+            status = GuardStatus.REJECT
+            reasons.append(f"REGIME_B_HIGH_HV_PERCENTILE_{hv_pct:.1%}")
+        return VolDiscountUnderlyingResult(
+            symbol=symbol,
+            status=_cap_watch(status) if status != GuardStatus.REJECT else status,
+            regime="REGIME_B_HV",
+            iv_percentile=hv_pct,
+            iv_hv_ratio=hv_ratio,
+            reasons=reasons,
+        )
+
+    if hv_pct < 0.20:
+        pct_tier = GuardStatus.PASS
+    elif hv_pct < 0.30:
+        pct_tier = GuardStatus.WATCH
+    else:
+        pct_tier = GuardStatus.REJECT
+        reasons.append(f"HIGH_HV_PERCENTILE_{hv_pct:.1%}")
+
+    if hv_ratio < 0.85:
+        ratio_tier = GuardStatus.PASS
+    elif hv_ratio < 1.00:
+        ratio_tier = GuardStatus.WATCH
+    else:
+        ratio_tier = GuardStatus.REJECT
+        reasons.append(f"HIGH_HV_HV_RATIO_{hv_ratio:.2f}")
+
+    if pct_tier == GuardStatus.REJECT or ratio_tier == GuardStatus.REJECT:
+        status = GuardStatus.REJECT
+    else:
+        status = GuardStatus.WATCH
+
+    return VolDiscountUnderlyingResult(
+        symbol=symbol,
+        status=status,
+        regime="REGIME_A_HV",
+        iv_percentile=hv_pct,
+        iv_hv_ratio=hv_ratio,
+        reasons=reasons,
+    )
+
+
 def evaluate_vol_discount_underlying(
     metrics: VolDiscountUnderlyingMetrics
 ) -> VolDiscountUnderlyingResult:
@@ -59,23 +125,24 @@ def evaluate_vol_discount_underlying(
     canonical_sym = SymbologyNormalizer.to_canonical(metrics.symbol)
     reasons: List[str] = list(metrics.reasons)
 
-    # 1. Defensive Clause 5: If history < 90 days, degrade strategy unconditionally
+    is_crash = (metrics.pct_change_20d <= -0.15) or (metrics.drawdown_52w_high >= 0.20)
+
+    # Clause 5: <90d ATM IV → realized-vol proxy, never PASS.
     if metrics.is_degraded or metrics.valid_history_days < 90:
         if "STRATEGY_DEGRADED_INSUFFICIENT_HISTORY" not in reasons:
             reasons.append("STRATEGY_DEGRADED_INSUFFICIENT_HISTORY")
-        return VolDiscountUnderlyingResult(
-            symbol=canonical_sym,
-            status=GuardStatus.REJECT,
-            regime="NONE",
-            iv_percentile=metrics.iv_percentile,
-            iv_hv_ratio=0.0,
-            reasons=reasons
-        )
+        if metrics.hv_percentile is None or metrics.hv_252 <= 0:
+            return VolDiscountUnderlyingResult(
+                symbol=canonical_sym,
+                status=GuardStatus.REJECT,
+                regime="NONE",
+                iv_percentile=metrics.iv_percentile,
+                iv_hv_ratio=0.0,
+                reasons=reasons
+            )
+        return _evaluate_realized_vol_proxy(canonical_sym, metrics, is_crash, reasons)
 
     iv_hv_ratio = (metrics.current_atm_iv / metrics.hv_252) if metrics.hv_252 > 0 else 1.0
-
-    # Determine Regime: Mutually Exclusive
-    is_crash = (metrics.pct_change_20d <= -0.15) or (metrics.drawdown_52w_high >= 0.20)
 
     if is_crash:
         # Regime B: Post-crash relative value

@@ -5,7 +5,7 @@ Adheres strictly to Defensive Clause 6 (minimum 200 daily bars guard).
 """
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -33,6 +33,9 @@ class PriceMetrics:
     hv_20: float
     bar_count: int
     is_valid: bool
+    pct_change_20d: float = 0.0
+    hv_percentile: Optional[float] = None
+    hv_z_score: float = 0.0
     reasons: List[str] = field(default_factory=list)
 
 
@@ -107,6 +110,42 @@ def calculate_realized_volatility(prices: List[float], period: int = 252) -> flo
     return std_dev * math.sqrt(252.0)
 
 
+def pct_change(prices: List[float], days: int = 20) -> float:
+    if len(prices) <= days or prices[-days - 1] <= 0:
+        return 0.0
+    return prices[-1] / prices[-days - 1] - 1.0
+
+
+def calculate_hv_distribution(
+    prices: List[float],
+    period: int = 20,
+    lookback: int = 252,
+) -> Tuple[float, Optional[float], float]:
+    """Current HV, percentile vs trailing windows, and z-score."""
+    need = period + 2
+    if len(prices) < need:
+        return 0.0, None, 0.0
+    series: List[float] = []
+    for end in range(period + 1, len(prices) + 1):
+        hv = calculate_realized_volatility(prices[:end], period=period)
+        if hv > 0:
+            series.append(hv)
+    if not series:
+        return 0.0, None, 0.0
+    current = series[-1]
+    window = series[-lookback:] if len(series) > lookback else series
+    count_less = sum(1 for v in window if v <= current)
+    percentile = count_less / len(window)
+    mean = sum(window) / len(window)
+    if len(window) > 1:
+        var = sum((v - mean) ** 2 for v in window) / (len(window) - 1)
+        std = math.sqrt(var)
+        z_score = (current - mean) / std if std > 1e-9 else 0.0
+    else:
+        z_score = 0.0
+    return current, percentile, z_score
+
+
 class PriceStore:
     """
     In-memory / local cache of daily price bars for technical indicator calculations.
@@ -154,6 +193,9 @@ class PriceStore:
                 hv_20=0.0,
                 bar_count=bar_count,
                 is_valid=False,
+                pct_change_20d=0.0,
+                hv_percentile=None,
+                hv_z_score=0.0,
                 reasons=["INSUFFICIENT_DAILY_BARS"]
             )
 
@@ -176,7 +218,9 @@ class PriceStore:
         bounce_52w_low = (spot - low_52w) / low_52w if low_52w > 0 else 0.0
 
         hv_252 = calculate_realized_volatility(closes, period=252)
-        hv_20 = calculate_realized_volatility(closes, period=20)
+        hv_20, hv_percentile, hv_z_score = calculate_hv_distribution(closes, period=20, lookback=252)
+        if hv_20 <= 0:
+            hv_20 = calculate_realized_volatility(closes, period=20)
 
         return PriceMetrics(
             symbol=symbol,
@@ -192,5 +236,8 @@ class PriceStore:
             hv_20=hv_20,
             bar_count=bar_count,
             is_valid=True,
+            pct_change_20d=pct_change(closes, 20),
+            hv_percentile=hv_percentile,
+            hv_z_score=hv_z_score,
             reasons=[]
         )

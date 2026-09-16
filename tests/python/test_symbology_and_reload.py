@@ -14,10 +14,6 @@ from src.leaps_scanner.strategies.vol_discount import (
     evaluate_vol_discount_underlying,
     VolDiscountUnderlyingMetrics
 )
-from src.leaps_scanner.strategies.unusual_flow import (
-    evaluate_unusual_flow,
-    UnusualFlowInput
-)
 from src.leaps_scanner.scoring.ranker import MemoryRanker, StrategyCandidate
 from src.leaps_scanner.strategies.guards import GuardStatus
 from src.leaps_scanner.api.server import AppState
@@ -61,24 +57,6 @@ class TestSymbologyAndCacheHotReload(unittest.TestCase):
         )
         res = evaluate_vol_discount_underlying(metrics)
         self.assertEqual(res.symbol, "BRK.B")
-        self.assertEqual(res.status, GuardStatus.PASS)
-
-    def test_unusual_flow_symbology_defense(self):
-        inp = UnusualFlowInput(
-            symbol="BRK-B270115C00400000",
-            underlying="BRK-B",
-            spot=450.0,
-            strike=400.0,
-            dte=450.0,
-            bid=70.0,
-            ask=72.0,
-            volume=5000,
-            open_interest=500,
-            is_etf=False,
-            liquidity_status=GuardStatus.PASS
-        )
-        res = evaluate_unusual_flow(inp)
-        self.assertEqual(res.symbol, "BRK.B270115C00400000")
         self.assertEqual(res.status, GuardStatus.PASS)
 
     def test_memory_ranker_symbology_defense(self):

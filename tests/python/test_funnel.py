@@ -36,11 +36,11 @@ class TestStrategyAwareFunnel(unittest.TestCase):
 
     def test_level3_union_window(self):
         from src.leaps_scanner.data.funnel import get_strike_window, filter_strikes
-        # Strategy 1 [0.65S, 0.85S] union Strategy 4 [0.70S, 1.35S] -> [0.65S, 1.35S]
+        # Strategy 1 [0.65S, 0.85S] union Strategy 3 [0.50S, 1.25S] -> [0.50S, 1.25S]
         spot = 100.0
-        low, high = get_strike_window(spot, active_strategies=["deep_itm", "unusual_flow"])
-        self.assertAlmostEqual(low, 65.0)
-        self.assertAlmostEqual(high, 135.0)
+        low, high = get_strike_window(spot, active_strategies=["deep_itm", "oversold"])
+        self.assertAlmostEqual(low, 50.0)
+        self.assertAlmostEqual(high, 125.0)
 
     def test_prepaid_equity_delta_is_not_scanned(self):
         from src.leaps_scanner.data.funnel import keep_scan_delta

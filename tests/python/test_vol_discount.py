@@ -206,6 +206,104 @@ class TestVolDiscountAndIVStore(unittest.TestCase):
         self.assertEqual(c_earnings.status, GuardStatus.WATCH)
         self.assertIn("EVENT_WINDOW", c_earnings.reasons)
 
+    def test_realized_vol_proxy_caps_at_watch(self):
+        from src.leaps_scanner.strategies.vol_discount import (
+            evaluate_vol_discount_underlying,
+            VolDiscountUnderlyingMetrics,
+        )
+        metrics = VolDiscountUnderlyingMetrics(
+            symbol="SPY",
+            spot=550.0,
+            pct_change_20d=-0.03,
+            drawdown_52w_high=0.06,
+            current_atm_iv=0.12,
+            hv_252=0.18,
+            iv_percentile=0.0,
+            iv_rank=0.0,
+            iv_z_score=0.0,
+            valid_history_days=12,
+            is_degraded=True,
+            hv_20=0.12,
+            hv_percentile=0.12,
+            hv_z_score=-1.4,
+        )
+        res = evaluate_vol_discount_underlying(metrics)
+        self.assertEqual(res.status, GuardStatus.WATCH)
+        self.assertEqual(res.regime, "REGIME_A_HV")
+        self.assertIn("REALIZED_VOL_PROXY", res.reasons)
+        self.assertNotEqual(res.status, GuardStatus.PASS)
+
+    def test_degraded_without_hv_still_rejects(self):
+        from src.leaps_scanner.strategies.vol_discount import (
+            evaluate_vol_discount_underlying,
+            VolDiscountUnderlyingMetrics,
+        )
+        metrics = VolDiscountUnderlyingMetrics(
+            symbol="AAPL",
+            spot=220.0,
+            pct_change_20d=-0.04,
+            drawdown_52w_high=0.08,
+            current_atm_iv=0.21,
+            hv_252=0.26,
+            iv_percentile=0.0,
+            iv_rank=0.0,
+            iv_z_score=0.0,
+            valid_history_days=12,
+            is_degraded=True,
+        )
+        res = evaluate_vol_discount_underlying(metrics)
+        self.assertEqual(res.status, GuardStatus.REJECT)
+        self.assertEqual(res.regime, "NONE")
+
+    def test_iv_store_persists_roundtrip(self):
+        import os
+        import tempfile
+        from datetime import date, timedelta
+        from src.leaps_scanner.data.store.iv_history import IVHistoryStore, IVDataPoint
+        fd, path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        try:
+            store = IVHistoryStore(persist_path=path)
+            today = date(2026, 9, 15)
+            for i in range(100):
+                d = (today - timedelta(days=100 - i)).isoformat()
+                store.add_data_point("QQQ", IVDataPoint(trade_date=d, atm_iv=0.18 + 0.001 * i))
+            store.flush()
+            reloaded = IVHistoryStore(persist_path=path)
+            metrics = reloaded.get_metrics("QQQ", current_iv=0.185)
+            self.assertFalse(metrics.is_degraded)
+            self.assertEqual(metrics.valid_days, 100)
+        finally:
+            os.remove(path)
+
+    def test_ranker_uses_hv_proxy_when_iv_history_missing(self):
+        from src.leaps_scanner.scoring.ranker import StrategyCandidate, MemoryRanker
+        cand = StrategyCandidate(
+            symbol="SPY270115C00450000",
+            underlying="SPY",
+            strike=450.0,
+            spot=550.0,
+            dte=400.0,
+            bid=108.0,
+            ask=110.0,
+            delta=0.70,
+            open_interest=2000,
+            volume=80,
+            iv=0.16,
+            iv_percentile=None,
+            hv_252=0.18,
+            hv_20=0.12,
+            hv_percentile=0.14,
+            hv_z_score=-1.1,
+            iv_history_days=5,
+            valid_history_days=252,
+        )
+        boards = MemoryRanker([cand]).rank_boards(alpha=0.5)
+        item = boards["vol_discount"][0]
+        self.assertEqual(item.status, GuardStatus.WATCH)
+        self.assertEqual(item.regime, "REGIME_A_HV")
+        self.assertNotIn("MISSING_IV_PERCENTILE", item.reasons)
+
 
 if __name__ == "__main__":
     unittest.main()

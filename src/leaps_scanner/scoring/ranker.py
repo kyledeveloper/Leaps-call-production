@@ -1,6 +1,6 @@
 """
 In-memory scoring and multi-board ranking module.
-Re-ranks cached option opportunities instantly across 4 independent strategy boards
+Re-ranks cached option opportunities instantly across 3 independent strategy boards
 when the execution alpha slider changes.
 Adheres strictly to Global Invariant 1 (P_exec) and Global Invariant 6 (Zero network re-fetch).
 """
@@ -22,10 +22,6 @@ from src.leaps_scanner.strategies.oversold import (
     evaluate_oversold_underlying,
     evaluate_oversold_contract,
     OversoldUnderlyingMetrics
-)
-from src.leaps_scanner.strategies.unusual_flow import (
-    evaluate_unusual_flow,
-    UnusualFlowInput
 )
 from src.leaps_scanner.strategies.guards import GuardStatus
 from src.leaps_scanner.data.universe import SymbologyNormalizer
@@ -60,6 +56,9 @@ class StrategyCandidate:
     iv_rank: Optional[float] = None
     iv_z_score: Optional[float] = None
     valid_history_days: int = 252
+    iv_history_days: int = 0
+    hv_percentile: Optional[float] = None
+    hv_z_score: float = 0.0
     days_to_earnings: Optional[int] = None
     liquidity_status: GuardStatus = GuardStatus.PASS
     data_quality: str = "REALTIME"
@@ -114,14 +113,13 @@ class MemoryRanker:
 
     def rank_boards(self, alpha: float = 0.5) -> Dict[str, List[RankedItem]]:
         """
-        Instant in-memory re-ranking returning 4 separate strategy leaderboards.
+        Instant in-memory re-ranking returning 3 separate strategy leaderboards.
         """
         tier_order = {GuardStatus.PASS: 0, GuardStatus.WATCH: 1, GuardStatus.REJECT: 2}
 
         deep_itm_items: List[RankedItem] = []
         vol_discount_items: List[RankedItem] = []
         oversold_items: List[RankedItem] = []
-        unusual_flow_items: List[RankedItem] = []
 
         for c in self._candidates:
             pexec_res = calculate_pexec(
@@ -185,20 +183,27 @@ class MemoryRanker:
                 theta_daily_pct=s1_res.theta_daily_pct,
             ))
 
-            # 2. Strategy 2: Volatility Discount
-            if c.iv_percentile is not None and c.iv is not None:
+            # 2. Strategy 2: Volatility Discount (IV warehouse or HV proxy)
+            use_iv_path = c.iv is not None and c.iv_percentile is not None and (
+                c.iv_history_days >= 90 or (c.iv_history_days == 0 and c.valid_history_days >= 90)
+            )
+            use_hv_path = c.hv_percentile is not None and c.hv_252 > 0
+            if use_iv_path or use_hv_path:
                 vol_metrics = VolDiscountUnderlyingMetrics(
                     symbol=c.underlying,
                     spot=c.spot,
                     pct_change_20d=c.pct_change_20d,
                     drawdown_52w_high=c.drawdown_52w_high,
-                    current_atm_iv=c.iv,
+                    current_atm_iv=c.iv if c.iv is not None else 0.0,
                     hv_252=c.hv_252,
-                    iv_percentile=c.iv_percentile,
+                    iv_percentile=c.iv_percentile if c.iv_percentile is not None else 0.0,
                     iv_rank=c.iv_rank if c.iv_rank is not None else 0.5,
                     iv_z_score=c.iv_z_score if c.iv_z_score is not None else 0.0,
-                    valid_history_days=c.valid_history_days,
-                    is_degraded=c.valid_history_days < 90
+                    valid_history_days=c.iv_history_days if c.iv_history_days > 0 else c.valid_history_days,
+                    is_degraded=not use_iv_path,
+                    hv_20=c.hv_20,
+                    hv_percentile=c.hv_percentile,
+                    hv_z_score=c.hv_z_score,
                 )
                 vol_u_res = evaluate_vol_discount_underlying(vol_metrics)
                 vol_c_res = evaluate_vol_discount_contract(
@@ -233,16 +238,17 @@ class MemoryRanker:
                     open_interest=c.open_interest,
                     volume=c.volume,
                     strategy_name="vol_discount",
-                    iv_percentile=c.iv_percentile,
+                    iv_percentile=vol_u_res.iv_percentile,
                     regime=vol_c_res.regime
                 ))
             else:
-                # Defensive Clause 3: Symmetrical telemetry - record REJECT instead of silent drop
                 reject_reasons = []
                 if c.iv is None:
                     reject_reasons.append("ZERO_EXTRINSIC_IV_UNAVAILABLE")
                 if c.iv_percentile is None:
                     reject_reasons.append("MISSING_IV_PERCENTILE")
+                if c.hv_percentile is None:
+                    reject_reasons.append("MISSING_HV_PROXY")
                 vol_discount_items.append(RankedItem(
                     symbol=c.symbol,
                     underlying=c.underlying,
@@ -316,62 +322,12 @@ class MemoryRanker:
                 confluence_score=oversold_c_res.confluence_score
             ))
 
-            # 4. Strategy 4: Unusual Flow
-            flow_inp = UnusualFlowInput(
-                symbol=c.symbol,
-                underlying=c.underlying,
-                spot=c.spot,
-                strike=c.strike,
-                dte=c.dte,
-                bid=c.bid,
-                ask=c.ask,
-                volume=c.volume,
-                open_interest=c.open_interest,
-                is_etf=c.is_etf,
-                liquidity_status=c.liquidity_status
-            )
-            flow_res = evaluate_unusual_flow(flow_inp)
-            unusual_flow_items.append(RankedItem(
-                symbol=c.symbol,
-                underlying=c.underlying,
-                strike=c.strike,
-                spot=c.spot,
-                dte=c.dte,
-                bid=c.bid,
-                ask=c.ask,
-                p_exec=pexec_res.p_exec,
-                p_sell=rt_res.p_sell,
-                round_trip_per_contract=rt_res.round_trip_per_contract,
-                delta=c.delta,
-                intrinsic_per_share=carry_res.intrinsic_per_share,
-                extrinsic_per_share=carry_res.extrinsic_per_share,
-                carry_cost=carry_res.total_annualized_carry,
-                effective_leverage=leverage,
-                status=flow_res.status,
-                reasons=flow_res.reasons,
-                open_interest=c.open_interest,
-                volume=c.volume,
-                strategy_name="unusual_flow",
-                vol_oi_ratio=flow_res.vol_oi_ratio,
-                dollar_volume=flow_res.dollar_volume
-            ))
-
-        # Sort Boards
-        # 1. Deep ITM: Tier, then lowest carry cost
         deep_itm_items.sort(key=lambda x: (tier_order.get(x.status, 3), x.carry_cost))
-
-        # 2. Vol Discount: Tier, then lowest IV percentile
         vol_discount_items.sort(key=lambda x: (tier_order.get(x.status, 3), x.iv_percentile if x.iv_percentile is not None else 1.0))
-
-        # 3. Oversold: Tier, then highest confluence score, then lowest carry cost
         oversold_items.sort(key=lambda x: (tier_order.get(x.status, 3), -x.confluence_score, x.carry_cost))
-
-        # 4. Unusual Flow: Tier, then highest dollar volume, then highest vol/oi
-        unusual_flow_items.sort(key=lambda x: (tier_order.get(x.status, 3), -x.dollar_volume, -x.vol_oi_ratio))
 
         return {
             "deep_itm": deep_itm_items,
             "vol_discount": vol_discount_items,
             "oversold": oversold_items,
-            "unusual_flow": unusual_flow_items
         }

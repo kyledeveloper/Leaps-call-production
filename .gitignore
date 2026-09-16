@@ -40,9 +40,7 @@ venv/
 !docs/*.html
 !tests/python/fixtures/*.html
 
-# Environment
-.env
-.env.local
-.env.*.local
-.webull_token.json
-*.token
+# Accumulated ATM IV warehouse (strategy 2)
+data/iv_history.json
+data/iv_history.tmp
+

@@ -28,7 +28,7 @@ class TestAPIServer(unittest.TestCase):
         self.assertIn("deep_itm", boards)
         self.assertIn("vol_discount", boards)
         self.assertIn("oversold", boards)
-        self.assertIn("unusual_flow", boards)
+        self.assertNotIn("unusual_flow", boards)
 
         # Rerank with alpha=1.0
         boards_10 = self.state.get_boards(alpha=1.0)
