@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.leaps_scanner.data.webull import WebullClient
 from src.leaps_scanner.scoring.ranker import MemoryRanker, RankedItem, StrategyCandidate
 from src.leaps_scanner.data.rebalancer import get_universe_manager
+from src.leaps_scanner.data.universe import SymbologyNormalizer
 
 
 DEFAULT_SCAN_SYMBOLS = ["SPY", "QQQ", "AAPL", "NVDA", "MSFT"]
@@ -34,6 +35,7 @@ class AppState:
 
     def run_scan(self, symbols: Optional[List[str]] = None) -> int:
         syms = symbols if symbols else DEFAULT_SCAN_SYMBOLS
+        syms = [SymbologyNormalizer.to_canonical(s) for s in syms]
         self.candidates = self.client.get_leaps_candidates(syms)
         self.ranker = MemoryRanker(self.candidates)
         self.last_scan_time = datetime.now(timezone.utc).isoformat()

@@ -226,6 +226,7 @@ class DynamicUniverseManager:
         self._indices: Dict[str, List[str]] = {}
         self._rebalance_history: List[Dict[str, Any]] = []
         self._last_synced: Optional[str] = None
+        self._last_cache_mtime: Optional[float] = None
         self._load_or_initialize()
 
     def pin_symbol(self, symbol: str) -> None:
@@ -271,6 +272,7 @@ class DynamicUniverseManager:
             self._indices = indices
             self._rebalance_history = payload.get("rebalance_history", [])
             self._last_synced = payload.get("last_synced")
+            self._last_cache_mtime = os.path.getmtime(self.cache_path)
 
         except Exception as e:
             logger.warning(f"Universe cache corrupted or invalid at {self.cache_path}: {e}. Quarantining and fallback to seed.")
@@ -286,6 +288,19 @@ class DynamicUniverseManager:
             self._rebalance_history = []
             self._last_synced = datetime.now(timezone.utc).isoformat()
             self._save_cache()
+
+    def _check_and_reload_if_modified(self) -> None:
+        """Hot-reload cache if external process (e.g. CLI sync) modified the cache file on disk."""
+        if not os.path.exists(self.cache_path):
+            return
+        try:
+            mtime = os.path.getmtime(self.cache_path)
+            if self._last_cache_mtime is not None and mtime > self._last_cache_mtime:
+                self._load_or_initialize()
+            elif self._last_cache_mtime is None:
+                self._last_cache_mtime = mtime
+        except OSError:
+            pass
 
     def _save_cache(self) -> None:
         os.makedirs(os.path.dirname(os.path.abspath(self.cache_path)), exist_ok=True)
@@ -318,6 +333,7 @@ class DynamicUniverseManager:
                     f.flush()
                     os.fsync(f.fileno())
                 os.replace(tmp_path, self.cache_path)
+                self._last_cache_mtime = os.path.getmtime(self.cache_path)
             finally:
                 if HAS_FCNTL:
                     try:
@@ -326,11 +342,13 @@ class DynamicUniverseManager:
                         pass
 
     def get_constituents(self, index_name: str) -> List[str]:
+        self._check_and_reload_if_modified()
         idx = index_name.lower().strip()
         return sorted(list(set(self._indices.get(idx, []))))
 
     def get_master_universe(self) -> Set[str]:
         """Compute strict mathematical union across all active indices and pinned holdings."""
+        self._check_and_reload_if_modified()
         master: Set[str] = set()
         for components in self._indices.values():
             master.update(components)
@@ -338,6 +356,7 @@ class DynamicUniverseManager:
         return master
 
     def get_rebalance_history(self) -> List[Dict[str, Any]]:
+        self._check_and_reload_if_modified()
         return list(self._rebalance_history)
 
     def apply_rebalance(

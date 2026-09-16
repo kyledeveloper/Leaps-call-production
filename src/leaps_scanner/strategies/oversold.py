@@ -74,7 +74,7 @@ def evaluate_oversold_underlying(
     # 2. Daily bars sufficiency check
     if not metrics.is_valid or metrics.bar_count < 200:
         return OversoldUnderlyingResult(
-            symbol=metrics.symbol,
+            symbol=canonical_sym,
             status=GuardStatus.REJECT,
             confluence_score=0.0,
             core_signal_count=0,
@@ -145,7 +145,7 @@ def evaluate_oversold_underlying(
         reasons.append(f"LOW_CONFLUENCE_SCORE_{score:.1f}")
 
     return OversoldUnderlyingResult(
-        symbol=metrics.symbol,
+        symbol=canonical_sym,
         status=status,
         confluence_score=score,
         core_signal_count=core_signals,

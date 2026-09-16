@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from src.leaps_scanner.core.metrics import calculate_carry_cost, calculate_effective_leverage
 from src.leaps_scanner.strategies.guards import GuardStatus
+from src.leaps_scanner.data.universe import SymbologyNormalizer
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ def evaluate_vol_discount_underlying(
     1. Regime A: Bottoming low IV (non-crashing price action).
     2. Regime B: Post-crash relative value (IV still low relative to crisis).
     """
+    canonical_sym = SymbologyNormalizer.to_canonical(metrics.symbol)
     reasons: List[str] = list(metrics.reasons)
 
     # 1. Defensive Clause 5: If history < 90 days, degrade strategy unconditionally
@@ -62,7 +64,7 @@ def evaluate_vol_discount_underlying(
         if "STRATEGY_DEGRADED_INSUFFICIENT_HISTORY" not in reasons:
             reasons.append("STRATEGY_DEGRADED_INSUFFICIENT_HISTORY")
         return VolDiscountUnderlyingResult(
-            symbol=metrics.symbol,
+            symbol=canonical_sym,
             status=GuardStatus.REJECT,
             regime="NONE",
             iv_percentile=metrics.iv_percentile,
@@ -80,7 +82,7 @@ def evaluate_vol_discount_underlying(
         # Condition: IV Percentile < 40% OR IV z-score < 0.0
         if metrics.iv_percentile < 0.40 or metrics.iv_z_score < 0.0:
             return VolDiscountUnderlyingResult(
-                symbol=metrics.symbol,
+                symbol=canonical_sym,
                 status=GuardStatus.PASS,
                 regime="REGIME_B",
                 iv_percentile=metrics.iv_percentile,
@@ -90,7 +92,7 @@ def evaluate_vol_discount_underlying(
         else:
             reasons.append(f"REGIME_B_HIGH_IV_PERCENTILE_{metrics.iv_percentile:.1%}")
             return VolDiscountUnderlyingResult(
-                symbol=metrics.symbol,
+                symbol=canonical_sym,
                 status=GuardStatus.REJECT,
                 regime="REGIME_B",
                 iv_percentile=metrics.iv_percentile,
@@ -125,7 +127,7 @@ def evaluate_vol_discount_underlying(
             status = GuardStatus.REJECT
 
         return VolDiscountUnderlyingResult(
-            symbol=metrics.symbol,
+            symbol=canonical_sym,
             status=status,
             regime="REGIME_A",
             iv_percentile=metrics.iv_percentile,

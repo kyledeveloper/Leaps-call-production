@@ -6,7 +6,7 @@ import argparse
 import sys
 from typing import List, Optional
 from src.leaps_scanner.api.server import AppState, run_server
-from src.leaps_scanner.data.universe import get_universe
+from src.leaps_scanner.data.universe import get_universe, SymbologyNormalizer
 from src.leaps_scanner.data.rebalancer import get_universe_manager
 
 
@@ -80,7 +80,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.universe:
         symbols = get_universe(args.universe)
     else:
-        symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+        symbols = [SymbologyNormalizer.to_canonical(s.strip()) for s in args.symbols.split(",") if s.strip()]
 
     alpha = max(0.0, min(1.0, args.alpha))
 

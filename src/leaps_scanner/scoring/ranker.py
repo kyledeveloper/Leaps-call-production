@@ -28,6 +28,7 @@ from src.leaps_scanner.strategies.unusual_flow import (
     UnusualFlowInput
 )
 from src.leaps_scanner.strategies.guards import GuardStatus
+from src.leaps_scanner.data.universe import SymbologyNormalizer
 
 
 @dataclass
@@ -96,7 +97,11 @@ class MemoryRanker:
     Maintains active snapshot in memory and recalculates multi-board rankings on demand.
     """
     def __init__(self, candidates: List[StrategyCandidate]):
-        self._candidates = list(candidates)
+        self._candidates: List[StrategyCandidate] = []
+        for c in candidates:
+            # Defensive normalization: ensure candidate underlying is canonical
+            c.underlying = SymbologyNormalizer.to_canonical(c.underlying)
+            self._candidates.append(c)
 
     def rank(self, alpha: float = 0.5) -> List[RankedItem]:
         """Backward-compatible default rank for primary strategy (deep_itm)."""

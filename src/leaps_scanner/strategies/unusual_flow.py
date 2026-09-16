@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from src.leaps_scanner.core.metrics import CONTRACT_MULTIPLIER
 from src.leaps_scanner.strategies.guards import GuardStatus
+from src.leaps_scanner.data.universe import SymbologyNormalizer
 
 
 CAVEAT_NOTICE = (
@@ -50,13 +51,14 @@ def evaluate_unusual_flow(inp: UnusualFlowInput) -> UnusualFlowResult:
     """
     Evaluate contract for unusual far-dated flow activity.
     """
+    canonical_symbol = SymbologyNormalizer.to_canonical(inp.symbol)
     reasons: List[str] = []
 
     # 1. Shared liquidity check
     if inp.liquidity_status == GuardStatus.REJECT:
         reasons.append("LIQUIDITY_REJECTED")
         return UnusualFlowResult(
-            symbol=inp.symbol,
+            symbol=canonical_symbol,
             status=GuardStatus.REJECT,
             vol_oi_ratio=0.0,
             dollar_volume=0.0,
@@ -71,7 +73,7 @@ def evaluate_unusual_flow(inp: UnusualFlowInput) -> UnusualFlowResult:
     if inp.dte < 250.0:
         reasons.append(f"INSUFFICIENT_DTE_{inp.dte}")
         return UnusualFlowResult(
-            symbol=inp.symbol,
+            symbol=canonical_symbol,
             status=GuardStatus.REJECT,
             vol_oi_ratio=0.0,
             dollar_volume=0.0,
@@ -88,7 +90,7 @@ def evaluate_unusual_flow(inp: UnusualFlowInput) -> UnusualFlowResult:
         if strike_ratio < 0.70 or strike_ratio > 1.35:
             reasons.append(f"STRIKE_OUT_OF_WINDOW_{strike_ratio:.2f}")
             return UnusualFlowResult(
-                symbol=inp.symbol,
+                symbol=canonical_symbol,
                 status=GuardStatus.REJECT,
                 vol_oi_ratio=0.0,
                 dollar_volume=0.0,
@@ -172,7 +174,7 @@ def evaluate_unusual_flow(inp: UnusualFlowInput) -> UnusualFlowResult:
         final_status = GuardStatus.PASS
 
     return UnusualFlowResult(
-        symbol=inp.symbol,
+        symbol=canonical_symbol,
         status=final_status,
         vol_oi_ratio=vol_oi_ratio,
         dollar_volume=dollar_volume,
