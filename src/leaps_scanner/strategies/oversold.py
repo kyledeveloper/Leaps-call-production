@@ -5,9 +5,9 @@ Adheres strictly to Core Universe Hard Constraint, Defensive Clause 6 (min 200 d
 and Defensive Clause 2 (P_exec & liquidity guards).
 """
 from dataclasses import dataclass, field
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 from src.leaps_scanner.core.metrics import calculate_carry_cost, calculate_effective_leverage
-from src.leaps_scanner.strategies.guards import GuardStatus
+from src.leaps_scanner.strategies.guards import GuardStatus, fold_gates, signal_tier
 from src.leaps_scanner.data.universe import FULL_CORE_UNIVERSE, SymbologyNormalizer
 
 DEFAULT_CORE_UNIVERSE: Set[str] = FULL_CORE_UNIVERSE
@@ -35,6 +35,9 @@ class OversoldUnderlyingResult:
     core_signal_count: int
     weak_signal_count: int
     reasons: List[str] = field(default_factory=list)
+    gates: Dict[str, GuardStatus] = field(default_factory=dict)
+    signal_points: Dict[str, float] = field(default_factory=dict)
+    signal_core: Dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,9 @@ class OversoldContractResult:
     carry_cost: float
     intrinsic_ratio: float
     reasons: List[str] = field(default_factory=list)
+    gates: Dict[str, GuardStatus] = field(default_factory=dict)
+    signal_points: Dict[str, float] = field(default_factory=dict)
+    signal_core: Dict[str, bool] = field(default_factory=dict)
 
 
 def evaluate_oversold_underlying(
@@ -58,91 +64,67 @@ def evaluate_oversold_underlying(
     """
     universe = core_universe if core_universe is not None else DEFAULT_CORE_UNIVERSE
     reasons: List[str] = []
-
-    # 1. Hard constraint: Core universe check (with canonical normalization)
     canonical_sym = SymbologyNormalizer.to_canonical(metrics.symbol)
-    if canonical_sym not in universe:
-        return OversoldUnderlyingResult(
-            symbol=canonical_sym,
-            status=GuardStatus.REJECT,
-            confluence_score=0.0,
-            core_signal_count=0,
-            weak_signal_count=0,
-            reasons=["NOT_IN_CORE_UNIVERSE"]
-        )
 
-    # 2. Daily bars sufficiency check
-    if not metrics.is_valid or metrics.bar_count < 200:
-        return OversoldUnderlyingResult(
-            symbol=canonical_sym,
-            status=GuardStatus.REJECT,
-            confluence_score=0.0,
-            core_signal_count=0,
-            weak_signal_count=0,
-            reasons=list(metrics.reasons) if metrics.reasons else ["INSUFFICIENT_DAILY_BARS"]
-        )
+    in_universe = canonical_sym in universe
+    if not in_universe:
+        reasons.append("NOT_IN_CORE_UNIVERSE")
+    bars_ok = metrics.is_valid and metrics.bar_count >= 200
+    if not bars_ok:
+        reasons.extend(list(metrics.reasons) if metrics.reasons else ["INSUFFICIENT_DAILY_BARS"])
 
     core_signals = 0
     weak_signals = 0
     score = 0.0
+    rsi_pts = dma_pts = dma_hv_pts = dd_pts = bounce_pts = 0.0
+    rsi_core = dma_core = dma_hv_core = dd_core = bounce_core = False
 
-    # Signal 1: RSI(14)
-    # Core <= 30 (1.0), Weak <= 40 (0.5)
     if metrics.rsi_14 <= 30.0:
-        score += 1.0
-        core_signals += 1
+        rsi_pts, rsi_core, score, core_signals = 1.0, True, score + 1.0, core_signals + 1
     elif metrics.rsi_14 <= 40.0:
-        score += 0.5
-        weak_signals += 1
+        rsi_pts, score, weak_signals = 0.5, score + 0.5, weak_signals + 1
 
-    # Signal 2: Relative to 200DMA
-    # Mega-cap/ETF: <= -10% (1.0), <= -6% (0.5)
-    # High-volatility (HV20 > 40%): <= -15% (1.0), <= -8% (0.5)
     if metrics.hv_20 > 0.40:
         if metrics.pct_to_200dma <= -0.15:
-            score += 1.0
-            core_signals += 1
+            dma_hv_pts, dma_hv_core, score, core_signals = 1.0, True, score + 1.0, core_signals + 1
         elif metrics.pct_to_200dma <= -0.08:
-            score += 0.5
-            weak_signals += 1
+            dma_hv_pts, score, weak_signals = 0.5, score + 0.5, weak_signals + 1
     else:
         if metrics.pct_to_200dma <= -0.10:
-            score += 1.0
-            core_signals += 1
+            dma_pts, dma_core, score, core_signals = 1.0, True, score + 1.0, core_signals + 1
         elif metrics.pct_to_200dma <= -0.06:
-            score += 0.5
-            weak_signals += 1
+            dma_pts, score, weak_signals = 0.5, score + 0.5, weak_signals + 1
 
-    # Signal 3: Drawdown from 52-week High
-    # Core >= 15% (1.0), Weak >= 10% (0.5)
     if metrics.drawdown_52w_high >= 0.15:
-        score += 1.0
-        core_signals += 1
+        dd_pts, dd_core, score, core_signals = 1.0, True, score + 1.0, core_signals + 1
     elif metrics.drawdown_52w_high >= 0.10:
-        score += 0.5
-        weak_signals += 1
+        dd_pts, score, weak_signals = 0.5, score + 0.5, weak_signals + 1
 
-    # Signal 4: Distance from 52-week Low (only evaluated when experiencing pullback/drawdown)
-    # Core: Bounce >= 3% (1.0, avoids falling knife); Weak: near bottom < 3% (0.5)
     if metrics.drawdown_52w_high >= 0.10:
         if metrics.bounce_52w_low >= 0.03:
-            score += 1.0
-            core_signals += 1
+            bounce_pts, bounce_core, score, core_signals = 1.0, True, score + 1.0, core_signals + 1
         elif metrics.bounce_52w_low >= 0.0:
-            score += 0.5
-            weak_signals += 1
+            bounce_pts, score, weak_signals = 0.5, score + 0.5, weak_signals + 1
 
-    # Overall Status:
-    # Pass: Score >= 2.0 and at least 1 core signal
-    # Watch: Score in [1.0, 2.0)
-    # Reject: Score < 1.0
     if score >= 2.0 and core_signals >= 1:
-        status = GuardStatus.PASS
+        conf_status = GuardStatus.PASS
     elif score >= 1.0:
-        status = GuardStatus.WATCH
+        conf_status = GuardStatus.WATCH
     else:
-        status = GuardStatus.REJECT
+        conf_status = GuardStatus.REJECT
         reasons.append(f"LOW_CONFLUENCE_SCORE_{score:.1f}")
+
+    gates = {
+        "universe": GuardStatus.PASS if in_universe else GuardStatus.REJECT,
+        "bars": GuardStatus.PASS if bars_ok else GuardStatus.REJECT,
+        "rsi": signal_tier(rsi_core, rsi_pts > 0),
+        "dma": signal_tier(dma_core, dma_pts > 0) if metrics.hv_20 <= 0.40 else GuardStatus.PASS,
+        "dma_hv": signal_tier(dma_hv_core, dma_hv_pts > 0) if metrics.hv_20 > 0.40 else GuardStatus.PASS,
+        "drawdown": signal_tier(dd_core, dd_pts > 0),
+        "bounce": signal_tier(bounce_core, bounce_pts > 0) if metrics.drawdown_52w_high >= 0.10 else GuardStatus.PASS,
+        "confluence": conf_status,
+    }
+    status = fold_gates({"universe": gates["universe"], "bars": gates["bars"], "confluence": conf_status})
 
     return OversoldUnderlyingResult(
         symbol=canonical_sym,
@@ -150,7 +132,10 @@ def evaluate_oversold_underlying(
         confluence_score=score,
         core_signal_count=core_signals,
         weak_signal_count=weak_signals,
-        reasons=reasons
+        reasons=reasons,
+        gates=gates,
+        signal_points={"rsi": rsi_pts, "dma": dma_pts, "dma_hv": dma_hv_pts, "drawdown": dd_pts, "bounce": bounce_pts},
+        signal_core={"rsi": rsi_core, "dma": dma_core, "dma_hv": dma_hv_core, "drawdown": dd_core, "bounce": bounce_core},
     )
 
 
@@ -167,69 +152,35 @@ def evaluate_oversold_contract(
 ) -> OversoldContractResult:
     """
     Evaluate specific LEAPS call contract for an oversold candidate underlying.
+    Always fills per-filter gates so the dashboard can toggle them independently.
     """
     reasons: List[str] = list(underlying_result.reasons)
+    gates: Dict[str, GuardStatus] = dict(underlying_result.gates)
 
-    # 1. Underlying pass check
-    if underlying_result.status == GuardStatus.REJECT:
-        return OversoldContractResult(
-            symbol=underlying_result.symbol,
-            status=GuardStatus.REJECT,
-            confluence_score=underlying_result.confluence_score,
-            effective_leverage=0.0,
-            carry_cost=0.0,
-            intrinsic_ratio=0.0,
-            reasons=reasons
-        )
-
-    # 2. Shared liquidity guard check
     if liquidity_status == GuardStatus.REJECT:
         reasons.append("LIQUIDITY_REJECTED")
-        return OversoldContractResult(
-            symbol=underlying_result.symbol,
-            status=GuardStatus.REJECT,
-            confluence_score=underlying_result.confluence_score,
-            effective_leverage=0.0,
-            carry_cost=0.0,
-            intrinsic_ratio=0.0,
-            reasons=reasons
-        )
+    gates["liquidity"] = liquidity_status
 
-    # 3. DTE check (>= 250)
     if dte < 250.0:
+        dte_status = GuardStatus.REJECT
         reasons.append(f"INSUFFICIENT_DTE_{dte}")
-        return OversoldContractResult(
-            symbol=underlying_result.symbol,
-            status=GuardStatus.REJECT,
-            confluence_score=underlying_result.confluence_score,
-            effective_leverage=0.0,
-            carry_cost=0.0,
-            intrinsic_ratio=0.0,
-            reasons=reasons
-        )
+    else:
+        dte_status = GuardStatus.PASS
+    gates["dte"] = dte_status
 
-    # 4. Strike window check: [0.50S, 1.25S]
+    strike_status = GuardStatus.PASS
     if spot > 0:
         strike_ratio = strike / spot
         if strike_ratio < 0.50 or strike_ratio > 1.25:
+            strike_status = GuardStatus.REJECT
             reasons.append(f"STRIKE_OUT_OF_WINDOW_{strike_ratio:.2f}")
-            return OversoldContractResult(
-                symbol=underlying_result.symbol,
-                status=GuardStatus.REJECT,
-                confluence_score=underlying_result.confluence_score,
-                effective_leverage=0.0,
-                carry_cost=0.0,
-                intrinsic_ratio=0.0,
-                reasons=reasons
-            )
+    gates["strike"] = strike_status
 
-    # 5. Earnings window tagging
     if days_to_earnings is not None and 0 <= days_to_earnings <= 10:
         reasons.append("EVENT_WINDOW")
 
     intrinsic = max(0.0, spot - strike)
     intrinsic_ratio = (intrinsic / p_exec) if p_exec > 0 else 0.0
-
     carry_res = calculate_carry_cost(
         spot=spot,
         strike=strike,
@@ -239,18 +190,16 @@ def evaluate_oversold_contract(
     )
     leverage = calculate_effective_leverage(delta=delta, spot=spot, p_exec=p_exec)
 
-    # Final contract tier: reflects underlying tier and liquidity tier
-    if underlying_result.status == GuardStatus.WATCH or liquidity_status == GuardStatus.WATCH:
-        final_status = GuardStatus.WATCH
-    else:
-        final_status = GuardStatus.PASS
-
+    hard = {k: gates[k] for k in ("universe", "bars", "confluence", "strike", "dte", "liquidity") if k in gates}
     return OversoldContractResult(
         symbol=underlying_result.symbol,
-        status=final_status,
+        status=fold_gates(hard),
         confluence_score=underlying_result.confluence_score,
         effective_leverage=leverage,
         carry_cost=carry_res.total_annualized_carry,
         intrinsic_ratio=intrinsic_ratio,
-        reasons=reasons
+        reasons=reasons,
+        gates=gates,
+        signal_points=dict(underlying_result.signal_points),
+        signal_core=dict(underlying_result.signal_core),
     )

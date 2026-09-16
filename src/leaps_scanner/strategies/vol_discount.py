@@ -5,9 +5,9 @@ Adheres strictly to Defensive Clause 5 (ATM median IV, min 90d history, STRATEGY
 and Defensive Clause 2 (P_exec and liquidity guardrails).
 """
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 from src.leaps_scanner.core.metrics import calculate_carry_cost, calculate_effective_leverage
-from src.leaps_scanner.strategies.guards import GuardStatus
+from src.leaps_scanner.strategies.guards import GuardStatus, fold_gates
 from src.leaps_scanner.data.universe import SymbologyNormalizer
 
 
@@ -38,6 +38,7 @@ class VolDiscountUnderlyingResult:
     iv_percentile: float
     iv_hv_ratio: float
     reasons: List[str] = field(default_factory=list)
+    gates: Dict[str, GuardStatus] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,7 @@ class VolDiscountContractResult:
     effective_leverage: float
     carry_cost: float
     reasons: List[str] = field(default_factory=list)
+    gates: Dict[str, GuardStatus] = field(default_factory=dict)
 
 
 def _cap_watch(status: GuardStatus) -> GuardStatus:
@@ -73,6 +75,14 @@ def _evaluate_realized_vol_proxy(
         else:
             status = GuardStatus.REJECT
             reasons.append(f"REGIME_B_HIGH_HV_PERCENTILE_{hv_pct:.1%}")
+        gates = {
+            "iv_history": GuardStatus.WATCH,
+            "hv_proxy": status,
+            "regime_b": status,
+            "iv_percentile": GuardStatus.PASS,
+            "iv_hv": GuardStatus.PASS,
+            "crash": GuardStatus.WATCH,
+        }
         return VolDiscountUnderlyingResult(
             symbol=symbol,
             status=_cap_watch(status) if status != GuardStatus.REJECT else status,
@@ -80,6 +90,7 @@ def _evaluate_realized_vol_proxy(
             iv_percentile=hv_pct,
             iv_hv_ratio=hv_ratio,
             reasons=reasons,
+            gates=gates,
         )
 
     if hv_pct < 0.20:
@@ -110,6 +121,14 @@ def _evaluate_realized_vol_proxy(
         iv_percentile=hv_pct,
         iv_hv_ratio=hv_ratio,
         reasons=reasons,
+        gates={
+            "iv_history": GuardStatus.WATCH,
+            "hv_proxy": status,
+            "iv_percentile": pct_tier,
+            "iv_hv": ratio_tier,
+            "regime_b": GuardStatus.PASS,
+            "crash": GuardStatus.PASS,
+        },
     )
 
 
@@ -138,7 +157,8 @@ def evaluate_vol_discount_underlying(
                 regime="NONE",
                 iv_percentile=metrics.iv_percentile,
                 iv_hv_ratio=0.0,
-                reasons=reasons
+                reasons=reasons,
+                gates={"iv_history": GuardStatus.REJECT, "hv_proxy": GuardStatus.REJECT},
             )
         return _evaluate_realized_vol_proxy(canonical_sym, metrics, is_crash, reasons)
 
@@ -154,7 +174,15 @@ def evaluate_vol_discount_underlying(
                 regime="REGIME_B",
                 iv_percentile=metrics.iv_percentile,
                 iv_hv_ratio=iv_hv_ratio,
-                reasons=reasons
+                reasons=reasons,
+                gates={
+                    "iv_history": GuardStatus.PASS,
+                    "regime_b": GuardStatus.PASS,
+                    "crash": GuardStatus.WATCH,
+                    "iv_percentile": GuardStatus.PASS,
+                    "iv_hv": GuardStatus.PASS,
+                    "hv_proxy": GuardStatus.PASS,
+                },
             )
         else:
             reasons.append(f"REGIME_B_HIGH_IV_PERCENTILE_{metrics.iv_percentile:.1%}")
@@ -164,7 +192,15 @@ def evaluate_vol_discount_underlying(
                 regime="REGIME_B",
                 iv_percentile=metrics.iv_percentile,
                 iv_hv_ratio=iv_hv_ratio,
-                reasons=reasons
+                reasons=reasons,
+                gates={
+                    "iv_history": GuardStatus.PASS,
+                    "regime_b": GuardStatus.REJECT,
+                    "crash": GuardStatus.WATCH,
+                    "iv_percentile": GuardStatus.REJECT,
+                    "iv_hv": GuardStatus.PASS,
+                    "hv_proxy": GuardStatus.PASS,
+                },
             )
     else:
         # Regime A: Bottoming low IV
@@ -199,7 +235,15 @@ def evaluate_vol_discount_underlying(
             regime="REGIME_A",
             iv_percentile=metrics.iv_percentile,
             iv_hv_ratio=iv_hv_ratio,
-            reasons=reasons
+            reasons=reasons,
+            gates={
+                "iv_history": GuardStatus.PASS,
+                "iv_percentile": pct_tier,
+                "iv_hv": ratio_tier,
+                "hv_proxy": GuardStatus.PASS,
+                "regime_b": GuardStatus.PASS,
+                "crash": GuardStatus.PASS,
+            },
         )
 
 
@@ -216,58 +260,38 @@ def evaluate_vol_discount_contract(
 ) -> VolDiscountContractResult:
     """
     Evaluate specific contract for Volatility Discount strategy.
+    Always fills per-filter gates so the dashboard can toggle them independently.
     """
     reasons: List[str] = list(underlying_result.reasons)
+    gates: Dict[str, GuardStatus] = dict(underlying_result.gates)
 
-    # 1. Underlying pass check
-    if underlying_result.status == GuardStatus.REJECT:
-        return VolDiscountContractResult(
-            symbol=underlying_result.symbol,
-            status=GuardStatus.REJECT,
-            regime=underlying_result.regime,
-            effective_leverage=0.0,
-            carry_cost=0.0,
-            reasons=reasons
-        )
-
-    # 2. Liquidity check
     if liquidity_status == GuardStatus.REJECT:
         reasons.append("LIQUIDITY_REJECTED")
-        return VolDiscountContractResult(
-            symbol=underlying_result.symbol,
-            status=GuardStatus.REJECT,
-            regime=underlying_result.regime,
-            effective_leverage=0.0,
-            carry_cost=0.0,
-            reasons=reasons
-        )
+    gates["liquidity"] = liquidity_status
 
-    # 3. DTE check: Pass >= 300, Watch [250, 300), Reject < 250
     if dte < 250.0:
+        dte_status = GuardStatus.REJECT
         reasons.append(f"INSUFFICIENT_DTE_{dte}")
-        return VolDiscountContractResult(
-            symbol=underlying_result.symbol,
-            status=GuardStatus.REJECT,
-            regime=underlying_result.regime,
-            effective_leverage=0.0,
-            carry_cost=0.0,
-            reasons=reasons
-        )
-    dte_status = GuardStatus.PASS if dte >= 300.0 else GuardStatus.WATCH
+    elif dte >= 300.0:
+        dte_status = GuardStatus.PASS
+    else:
+        dte_status = GuardStatus.WATCH
+    gates["dte"] = dte_status
 
-    # 4. Strike window check: K in [0.70S, 1.25S]
+    strike_status = GuardStatus.PASS
     if spot > 0:
         strike_ratio = strike / spot
         if strike_ratio < 0.70 or strike_ratio > 1.25:
+            strike_status = GuardStatus.REJECT
             reasons.append(f"STRIKE_OUT_OF_WINDOW_{strike_ratio:.2f}")
-            return VolDiscountContractResult(
-                symbol=underlying_result.symbol,
-                status=GuardStatus.REJECT,
-                regime=underlying_result.regime,
-                effective_leverage=0.0,
-                carry_cost=0.0,
-                reasons=reasons
-            )
+    gates["strike"] = strike_status
+
+    earn_status = GuardStatus.PASS
+    if days_to_earnings is not None and 0 <= days_to_earnings <= 10:
+        reasons.append("EVENT_WINDOW")
+        if underlying_result.regime in ("REGIME_A", "REGIME_A_HV"):
+            earn_status = GuardStatus.WATCH
+    gates["earnings"] = earn_status
 
     carry_res = calculate_carry_cost(
         spot=spot,
@@ -278,21 +302,12 @@ def evaluate_vol_discount_contract(
     )
     leverage = calculate_effective_leverage(delta=delta, spot=spot, p_exec=p_exec)
 
-    final_status = underlying_result.status
-    if liquidity_status == GuardStatus.WATCH or dte_status == GuardStatus.WATCH:
-        final_status = GuardStatus.WATCH
-
-    # 5. Earnings event window check: if in Regime A and earnings within 10 days, downgrade to WATCH
-    if days_to_earnings is not None and 0 <= days_to_earnings <= 10:
-        reasons.append("EVENT_WINDOW")
-        if underlying_result.regime == "REGIME_A":
-            final_status = GuardStatus.WATCH
-
     return VolDiscountContractResult(
         symbol=underlying_result.symbol,
-        status=final_status,
+        status=fold_gates(gates),
         regime=underlying_result.regime,
         effective_leverage=leverage,
         carry_cost=carry_res.total_annualized_carry,
-        reasons=reasons
+        reasons=reasons,
+        gates=gates,
     )

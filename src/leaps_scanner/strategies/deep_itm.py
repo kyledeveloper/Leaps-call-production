@@ -4,12 +4,12 @@ Screens far-dated deep in-the-money call options with low carry drag and 2.5x-4.
 Adheres strictly to Defensive Clause 2 (P_exec) and Clause 4 (operates even if IV is None).
 """
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 from src.leaps_scanner.core.metrics import YEAR_DAYS, calculate_carry_cost, calculate_effective_leverage
 from src.leaps_scanner.core.greeks import calculate_american_greeks
 from src.leaps_scanner.core.rates import RateCurve
 from src.leaps_scanner.data.funnel import STRATEGY_STRIKE_RATIOS
-from src.leaps_scanner.strategies.guards import GuardStatus, evaluate_liquidity_guard
+from src.leaps_scanner.strategies.guards import GuardStatus, evaluate_liquidity_guard, fold_gates
 
 _RATE_CURVE = RateCurve()
 
@@ -23,6 +23,7 @@ class StrategyResult:
     effective_leverage: float = 0.0
     carry_cost: float = 0.0
     theta_daily_pct: float = 0.0
+    gates: Dict[str, GuardStatus] = field(default_factory=dict)
 
     @property
     def is_rejected(self) -> bool:
@@ -59,7 +60,11 @@ def evaluate_deep_itm(
     reasons: List[str] = []
 
     if spot <= 0 or strike <= 0 or p_exec <= 0:
-        return StrategyResult(status=GuardStatus.REJECT, reasons=["INVALID_NUMERICS"])
+        return StrategyResult(
+            status=GuardStatus.REJECT,
+            reasons=["INVALID_NUMERICS"],
+            gates={"strike": GuardStatus.REJECT},
+        )
 
     intrinsic = max(0.0, spot - strike)
     intrinsic_ratio = intrinsic / p_exec
@@ -163,8 +168,19 @@ def evaluate_deep_itm(
                 reasons.append(f"HIGH_THETA_DRAG_{theta_daily_pct:.3%}/d")
 
     tiers = [strike_tier, delta_tier, ratio_tier, lev_tier, carry_tier, dte_tier]
+    gates: Dict[str, GuardStatus] = {
+        "strike": strike_tier,
+        "delta": delta_tier,
+        "intrinsic": ratio_tier,
+        "leverage": lev_tier,
+        "carry": carry_tier,
+        "dte": dte_tier,
+        "theta": GuardStatus.PASS,
+        "liquidity": GuardStatus.PASS,
+    }
     if theta_tier is not None:
         tiers.append(theta_tier)
+        gates["theta"] = theta_tier
 
     # 6. Shared liquidity (zero-bid, OI, spread). Optional so unit tests can omit quotes.
     if ask > 0:
@@ -177,14 +193,10 @@ def evaluate_deep_itm(
             ask_size=ask_size,
         )
         tiers.append(liq.status)
+        gates["liquidity"] = liq.status
         reasons.extend(liq.reasons)
 
-    if GuardStatus.REJECT in tiers:
-        status = GuardStatus.REJECT
-    elif GuardStatus.WATCH in tiers:
-        status = GuardStatus.WATCH
-    else:
-        status = GuardStatus.PASS
+    status = fold_gates(gates)
 
     return StrategyResult(
         status=status,
@@ -193,5 +205,6 @@ def evaluate_deep_itm(
         intrinsic_ratio=intrinsic_ratio,
         effective_leverage=leverage,
         carry_cost=carry,
-        theta_daily_pct=theta_daily_pct
+        theta_daily_pct=theta_daily_pct,
+        gates=gates,
     )

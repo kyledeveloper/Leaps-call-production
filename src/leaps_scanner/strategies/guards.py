@@ -4,13 +4,30 @@ Evaluates contracts against Pass, Watch, and Reject criteria prior to strategy r
 """
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List
+from typing import Dict, List
 
 
 class GuardStatus(str, Enum):
     PASS = "PASS"
     WATCH = "WATCH"
     REJECT = "REJECT"
+
+
+def fold_gates(gates: Dict[str, GuardStatus]) -> GuardStatus:
+    vals = list(gates.values())
+    if GuardStatus.REJECT in vals:
+        return GuardStatus.REJECT
+    if GuardStatus.WATCH in vals:
+        return GuardStatus.WATCH
+    return GuardStatus.PASS
+
+
+def signal_tier(core: bool, weak: bool) -> GuardStatus:
+    if core:
+        return GuardStatus.PASS
+    if weak:
+        return GuardStatus.WATCH
+    return GuardStatus.REJECT
 
 
 @dataclass(frozen=True)

@@ -163,6 +163,33 @@
     .factor-table td:nth-child(2) { color: var(--accent-green); }
     .factor-table td:nth-child(3) { color: var(--accent-amber); }
     .factor-table td:nth-child(4) { color: var(--accent-rose); }
+    .factor-table tr.off td { opacity: 0.4; }
+    .filter-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .filter-toolbar button {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 9999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .filter-check {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      cursor: pointer;
+      color: var(--text-main);
+      font-weight: 600;
+    }
+    .filter-check input { margin-top: 2px; accent-color: var(--accent-blue); flex: 0 0 auto; }
 
     /* Control Panel */
     .panel {
@@ -466,7 +493,7 @@
     <button class="tab-btn" onclick="switchBoard('oversold', this)"><span class="tab-full" data-i18n="tab3Full">3. Blue-Chip Oversold Confluence</span><span class="tab-short" data-i18n="tab3Short">3. Oversold</span></button>
   </div>
 
-  <details class="strategy-help" id="strategyHelp">
+  <details class="strategy-help" id="strategyHelp" open>
     <summary>
       <span id="helpTitle">1. Deep ITM — rules & filters</span>
     </summary>
@@ -498,6 +525,35 @@
     const visibleStatuses = new Set(['PASS', 'WATCH']);
     let scanPollTimer = null;
     let lastCfg = null;
+    const FILTER_IDS = {
+      deep_itm: ['strike','delta','intrinsic','leverage','carry','theta','dte','liquidity'],
+      vol_discount: ['iv_history','iv_percentile','iv_hv','hv_proxy','regime_b','crash','strike','dte','earnings'],
+      oversold: ['universe','bars','rsi','dma','dma_hv','drawdown','bounce','confluence','strike','dte']
+    };
+    const SIGNAL_IDS = ['rsi','dma','dma_hv','drawdown','bounce'];
+    const FILTER_STORE = 'leaps_filters_v1';
+    let enabledFilters = {};
+    (function initFilters() {
+      let saved = {};
+      try { saved = JSON.parse(localStorage.getItem(FILTER_STORE) || '{}') || {}; } catch (e) { saved = {}; }
+      Object.keys(FILTER_IDS).forEach(board => {
+        const ids = FILTER_IDS[board];
+        const raw = saved[board];
+        if (raw && typeof raw === 'object') {
+          enabledFilters[board] = new Set(ids.filter(id => raw[id] !== false));
+        } else {
+          enabledFilters[board] = new Set(ids);
+        }
+      });
+    })();
+    function persistFilters() {
+      const out = {};
+      Object.keys(FILTER_IDS).forEach(board => {
+        out[board] = {};
+        FILTER_IDS[board].forEach(id => { out[board][id] = enabledFilters[board].has(id); });
+      });
+      try { localStorage.setItem(FILTER_STORE, JSON.stringify(out)); } catch (e) {}
+    }
     const LANG_KEY = 'leaps_lang';
     let lang = 'en';
     try {
@@ -553,6 +609,9 @@
         filterShowing: 'Showing {shown} of {total}',
         filterHidden: ' · {hidden} hidden',
         helpFilter: 'Filter',
+        filterAll: 'All on',
+        filterAllOff: 'All off',
+        filtersOn: '{on}/{total} filters on',
         colSymbol: 'Symbol',
         colUnderlying: 'Underlying',
         colStrikeSpot: 'Strike / Spot',
@@ -634,6 +693,9 @@
         filterShowing: '显示 {shown} / {total}',
         filterHidden: ' · 隐藏 {hidden} 条',
         helpFilter: '筛选条件',
+        filterAll: '全选',
+        filterAllOff: '全不选',
+        filtersOn: '已启用 {on}/{total} 条',
         colSymbol: '合约',
         colUnderlying: '标的',
         colStrikeSpot: '行权价 / 现价',
@@ -808,12 +870,74 @@
       const pack = lang === 'zh' ? STRATEGY_HELP_ZH : STRATEGY_HELP;
       const spec = pack[key] || pack.deep_itm;
       document.getElementById('helpTitle').innerText = spec.title;
-      const rows = spec.rows.map(r =>
-        `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`
-      ).join('');
+      const ids = FILTER_IDS[key] || [];
+      const enabled = enabledFilters[key] || new Set(ids);
+      const onCount = ids.filter(id => enabled.has(id)).length;
+      const rows = spec.rows.map((r, i) => {
+        const id = ids[i];
+        const on = id ? enabled.has(id) : true;
+        const box = id
+          ? `<label class="filter-check"><input type="checkbox" ${on ? 'checked' : ''} onchange="toggleStrategyFilter('${key}','${id}', this.checked)"><span>${r[0]}</span></label>`
+          : r[0];
+        return `<tr class="${on ? '' : 'off'}"><td>${box}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`;
+      }).join('');
       document.getElementById('helpBody').innerHTML =
         `<p>${spec.blurb}</p>` +
+        `<div class="filter-toolbar">` +
+        `<span class="hint">${t('filtersOn', { on: onCount, total: ids.length })}</span>` +
+        `<button type="button" onclick="setAllStrategyFilters('${key}', true)">${t('filterAll')}</button>` +
+        `<button type="button" onclick="setAllStrategyFilters('${key}', false)">${t('filterAllOff')}</button>` +
+        `</div>` +
         `<div class="table-container"><table class="factor-table"><thead><tr><th>${t('helpFilter')}</th><th>PASS</th><th>WATCH</th><th>REJECT</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+
+    function toggleStrategyFilter(board, id, on) {
+      const set = enabledFilters[board] || new Set();
+      if (on) set.add(id); else set.delete(id);
+      enabledFilters[board] = set;
+      persistFilters();
+      paintStrategyHelp(board);
+      renderActiveBoard();
+    }
+
+    function setAllStrategyFilters(board, on) {
+      enabledFilters[board] = on ? new Set(FILTER_IDS[board]) : new Set();
+      persistFilters();
+      paintStrategyHelp(board);
+      renderActiveBoard();
+    }
+
+    function worstStatus(a, b) {
+      const order = { PASS: 0, WATCH: 1, REJECT: 2 };
+      return (order[a] || 0) >= (order[b] || 0) ? a : b;
+    }
+
+    function effectiveStatus(item) {
+      const board = currentBoardKey;
+      const ids = FILTER_IDS[board] || [];
+      const enabled = enabledFilters[board] || new Set(ids);
+      const gates = item.gates || {};
+      let st = 'PASS';
+      if (board === 'oversold' && enabled.has('confluence')) {
+        let score = 0;
+        let cores = 0;
+        SIGNAL_IDS.forEach(id => {
+          if (!enabled.has(id)) return;
+          score += Number((item.signal_points || {})[id] || 0);
+          if ((item.signal_core || {})[id]) cores += 1;
+        });
+        let conf = 'REJECT';
+        if (score >= 2 && cores >= 1) conf = 'PASS';
+        else if (score >= 1) conf = 'WATCH';
+        st = worstStatus(st, conf);
+      }
+      const skip = board === 'oversold' ? new Set(['rsi','dma','dma_hv','drawdown','bounce','confluence']) : new Set();
+      ids.forEach(id => {
+        if (!enabled.has(id) || skip.has(id)) return;
+        const g = gates[id];
+        if (g) st = worstStatus(st, g);
+      });
+      return st;
     }
 
     function paintScanTier(tier, cfg) {
@@ -1071,13 +1195,13 @@
       const allItems = cachedBoards[currentBoardKey] || [];
       const counts = { PASS: 0, WATCH: 0, REJECT: 0 };
       allItems.forEach(it => {
-        const st = String(it.status || '').toUpperCase();
+        const st = effectiveStatus(it);
         if (counts[st] !== undefined) counts[st] += 1;
       });
       document.getElementById('countPass').innerText = counts.PASS;
       document.getElementById('countWatch').innerText = counts.WATCH;
       document.getElementById('countReject').innerText = counts.REJECT;
-      const items = allItems.filter(it => visibleStatuses.has(String(it.status || '').toUpperCase()));
+      const items = allItems.filter(it => visibleStatuses.has(effectiveStatus(it)));
       const hidden = allItems.length - items.length;
       const meta = document.getElementById('filterMeta');
       if (!allItems.length) {
@@ -1141,7 +1265,8 @@
       }
 
       tbody.innerHTML = items.map(it => {
-        const statusBadge = `<span class="badge badge-${it.status.toLowerCase()}">${it.status}</span>`;
+        const st = effectiveStatus(it);
+        const statusBadge = `<span class="badge badge-${st.toLowerCase()}">${st}</span>`;
         if (currentBoardKey === 'deep_itm') {
           return `
             <tr>

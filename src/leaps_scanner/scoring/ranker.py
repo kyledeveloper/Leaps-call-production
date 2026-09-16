@@ -92,6 +92,9 @@ class RankedItem:
     iv_percentile: Optional[float] = None
     regime: str = "NONE"
     theta_daily_pct: float = 0.0
+    gates: Dict[str, str] = field(default_factory=dict)
+    signal_points: Dict[str, float] = field(default_factory=dict)
+    signal_core: Dict[str, bool] = field(default_factory=dict)
 
 
 class MemoryRanker:
@@ -181,6 +184,7 @@ class MemoryRanker:
                 volume=c.volume,
                 strategy_name="deep_itm",
                 theta_daily_pct=s1_res.theta_daily_pct,
+                gates={k: v.value for k, v in s1_res.gates.items()},
             ))
 
             # 2. Strategy 2: Volatility Discount (IV warehouse or HV proxy)
@@ -239,7 +243,8 @@ class MemoryRanker:
                     volume=c.volume,
                     strategy_name="vol_discount",
                     iv_percentile=vol_u_res.iv_percentile,
-                    regime=vol_c_res.regime
+                    regime=vol_c_res.regime,
+                    gates={k: v.value for k, v in vol_c_res.gates.items()},
                 ))
             else:
                 reject_reasons = []
@@ -271,7 +276,8 @@ class MemoryRanker:
                     volume=c.volume,
                     strategy_name="vol_discount",
                     iv_percentile=c.iv_percentile,
-                    regime="NONE"
+                    regime="NONE",
+                    gates={"iv_history": GuardStatus.REJECT.value, "hv_proxy": GuardStatus.REJECT.value},
                 ))
 
             # 3. Strategy 3: Blue-Chip Oversold Confluence
@@ -319,7 +325,10 @@ class MemoryRanker:
                 open_interest=c.open_interest,
                 volume=c.volume,
                 strategy_name="oversold",
-                confluence_score=oversold_c_res.confluence_score
+                confluence_score=oversold_c_res.confluence_score,
+                gates={k: v.value for k, v in oversold_c_res.gates.items()},
+                signal_points=dict(oversold_c_res.signal_points),
+                signal_core=dict(oversold_c_res.signal_core),
             ))
 
         deep_itm_items.sort(key=lambda x: (tier_order.get(x.status, 3), x.carry_cost))
