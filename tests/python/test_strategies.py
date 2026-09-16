@@ -116,7 +116,7 @@ class TestStrategies(unittest.TestCase):
         self.assertEqual(low_oi.gates["oi"], GuardStatus.REJECT)
         self.assertEqual(low_oi.gates["spread"], GuardStatus.PASS)
         self.assertEqual(low_oi.gates["volume"], GuardStatus.PASS)
-        self.assertNotIn("liquidity", low_oi.gates)
+        self.assertEqual(low_oi.gates["liquidity"], GuardStatus.REJECT)
 
     def test_strategy_one_runs_when_iv_unavailable(self):
         from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm

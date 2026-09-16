@@ -948,7 +948,12 @@
       const board = currentBoardKey;
       const ids = FILTER_IDS[board] || [];
       const enabled = enabledFilters[board] || new Set(ids);
-      const gates = item.gates || {};
+      const gates = Object.assign({}, item.gates || {});
+      // Pre-split payloads only have `liquidity`. Apply it to all three
+      // components so "all filters on" matches the old combined gate.
+      if (gates.liquidity && gates.oi == null && gates.spread == null && gates.volume == null) {
+        gates.oi = gates.spread = gates.volume = gates.liquidity;
+      }
       let st = 'PASS';
       if (board === 'oversold' && enabled.has('confluence')) {
         let score = 0;

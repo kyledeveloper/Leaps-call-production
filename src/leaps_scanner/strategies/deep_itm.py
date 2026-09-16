@@ -198,6 +198,7 @@ def evaluate_deep_itm(
         reasons.extend(liq.reasons)
 
     status = fold_gates(gates)
+    gates["liquidity"] = fold_gates({k: gates[k] for k in ("oi", "spread", "volume") if k in gates})
 
     return StrategyResult(
         status=status,
