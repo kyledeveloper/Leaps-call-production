@@ -1,0 +1,188 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "LEAPS Call Quantitative Scanner End-to-End Workflow",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {
+      "id": "data_lane",
+      "label": "Data Ingestion & Universe"
+    },
+    {
+      "id": "core_lane",
+      "label": "Quant Pricing & Guardrails"
+    },
+    {
+      "id": "strategy_lane",
+      "label": "Strategy Screener & Funnel"
+    },
+    {
+      "id": "delivery_lane",
+      "label": "Memory Ranker & Dual Delivery"
+    }
+  ],
+  "phases": [
+    {
+      "id": "phase_ingest",
+      "label": "Universe Ingest & Chain Fetch",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "phase_pricing",
+      "label": "American Pricing & Guardrails",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "phase_scoring",
+      "label": "Strategy Scoring & Delivery",
+      "fromCol": 4,
+      "toCol": 5
+    }
+  ],
+  "mainPath": [
+    "universe_intake",
+    "webull_adapter",
+    "funnel_guards",
+    "pricing_engine",
+    "strategy_screener",
+    "memory_ranker"
+  ],
+  "nodes": [
+    {
+      "id": "universe_intake",
+      "lane": "data_lane",
+      "col": 0,
+      "type": "external",
+      "label": "Stock Universe",
+      "sublabel": "SP100 + NDX100 + ETF",
+      "tag": "150+ Tickers",
+      "width": 125
+    },
+    {
+      "id": "webull_adapter",
+      "lane": "data_lane",
+      "col": 1,
+      "type": "backend",
+      "label": "Webull Adapter",
+      "sublabel": "Lock & 5req/s Limit",
+      "tag": "Sandbox Fallback",
+      "width": 125
+    },
+    {
+      "id": "funnel_guards",
+      "lane": "core_lane",
+      "col": 2,
+      "type": "security",
+      "label": "Funnel & Guardrails",
+      "sublabel": "DTE>=250d & Dual Spread",
+      "tag": "Strict Rejection",
+      "width": 125
+    },
+    {
+      "id": "hist_store",
+      "lane": "data_lane",
+      "col": 3,
+      "type": "database",
+      "label": "Daily & IV Cache",
+      "sublabel": "200DMA & IV Percentile",
+      "tag": "90d Gate",
+      "width": 125
+    },
+    {
+      "id": "pricing_engine",
+      "lane": "core_lane",
+      "col": 3,
+      "type": "backend",
+      "label": "BS2002 Engine",
+      "sublabel": "QuantLib Aligned & IV",
+      "tag": "Upper Bound C<=S",
+      "width": 125
+    },
+    {
+      "id": "strategy_screener",
+      "lane": "strategy_lane",
+      "col": 4,
+      "type": "backend",
+      "label": "4-Strategy Screener",
+      "sublabel": "Isolated Screen & Score",
+      "tag": "4 Boards",
+      "width": 125
+    },
+    {
+      "id": "memory_ranker",
+      "lane": "delivery_lane",
+      "col": 5,
+      "type": "frontend",
+      "label": "Memory Ranker",
+      "sublabel": "Live Slider & Web/CLI",
+      "tag": "0KB Re-fetch",
+      "width": 125
+    }
+  ],
+  "edges": [
+    {
+      "id": "universe-to-adapter",
+      "from": "universe_intake",
+      "to": "webull_adapter",
+      "label": "Feed Tickers"
+    },
+    {
+      "id": "adapter-to-guards",
+      "from": "webull_adapter",
+      "to": "funnel_guards",
+      "label": "Parse Chains",
+      "variant": "emphasis"
+    },
+    {
+      "id": "guards-to-pricing",
+      "from": "funnel_guards",
+      "to": "pricing_engine",
+      "label": "Liquid Contracts",
+      "variant": "emphasis"
+    },
+    {
+      "id": "hist-to-screener",
+      "from": "hist_store",
+      "to": "strategy_screener",
+      "label": "Technical Anchors"
+    },
+    {
+      "id": "pricing-to-screener",
+      "from": "pricing_engine",
+      "to": "strategy_screener",
+      "label": "Price & P_exec",
+      "variant": "emphasis"
+    },
+    {
+      "id": "screener-to-ranker",
+      "from": "strategy_screener",
+      "to": "memory_ranker",
+      "label": "Strategy Candidates",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Global Invariants & Pricing Rigor",
+      "items": [
+        "P_exec slippage model strictly enforced across 4 strategies; Mid price is never used as execution price",
+        "BS2002 American closed-form solution aligned with QuantLib gold standard with C<=S no-arbitrage cutoff"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Strategy Isolation & In-Memory Rerank",
+      "items": [
+        "S&P 100 and Nasdaq 100 cover 150+ core assets; strategies 2 & 3 enforce 90-day and 200DMA history gates",
+        "alpha slider re-ranking executes 100% in-memory with <1ms latency and exactly 0 KB network re-fetch"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,188 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "LEAPS Call 期权量化扫描系统端到端全流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {
+      "id": "data_lane",
+      "label": "标的与数据接入层"
+    },
+    {
+      "id": "core_lane",
+      "label": "量化定价与风控护栏"
+    },
+    {
+      "id": "strategy_lane",
+      "label": "策略分流与打分引擎"
+    },
+    {
+      "id": "delivery_lane",
+      "label": "内存重排与双端交付"
+    }
+  ],
+  "phases": [
+    {
+      "id": "phase_ingest",
+      "label": "标的初筛与链拉取",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "phase_pricing",
+      "label": "美式定价与风险护栏",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "phase_scoring",
+      "label": "策略分榜与双端交付",
+      "fromCol": 4,
+      "toCol": 5
+    }
+  ],
+  "mainPath": [
+    "universe_intake",
+    "webull_adapter",
+    "funnel_guards",
+    "pricing_engine",
+    "strategy_screener",
+    "memory_ranker"
+  ],
+  "nodes": [
+    {
+      "id": "universe_intake",
+      "lane": "data_lane",
+      "col": 0,
+      "type": "external",
+      "label": "核心标的池",
+      "sublabel": "SP100 + NDX100 + ETF",
+      "tag": "150+标的",
+      "width": 120
+    },
+    {
+      "id": "webull_adapter",
+      "lane": "data_lane",
+      "col": 1,
+      "type": "backend",
+      "label": "Webull适配器",
+      "sublabel": "单飞锁 + 5req/s限频",
+      "tag": "沙盒回退",
+      "width": 120
+    },
+    {
+      "id": "funnel_guards",
+      "lane": "core_lane",
+      "col": 2,
+      "type": "security",
+      "label": "漏斗与风控护栏",
+      "sublabel": "DTE>=250d + 双重价差",
+      "tag": "一票否决",
+      "width": 120
+    },
+    {
+      "id": "hist_store",
+      "lane": "data_lane",
+      "col": 3,
+      "type": "database",
+      "label": "日线与IV仓",
+      "sublabel": "200日线 + IV分位",
+      "tag": "90天门禁",
+      "width": 120
+    },
+    {
+      "id": "pricing_engine",
+      "lane": "core_lane",
+      "col": 3,
+      "type": "backend",
+      "label": "BS2002定价引擎",
+      "sublabel": "QuantLib对齐 + IV求解",
+      "tag": "上界 C<=S",
+      "width": 120
+    },
+    {
+      "id": "strategy_screener",
+      "lane": "strategy_lane",
+      "col": 4,
+      "type": "backend",
+      "label": "四大策略分流",
+      "sublabel": "四策略独立分流",
+      "tag": "四表独立",
+      "width": 120
+    },
+    {
+      "id": "memory_ranker",
+      "lane": "delivery_lane",
+      "col": 5,
+      "type": "frontend",
+      "label": "内存重排与双端",
+      "sublabel": "α滑块重排 + Web/CLI",
+      "tag": "0KB重拉",
+      "width": 120
+    }
+  ],
+  "edges": [
+    {
+      "id": "universe-to-adapter",
+      "from": "universe_intake",
+      "to": "webull_adapter",
+      "label": "注入标的代码"
+    },
+    {
+      "id": "adapter-to-guards",
+      "from": "webull_adapter",
+      "to": "funnel_guards",
+      "label": "解析期权链",
+      "variant": "emphasis"
+    },
+    {
+      "id": "guards-to-pricing",
+      "from": "funnel_guards",
+      "to": "pricing_engine",
+      "label": "流动性合规合约",
+      "variant": "emphasis"
+    },
+    {
+      "id": "hist-to-screener",
+      "from": "hist_store",
+      "to": "strategy_screener",
+      "label": "历史技术锚点"
+    },
+    {
+      "id": "pricing-to-screener",
+      "from": "pricing_engine",
+      "to": "strategy_screener",
+      "label": "理论定价与P_exec",
+      "variant": "emphasis"
+    },
+    {
+      "id": "screener-to-ranker",
+      "from": "strategy_screener",
+      "to": "memory_ranker",
+      "label": "四策略分榜候选集",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "全局不变量与严谨定价",
+      "items": [
+        "P_exec 执行价滑点模型严格贯穿四大策略，绝不使用虚高 Mid 冒充买入价",
+        "BS2002 美式闭式解对齐 QuantLib 金标准，IV 求解器具备 C<=S 无套利截断与 Brent 兜底"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "策略分流与零网络重排",
+      "items": [
+        "标普100与纳指100覆盖150+核心资产，策略二/三强制执行90天与200日线历史门禁",
+        "α 滑动条重排100%在内存中执行，重排延迟<1ms且重拉网络数据量精确为0KB"
+      ]
+    }
+  ]
+}
