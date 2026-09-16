@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional, Tuple
 from src.leaps_scanner.data.webull import WebullClient
 from src.leaps_scanner.scoring.ranker import MemoryRanker, RankedItem, StrategyCandidate
+from src.leaps_scanner.data.rebalancer import get_universe_manager
 
 
 DEFAULT_SCAN_SYMBOLS = ["SPY", "QQQ", "AAPL", "NVDA", "MSFT"]
@@ -20,11 +21,12 @@ DEFAULT_SCAN_SYMBOLS = ["SPY", "QQQ", "AAPL", "NVDA", "MSFT"]
 
 class AppState:
     """
-    Central application state holding current cache of LEAPS candidates and ranker.
+    Central application state holding current cache of LEAPS candidates, ranker, and universe manager.
     """
     def __init__(self, offline_mode: bool = True):
         self.offline_mode = offline_mode
         self.client = WebullClient(offline_mode=offline_mode)
+        self.universe_manager = get_universe_manager(offline_mode=offline_mode)
         self.candidates: List[StrategyCandidate] = []
         self.ranker: Optional[MemoryRanker] = None
         self.last_scan_time: Optional[str] = None
@@ -128,6 +130,36 @@ def create_api_handler_class(state: AppState):
                     "alpha": alpha,
                     "boards": boards,
                     "recalculation_mode": "IN_MEMORY_ZERO_NETWORK"
+                }
+                return 200, headers, json.dumps(data).encode("utf-8")
+
+            # GET /api/v1/universe
+            if method == "GET" and clean_path in ("/api/v1/universe", "/api/universe"):
+                data = {
+                    "status": "healthy",
+                    "indices": {
+                        "sp100": len(state.universe_manager.get_constituents("sp100")),
+                        "nasdaq100": len(state.universe_manager.get_constituents("nasdaq100")),
+                        "djia": len(state.universe_manager.get_constituents("djia")),
+                        "etfs": len(state.universe_manager.get_constituents("etfs")),
+                        "adrs": len(state.universe_manager.get_constituents("adrs"))
+                    },
+                    "master_count": len(state.universe_manager.get_master_universe()),
+                    "rebalance_history": state.universe_manager.get_rebalance_history()[-10:],
+                    "last_synced": getattr(state.universe_manager, "_last_synced", None)
+                }
+                return 200, headers, json.dumps(data).encode("utf-8")
+
+            # POST /api/v1/universe/sync
+            if method == "POST" and clean_path in ("/api/v1/universe/sync", "/api/universe/sync"):
+                results = {}
+                for idx in ["djia", "sp100", "nasdaq100"]:
+                    results[idx] = state.universe_manager.sync_index(idx)
+                data = {
+                    "message": "Universe rebalance sync completed",
+                    "results": results,
+                    "master_count": len(state.universe_manager.get_master_universe()),
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }
                 return 200, headers, json.dumps(data).encode("utf-8")
 

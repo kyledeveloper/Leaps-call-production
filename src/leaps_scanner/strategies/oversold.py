@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Set
 from src.leaps_scanner.core.metrics import calculate_carry_cost, calculate_effective_leverage
 from src.leaps_scanner.strategies.guards import GuardStatus
-from src.leaps_scanner.data.universe import FULL_CORE_UNIVERSE
+from src.leaps_scanner.data.universe import FULL_CORE_UNIVERSE, SymbologyNormalizer
 
 DEFAULT_CORE_UNIVERSE: Set[str] = FULL_CORE_UNIVERSE
 
@@ -59,10 +59,11 @@ def evaluate_oversold_underlying(
     universe = core_universe if core_universe is not None else DEFAULT_CORE_UNIVERSE
     reasons: List[str] = []
 
-    # 1. Hard constraint: Core universe check
-    if metrics.symbol.upper() not in universe:
+    # 1. Hard constraint: Core universe check (with canonical normalization)
+    canonical_sym = SymbologyNormalizer.to_canonical(metrics.symbol)
+    if canonical_sym not in universe:
         return OversoldUnderlyingResult(
-            symbol=metrics.symbol,
+            symbol=canonical_sym,
             status=GuardStatus.REJECT,
             confluence_score=0.0,
             core_signal_count=0,

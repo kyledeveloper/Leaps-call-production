@@ -7,6 +7,7 @@ import sys
 from typing import List, Optional
 from src.leaps_scanner.api.server import AppState, run_server
 from src.leaps_scanner.data.universe import get_universe
+from src.leaps_scanner.data.rebalancer import get_universe_manager
 
 
 def format_ascii_table(title: str, headers: List[str], rows: List[List[str]]) -> str:
@@ -45,7 +46,8 @@ def format_ascii_table(title: str, headers: List[str], rows: List[List[str]]) ->
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="LEAPS Call Quantitative Scanner CLI")
     parser.add_argument("--symbols", type=str, default="SPY,QQQ,AAPL,NVDA", help="Comma-separated ticker symbols")
-    parser.add_argument("--universe", type=str, default=None, choices=["sp100", "nasdaq100", "etfs", "all"], help="Predefined universe: sp100, nasdaq100, etfs, all")
+    parser.add_argument("--universe", type=str, default=None, choices=["sp100", "nasdaq100", "djia", "etfs", "adrs", "all"], help="Predefined universe: sp100, nasdaq100, djia, etfs, adrs, all")
+    parser.add_argument("--sync-universe", action="store_true", help="Check remote sources and sync index constituents")
     parser.add_argument("--alpha", type=float, default=0.5, help="Execution slippage alpha in [0.0, 1.0]")
     parser.add_argument("--strategy", type=str, default="all", choices=["all", "deep_itm", "vol_discount", "oversold", "unusual_flow"], help="Strategy filter")
     parser.add_argument("--serve", action="store_true", help="Launch interactive Web Dashboard HTTP server")
@@ -56,6 +58,23 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.serve:
         run_server(port=args.port, offline_mode=args.offline)
+        return 0
+
+    if args.sync_universe:
+        manager = get_universe_manager(offline_mode=args.offline)
+        print("=" * 80)
+        print("🔄 INDEX CONSTITUENTS DYNAMIC REBALANCE SYNC")
+        print("=" * 80)
+        for idx in ["djia", "sp100", "nasdaq100"]:
+            res = manager.sync_index(idx)
+            status = res.get("status")
+            if status == "ok":
+                added = res.get("added", [])
+                removed = res.get("removed", [])
+                print(f"[{idx.upper():<9}] Status: OK | Added ({len(added)}): {', '.join(added) if added else 'None'} | Removed ({len(removed)}): {', '.join(removed) if removed else 'None'}")
+            else:
+                print(f"[{idx.upper():<9}] Status: FAILED | {res.get('message')}")
+        print("=" * 80)
         return 0
 
     if args.universe:

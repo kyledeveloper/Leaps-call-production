@@ -202,6 +202,8 @@
     </div>
     <div class="status-badges">
       <span class="badge badge-online" id="engineStatus">Sandbox Mode</span>
+      <span class="badge" style="background: rgba(147, 51, 234, 0.15); color: #c084fc; border: 1px solid rgba(147, 51, 234, 0.3);" id="universeBadge">Universe: Loading...</span>
+      <button class="btn" style="background: #334155; color: #f8fafc;" onclick="triggerUniverseSync(event)">⚡ Sync Rebalance</button>
       <button class="btn" onclick="triggerScan()">🔄 Refresh Scan</button>
     </div>
   </div>
@@ -448,8 +450,45 @@
       }).join('');
     }
 
+    async function fetchUniverseStats() {
+      try {
+        const res = await fetch('/api/v1/universe');
+        if (res.ok) {
+          const data = await res.json();
+          const uBadge = document.getElementById('universeBadge');
+          if (uBadge && data.indices) {
+            uBadge.innerText = `SP100: ${data.indices.sp100} | NDX: ${data.indices.nasdaq100} | DJIA: ${data.indices.djia} | Total: ${data.master_count}`;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load universe stats:', e);
+      }
+    }
+
+    async function triggerUniverseSync(evt) {
+      const btn = evt ? evt.target : null;
+      if (btn) {
+        btn.innerText = "Syncing...";
+        btn.disabled = true;
+      }
+      try {
+        const res = await fetch('/api/v1/universe/sync', { method: 'POST' });
+        const data = await res.json();
+        alert(`Index Rebalance Sync Finished!\nMaster Pool Size: ${data.master_count}\nTimestamp: ${data.timestamp}`);
+        await fetchUniverseStats();
+      } catch (e) {
+        alert("Rebalance sync error: " + e);
+      } finally {
+        if (btn) {
+          btn.innerText = "⚡ Sync Rebalance";
+          btn.disabled = false;
+        }
+      }
+    }
+
     // Initialize
     fetchConfig();
+    fetchUniverseStats();
     loadBoards(currentAlpha);
   </script>
 </body>

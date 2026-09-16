@@ -51,6 +51,50 @@ class TestUniverseExpansion(unittest.TestCase):
         all_list = get_universe("all")
         self.assertEqual(len(all_list), len(FULL_CORE_UNIVERSE))
 
+    def test_djia_membership_and_symbology(self):
+        from src.leaps_scanner.data.universe import (
+            DJIA_COMPONENTS,
+            FULL_CORE_UNIVERSE,
+            SymbologyNormalizer,
+            get_universe,
+            is_in_core_universe
+        )
+
+        # 1. Exactly 30 DJIA components
+        self.assertEqual(len(DJIA_COMPONENTS), 30)
+        self.assertIn("NVDA", DJIA_COMPONENTS)  # Replaced INTC Nov 2024
+        self.assertIn("SHW", DJIA_COMPONENTS)   # Replaced DOW Nov 2024
+        self.assertIn("AAPL", DJIA_COMPONENTS)
+        self.assertIn("MSFT", DJIA_COMPONENTS)
+        self.assertIn("TRV", DJIA_COMPONENTS)
+
+        # 2. Category retrieval
+        djia_list = get_universe("djia")
+        self.assertEqual(len(djia_list), 30)
+        self.assertEqual(djia_list, sorted(DJIA_COMPONENTS))
+
+        # 3. DJIA additions (SHW, TRV) are in FULL_CORE_UNIVERSE
+        self.assertTrue(is_in_core_universe("SHW"))
+        self.assertTrue(is_in_core_universe("TRV"))
+
+        # 4. Symbology Normalizer
+        self.assertEqual(SymbologyNormalizer.to_canonical("BRK.B"), "BRK.B")
+        self.assertEqual(SymbologyNormalizer.to_canonical("BRK-B"), "BRK.B")
+        self.assertEqual(SymbologyNormalizer.to_canonical("BRK/B"), "BRK.B")
+        self.assertEqual(SymbologyNormalizer.to_canonical("bf.b"), "BF.B")
+        self.assertEqual(SymbologyNormalizer.to_canonical("  aapl  "), "AAPL")
+
+        # 5. Outbound broker conversion (Webull requires hyphen for multi-class)
+        self.assertEqual(SymbologyNormalizer.to_broker("BRK.B", broker="webull"), "BRK-B")
+        self.assertEqual(SymbologyNormalizer.to_broker("BF.B", broker="webull"), "BF-B")
+        self.assertEqual(SymbologyNormalizer.to_broker("AAPL", broker="webull"), "AAPL")
+
+        # 6. WebullClient outbound query contract
+        from src.leaps_scanner.data.webull import WebullClient
+        client = WebullClient(offline_mode=True)
+        res = client.query_options_chain("BRK.B")
+        self.assertEqual(res["underlying"], "BRK-B")
+
     def test_oversold_strategy_accepts_expanded_universe(self):
         from src.leaps_scanner.strategies.oversold import (
             evaluate_oversold_underlying,
@@ -58,7 +102,7 @@ class TestUniverseExpansion(unittest.TestCase):
         )
         from src.leaps_scanner.strategies.guards import GuardStatus
 
-        # CRWD from Nasdaq 100 (previously not in the 36-ticker set)
+        # CRWD from Nasdaq 100
         metrics_crwd = OversoldUnderlyingMetrics(
             symbol="CRWD",
             spot=280.0,
@@ -74,7 +118,7 @@ class TestUniverseExpansion(unittest.TestCase):
         self.assertEqual(res_crwd.status, GuardStatus.PASS)
         self.assertNotIn("NOT_IN_CORE_UNIVERSE", res_crwd.reasons)
 
-        # JPM from S&P 100
+        # JPM from S&P 100 / DJIA
         metrics_jpm = OversoldUnderlyingMetrics(
             symbol="JPM",
             spot=210.0,
@@ -92,3 +136,4 @@ class TestUniverseExpansion(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

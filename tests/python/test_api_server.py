@@ -67,6 +67,22 @@ class TestAPIServer(unittest.TestCase):
         res = json.loads(body.decode("utf-8"))
         self.assertEqual(res["alpha"], 0.8)
 
+        # Test GET /api/v1/universe
+        code, headers, body = handler_cls.dispatch("GET", "/api/v1/universe", b"")
+        self.assertEqual(code, 200)
+        res = json.loads(body.decode("utf-8"))
+        self.assertEqual(res["status"], "healthy")
+        self.assertIn("indices", res)
+        self.assertEqual(res["indices"]["djia"], 30)
+        self.assertGreaterEqual(res["master_count"], 140)
+
+        # Test POST /api/v1/universe/sync
+        code, headers, body = handler_cls.dispatch("POST", "/api/v1/universe/sync", b"")
+        self.assertEqual(code, 200)
+        res = json.loads(body.decode("utf-8"))
+        self.assertIn("results", res)
+        self.assertIn("djia", res["results"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -52,30 +52,63 @@ NASDAQ100_COMPONENTS: List[str] = [
     "ARM", "PLTR"
 ]
 
-# 4. Top Liquid Mega-Cap Chinese ADRs (Included for broad multi-market coverage)
+# 4. Dow Jones Industrial Average (DJIA / Dow 30) Full Constituents (30 tickers)
+# Reflects current S&P Dow Jones index composition (including NVDA, SHW added Nov 2024)
+DJIA_COMPONENTS: List[str] = [
+    "AAPL", "AMGN", "AMZN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS",
+    "GS", "HD", "HON", "IBM", "JNJ", "JPM", "KO", "MCD", "MMM", "MRK",
+    "MSFT", "NKE", "NVDA", "PG", "SHW", "TRV", "UNH", "V", "VZ", "WMT"
+]
+
+# 5. Top Liquid Mega-Cap Chinese ADRs (Included for broad multi-market coverage)
 SELECTED_ADRS: List[str] = [
     "BABA", "PDD", "BIDU", "NIO", "LI", "JD"
 ]
 
-# 5. Authoritative Deduplicated Full Core Universe (Set of all eligible symbols)
+# 6. Authoritative Deduplicated Full Core Universe (Set of all eligible symbols)
 FULL_CORE_UNIVERSE: Set[str] = (
     set(SP100_COMPONENTS) |
     set(NASDAQ100_COMPONENTS) |
+    set(DJIA_COMPONENTS) |
     set(CORE_ETFS) |
     set(SELECTED_ADRS)
 )
 
 
+class SymbologyNormalizer:
+    """
+    Normalizes stock and option ticker symbols across heterogeneous conventions.
+    Canonical format uses dot notation for multi-class shares (e.g. BRK.B, BF.B).
+    Broker format converts to vendor-specific requirements (e.g. Webull requires BRK-B).
+    """
+    @staticmethod
+    def to_canonical(symbol: str) -> str:
+        s = symbol.strip().upper()
+        # Convert separators to canonical dot notation
+        s = s.replace("-", ".").replace("/", ".")
+        return s
+
+    @staticmethod
+    def to_broker(symbol: str, broker: str = "webull") -> str:
+        canonical = SymbologyNormalizer.to_canonical(symbol)
+        if broker.lower() == "webull":
+            # Webull API requires hyphen for multi-class equities (BRK-B, BF-B)
+            return canonical.replace(".", "-")
+        return canonical
+
+
 def get_universe(category: str = "all") -> List[str]:
     """
     Retrieve sorted ticker list by category.
-    Categories: 'sp100', 'nasdaq100', 'etfs', 'adrs', 'all'
+    Categories: 'sp100', 'nasdaq100', 'djia', 'etfs', 'adrs', 'all'
     """
     cat = category.lower().strip()
     if cat == "sp100":
         return sorted(list(set(SP100_COMPONENTS)))
     elif cat == "nasdaq100":
         return sorted(list(set(NASDAQ100_COMPONENTS)))
+    elif cat == "djia":
+        return sorted(list(set(DJIA_COMPONENTS)))
     elif cat == "etfs":
         return sorted(list(set(CORE_ETFS)))
     elif cat == "adrs":
@@ -86,4 +119,6 @@ def get_universe(category: str = "all") -> List[str]:
 
 def is_in_core_universe(symbol: str) -> bool:
     """Check if symbol belongs to the institutional core universe."""
-    return symbol.strip().upper() in FULL_CORE_UNIVERSE
+    canonical = SymbologyNormalizer.to_canonical(symbol)
+    return canonical in FULL_CORE_UNIVERSE
+

@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 from src.leaps_scanner.scoring.ranker import StrategyCandidate
+from src.leaps_scanner.data.universe import SymbologyNormalizer
 
 
 class TokenBucketRateLimiter:
@@ -131,11 +132,20 @@ class WebullClient:
         # In online mode, this would issue an authenticated HTTP call
         return f"live_token_{self.app_key}"
 
+    def query_options_chain(self, symbol: str) -> dict:
+        """
+        Query option chain using vendor-specific ticker format (BRK.B -> BRK-B).
+        """
+        broker_symbol = SymbologyNormalizer.to_broker(symbol, broker="webull")
+        return {"underlying": broker_symbol, "options": []}
+
     def get_leaps_candidates(self, symbols: List[str]) -> List[StrategyCandidate]:
         """
         Fetch LEAPS candidates for given symbols.
         In offline mode, loads realistic fixtures safely without network.
         """
+        # Egress transformation to broker-specific format
+        broker_symbols = [SymbologyNormalizer.to_broker(s, broker="webull") for s in symbols]
         candidates: List[StrategyCandidate] = []
 
         if self.offline_mode:
@@ -190,7 +200,8 @@ class WebullClient:
                 }
             }
 
-            for sym in symbols:
+            for raw_sym in symbols:
+                sym = SymbologyNormalizer.to_canonical(raw_sym)
                 spec = mock_specs.get(sym.upper())
                 if not spec:
                     continue

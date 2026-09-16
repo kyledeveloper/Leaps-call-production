@@ -38,6 +38,7 @@ venv/
 # Whitelist project HTML assets
 !src/leaps_scanner/api/static/index.html
 !docs/*.html
+!tests/python/fixtures/*.html
 
 # Environment
 .env
