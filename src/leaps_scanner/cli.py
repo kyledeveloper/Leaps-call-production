@@ -60,7 +60,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--strategy", type=str, default="all", choices=["all", "deep_itm", "vol_discount", "oversold", "unusual_flow"], help="Strategy filter")
     parser.add_argument("--serve", action="store_true", help="Launch interactive Web Dashboard HTTP server")
     parser.add_argument("--port", type=int, default=8000, help="Web Dashboard port")
-    parser.add_argument("--offline", action="store_true", default=True, help="Force offline sandbox mode")
+    parser.add_argument("--offline", action="store_true", default=False, help="Force offline sandbox mode (default: online/live data)")
 
     args = parser.parse_args(argv)
 
