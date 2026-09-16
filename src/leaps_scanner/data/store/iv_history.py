@@ -7,6 +7,8 @@ Persists to JSON when persist_path is set so Delayed/Webull scans accumulate a 9
 import json
 import math
 import os
+import threading
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -43,53 +45,67 @@ class IVMetrics:
 class IVHistoryStore:
     """
     ATM IV warehouse. Memory-only unless persist_path is provided.
+    Thread-safe and ACID-compliant persistence.
     """
     def __init__(self, persist_path: Optional[str] = None):
         self._store: Dict[str, List[IVDataPoint]] = {}
         self._path = Path(persist_path) if persist_path else None
+        self._lock = threading.Lock()
         if self._path:
             self.load()
 
     def load(self) -> None:
-        if not self._path or not self._path.exists():
+        if not self._path:
             return
-        try:
-            raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return
-        loaded: Dict[str, List[IVDataPoint]] = {}
-        for sym, rows in (raw or {}).items():
-            pts = []
-            for row in rows or []:
-                try:
-                    pts.append(IVDataPoint(trade_date=str(row["trade_date"]), atm_iv=float(row["atm_iv"])))
-                except (KeyError, TypeError, ValueError):
-                    continue
-            loaded[str(sym).upper()] = pts
-        self._store = loaded
+        with self._lock:
+            if not self._path.exists():
+                return
+            try:
+                raw = json.loads(self._path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return
+            loaded: Dict[str, List[IVDataPoint]] = {}
+            for sym, rows in (raw or {}).items():
+                pts = []
+                for row in rows or []:
+                    try:
+                        pts.append(IVDataPoint(trade_date=str(row["trade_date"]), atm_iv=float(row["atm_iv"])))
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                loaded[str(sym).upper()] = pts
+            self._store = loaded
 
     def flush(self) -> None:
         if not self._path:
             return
+        with self._lock:
+            payload = {
+                sym: [{"trade_date": p.trade_date, "atm_iv": p.atm_iv} for p in pts]
+                for sym, pts in self._store.items()
+            }
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            sym: [{"trade_date": p.trade_date, "atm_iv": p.atm_iv} for p in pts]
-            for sym, pts in self._store.items()
-        }
-        tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        tmp.replace(self._path)
+        tmp = self._path.with_name(f"{self._path.stem}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+        try:
+            tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            tmp.replace(self._path)
+        finally:
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
 
     def add_data_point(self, symbol: str, point: IVDataPoint) -> None:
-        existing = self._store.setdefault(symbol.upper(), [])
-        existing.append(point)
-        seen_dates = set()
-        deduped = []
-        for p in sorted(existing, key=lambda x: x.trade_date):
-            if p.trade_date not in seen_dates:
-                seen_dates.add(p.trade_date)
-                deduped.append(p)
-        self._store[symbol.upper()] = deduped
+        with self._lock:
+            existing = self._store.setdefault(symbol.upper(), [])
+            existing.append(point)
+            seen_dates = set()
+            deduped = []
+            for p in sorted(existing, key=lambda x: x.trade_date):
+                if p.trade_date not in seen_dates:
+                    seen_dates.add(p.trade_date)
+                    deduped.append(p)
+            self._store[symbol.upper()] = deduped
 
     def ingest_from_candidates(self, candidates: Iterable[Any], trade_date: str) -> None:
         """Keep the IV of the contract closest to ATM for each underlying, then flush."""
@@ -114,7 +130,8 @@ class IVHistoryStore:
         Calculate IV percentile, rank, and z-score against historical ATM IVs.
         Enforces 90-day minimum valid history guard.
         """
-        history = self._store.get(symbol.upper(), [])
+        with self._lock:
+            history = list(self._store.get(symbol.upper(), []))
         sub = history[-window:] if len(history) > window else history
         valid_days = len(sub)
 

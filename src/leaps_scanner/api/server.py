@@ -66,7 +66,12 @@ class AppState:
     """
     Central application state holding current cache of LEAPS candidates, ranker, and universe manager.
     """
-    def __init__(self, offline_mode: bool = False):
+    def __init__(
+        self,
+        offline_mode: bool = False,
+        iv_store: Optional[IVHistoryStore] = None,
+        bar_cache: Optional[DailyBarCache] = None,
+    ):
         _load_dotenv()
         # Live only when explicitly requested AND credentials exist.
         if not offline_mode and not (
@@ -82,8 +87,27 @@ class AppState:
             token_file=None,
         )
         self.universe_manager = get_universe_manager(offline_mode=offline_mode)
-        self.iv_store = IVHistoryStore(persist_path=str(default_iv_history_path()))
-        self.bar_cache = DailyBarCache(persist_path=str(default_daily_bar_cache_path()))
+
+        if iv_store is not None:
+            self.iv_store = iv_store
+        else:
+            if offline_mode:
+                env_path = os.environ.get("LEAPS_IV_HISTORY_PATH")
+                iv_path = str(env_path) if env_path else None
+            else:
+                iv_path = str(default_iv_history_path())
+            self.iv_store = IVHistoryStore(persist_path=iv_path)
+
+        if bar_cache is not None:
+            self.bar_cache = bar_cache
+        else:
+            if offline_mode:
+                env_path = os.environ.get("LEAPS_DAILY_BAR_CACHE_PATH")
+                bar_path = str(env_path) if env_path else None
+            else:
+                bar_path = str(default_daily_bar_cache_path())
+            self.bar_cache = DailyBarCache(persist_path=bar_path)
+
         self.candidates: List[StrategyCandidate] = []
         self.ranker: Optional[MemoryRanker] = None
         self.last_scan_time: Optional[str] = None
@@ -98,7 +122,7 @@ class AppState:
         self._scan_cancel = False
         self._scan_thread: Optional[threading.Thread] = None
         self._scan_seq: int = 0
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def resolve_scan_symbols(self, tier: Optional[str] = None) -> List[str]:
         raw = (tier or self.scan_tier or "etfs").strip().lower()
@@ -264,11 +288,14 @@ class AppState:
             self.scan_status = "done"
 
     def get_boards(self, alpha: float = 0.5) -> Dict[str, List[Dict[str, Any]]]:
-        self.current_alpha = alpha
-        if self.ranker is None:
-            self.run_scan()
-
-        raw_boards = self.ranker.rank_boards(alpha=alpha)
+        with self._lock:
+            self.current_alpha = alpha
+            if self.ranker is None:
+                self.run_scan()
+            ranker = self.ranker
+            if ranker is None:
+                return {"deep_itm": [], "vol_discount": [], "oversold": []}
+            raw_boards = ranker.rank_boards(alpha=alpha)
         result: Dict[str, List[Dict[str, Any]]] = {}
         for b_name, items in raw_boards.items():
             result[b_name] = [asdict(it) for it in items]

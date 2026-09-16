@@ -120,6 +120,9 @@ class TestPublicDelayedParsers(unittest.TestCase):
         self.assertIn(code, (200, 202))
         res = json.loads(body.decode())
         self.assertEqual(res["source"], "delayed")
+        state.cancel_scan()
+        if state._scan_thread:
+            state._scan_thread.join(timeout=1.0)
 
     def test_daily_bar_cache_skips_yahoo_on_second_scan(self):
         calls = []
