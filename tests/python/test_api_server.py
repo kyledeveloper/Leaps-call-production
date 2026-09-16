@@ -209,6 +209,19 @@ class TestAPIServer(unittest.TestCase):
         self.assertEqual(self.state.scan_status, "done")
         self.assertEqual(self.state.scan_progress["done"], 3)
 
+    def test_delayed_scan_exception_sets_error_status(self):
+        class BoomDelayed:
+            def get_leaps_candidates(self, symbols, progress_cb=None, should_stop=None):
+                raise RuntimeError("nasdaq down")
+
+        self.state.source = "delayed"
+        self.state.client = BoomDelayed()
+        self.state._scan_seq = 3
+        self.state._scan_cancel = False
+        self.state._scan_worker(["AAPL"], seq=3)
+        self.assertEqual(self.state.scan_status, "error")
+        self.assertIn("scan_failed", self.state.last_error or "")
+
 
 if __name__ == "__main__":
     unittest.main()

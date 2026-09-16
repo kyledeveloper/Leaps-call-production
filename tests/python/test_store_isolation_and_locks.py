@@ -15,12 +15,16 @@ class TestStoreIsolationAndLocks(unittest.TestCase):
         block_network()
 
     def test_app_state_offline_uses_in_memory_stores_without_disk_pollution(self):
-        # AppState in offline mode should not bind to real repo data json files by default
+        repo_data = (Path(__file__).resolve().parents[2] / "data").resolve()
         state = AppState(offline_mode=True)
-        self.assertIsNone(state.iv_store._path, 'Offline AppState must have in-memory iv_store')
-        self.assertIsNone(state.bar_cache._path, 'Offline AppState must have in-memory bar_cache')
+        self.assertIsNotNone(state.iv_store._path)
+        self.assertIsNotNone(state.bar_cache._path)
+        iv_path = Path(state.iv_store._path).resolve()
+        bar_path = Path(state.bar_cache._path).resolve()
+        self.assertFalse(str(iv_path).startswith(str(repo_data)))
+        self.assertFalse(str(bar_path).startswith(str(repo_data)))
+        self.assertEqual(str(iv_path), str(Path(os.environ["LEAPS_IV_HISTORY_PATH"]).resolve()))
 
-        # Running scan and flushing should not raise or write to repo
         state.run_scan()
         state.iv_store.flush()
         state.bar_cache.flush()

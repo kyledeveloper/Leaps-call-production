@@ -5,6 +5,7 @@ and serves the responsive web dashboard.
 Adheres strictly to Global Invariant 6 (Zero network re-fetch on alpha adjustment).
 """
 import json
+import logging
 import os
 import threading
 import urllib.parse
@@ -20,6 +21,8 @@ from src.leaps_scanner.data.store.daily_bars import DailyBarCache, default_daily
 from src.leaps_scanner.scoring.ranker import MemoryRanker, RankedItem, StrategyCandidate
 from src.leaps_scanner.data.rebalancer import get_universe_manager
 from src.leaps_scanner.data.universe import SymbologyNormalizer
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_SCAN_SYMBOLS = ["SPY", "QQQ", "AAPL", "NVDA", "MSFT"]
@@ -91,22 +94,12 @@ class AppState:
         if iv_store is not None:
             self.iv_store = iv_store
         else:
-            if offline_mode:
-                env_path = os.environ.get("LEAPS_IV_HISTORY_PATH")
-                iv_path = str(env_path) if env_path else None
-            else:
-                iv_path = str(default_iv_history_path())
-            self.iv_store = IVHistoryStore(persist_path=iv_path)
+            self.iv_store = IVHistoryStore(persist_path=str(default_iv_history_path()))
 
         if bar_cache is not None:
             self.bar_cache = bar_cache
         else:
-            if offline_mode:
-                env_path = os.environ.get("LEAPS_DAILY_BAR_CACHE_PATH")
-                bar_path = str(env_path) if env_path else None
-            else:
-                bar_path = str(default_daily_bar_cache_path())
-            self.bar_cache = DailyBarCache(persist_path=bar_path)
+            self.bar_cache = DailyBarCache(persist_path=str(default_daily_bar_cache_path()))
 
         self.candidates: List[StrategyCandidate] = []
         self.ranker: Optional[MemoryRanker] = None
@@ -253,7 +246,10 @@ class AppState:
                     self.scan_status = "error"
                     return
                 asof_day = datetime.now(timezone.utc).date().isoformat()
-                self.iv_store.ingest_from_candidates(collected, asof_day)
+                try:
+                    self.iv_store.ingest_from_candidates(collected, asof_day)
+                except OSError as exc:
+                    logger.warning("IV ingest failed: %s", exc)
                 self.scan_status = "done"
             return
 
@@ -268,7 +264,8 @@ class AppState:
                 self.scan_progress = {"done": i, "total": total, "symbol": sym}
             try:
                 batch = self.client.get_leaps_candidates([sym])
-            except Exception:
+            except Exception as exc:
+                logger.warning("Scan failed for %s: %s", sym, exc)
                 batch = []
             collected.extend(batch)
             with self._lock:
@@ -284,18 +281,23 @@ class AppState:
                 return
             if self.source in ("delayed", "webull"):
                 asof_day = datetime.now(timezone.utc).date().isoformat()
-                self.iv_store.ingest_from_candidates(collected, asof_day)
+                try:
+                    self.iv_store.ingest_from_candidates(collected, asof_day)
+                except OSError as exc:
+                    logger.warning("IV ingest failed: %s", exc)
             self.scan_status = "done"
 
     def get_boards(self, alpha: float = 0.5) -> Dict[str, List[Dict[str, Any]]]:
         with self._lock:
             self.current_alpha = alpha
-            if self.ranker is None:
-                self.run_scan()
             ranker = self.ranker
-            if ranker is None:
-                return {"deep_itm": [], "vol_discount": [], "oversold": []}
-            raw_boards = ranker.rank_boards(alpha=alpha)
+        if ranker is None:
+            self.run_scan()
+            with self._lock:
+                ranker = self.ranker
+        if ranker is None:
+            return {"deep_itm": [], "vol_discount": [], "oversold": []}
+        raw_boards = ranker.rank_boards(alpha=alpha)
         result: Dict[str, List[Dict[str, Any]]] = {}
         for b_name, items in raw_boards.items():
             result[b_name] = [asdict(it) for it in items]

@@ -656,6 +656,7 @@
         scanning: 'Scanning {tier} · {done}/{total}',
         contractsSoFar: ' · {n} contracts so far',
         scanSummary: '{tier} · {names} names · {n} contracts',
+        scanError: 'Scan failed: {error}',
         liveScan: 'Live Webull scan · {n} contracts · {key}',
         delayedScan: 'Yahoo history + Nasdaq delayed OPRA · {n} LEAPS calls · ~15 min delay, not NBBO.',
         missingCreds: 'Live Webull needs App Key and App Secret. Or use Delayed public (no keys).',
@@ -743,6 +744,7 @@
         scanning: '正在扫描 {tier} · {done}/{total}',
         contractsSoFar: ' · 已有 {n} 张合约',
         scanSummary: '{tier} · {names} 只标的 · {n} 张合约',
+        scanError: '扫描失败：{error}',
         liveScan: 'Webull 实盘扫描 · {n} 张合约 · {key}',
         delayedScan: 'Yahoo 历史 + Nasdaq 延迟 OPRA · {n} 张 LEAPS · 约 15 分钟延迟，非 NBBO。',
         missingCreds: 'Webull 实盘需要 App Key 和 App Secret。也可改用公开延迟（无需密钥）。',
@@ -1008,6 +1010,8 @@
         hint.innerText = t('scanning', { tier: tierLabel, done: prog.done || 0, total: prog.total || n })
           + (prog.symbol ? ` · ${prog.symbol}` : '')
           + t('contractsSoFar', { n: cfg.candidate_count || 0 });
+      } else if (status === 'error') {
+        hint.innerText = t('scanError', { error: (cfg && (cfg.last_error || cfg.error)) || 'unknown' });
       } else {
         hint.innerText = t('scanSummary', {
           tier: tierLabel,

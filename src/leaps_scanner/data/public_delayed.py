@@ -336,7 +336,8 @@ class PublicDelayedClient:
         if self.bar_cache is not None:
             hit = self.bar_cache.get(symbol)
             if hit is not None:
-                return hit.spot, list(hit.bars), hit.div_yield
+                # Bars/div only. Pricing spot comes from Nasdaq lastTrade.
+                return 0.0, list(hit.bars), hit.div_yield
         ticker = urllib.parse.quote(symbol)
         url = (
             f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
@@ -450,6 +451,8 @@ class PublicDelayedClient:
             return sym, []
         if nasdaq_spot and nasdaq_spot > 0:
             spot = nasdaq_spot
+        elif spot <= 0 and bars:
+            spot = float(bars[-1].close)
         if spot <= 0:
             return sym, []
         metrics = store.get_metrics(sym, spot_override=spot) if bars else None

@@ -2,8 +2,15 @@
 Global test configuration and socket isolation guard.
 Guarantees 100% offline hermetic sandbox execution.
 """
+import os
 import socket
+import tempfile
 import unittest
+from pathlib import Path
+
+_PERSIST_ROOT = tempfile.mkdtemp(prefix="leaps_hermetic_")
+os.environ["LEAPS_IV_HISTORY_PATH"] = str(Path(_PERSIST_ROOT) / "iv_history.json")
+os.environ["LEAPS_DAILY_BAR_CACHE_PATH"] = str(Path(_PERSIST_ROOT) / "daily_bars.json")
 
 _real_socket_connect = socket.socket.connect
 _real_getaddrinfo = socket.getaddrinfo
@@ -37,4 +44,3 @@ def restore_network():
 
 # Automatically block external network during tests
 block_network()
-
