@@ -24,7 +24,7 @@ class AppState:
     """
     Central application state holding current cache of LEAPS candidates, ranker, and universe manager.
     """
-    def __init__(self, offline_mode: bool = True):
+    def __init__(self, offline_mode: bool = False):
         self.offline_mode = offline_mode
         self.client = WebullClient(offline_mode=offline_mode)
         self.universe_manager = get_universe_manager(offline_mode=offline_mode)
@@ -194,7 +194,7 @@ def create_api_handler_class(state: AppState):
     return APIHandler
 
 
-def run_server(port: int = 8000, offline_mode: bool = True):
+def run_server(port: int = 8000, offline_mode: bool = False):
     """
     Launch HTTP server on specified port.
     """
