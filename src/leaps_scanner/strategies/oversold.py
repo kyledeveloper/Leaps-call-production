@@ -8,17 +8,9 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Set
 from src.leaps_scanner.core.metrics import calculate_carry_cost, calculate_effective_leverage
 from src.leaps_scanner.strategies.guards import GuardStatus
+from src.leaps_scanner.data.universe import FULL_CORE_UNIVERSE
 
-
-DEFAULT_CORE_UNIVERSE: Set[str] = {
-    # Core Broad Market & Sector ETFs
-    "SPY", "QQQ", "IWM", "DIA", "XLF", "XLK", "XLE", "XLV", "XLI", "SMH",
-    # Mega-Cap Tech & S&P 500 Blue Chips
-    "AAPL", "MSFT", "NVDA", "GOOGL", "GOOG", "AMZN", "META", "TSLA",
-    "BRK.B", "JNJ", "JPM", "V", "PG", "UNH", "HD", "MA", "XOM", "CVX",
-    "LLY", "ABBV", "MRK", "PEP", "KO", "COST", "AVGO", "CSCO", "AMD",
-    "NFLX", "CRM", "INTC", "QCOM", "TXN", "WMT", "DIS", "BAC", "BABA"
-}
+DEFAULT_CORE_UNIVERSE: Set[str] = FULL_CORE_UNIVERSE
 
 
 @dataclass(frozen=True)
