@@ -1,0 +1,209 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Long-Term Reflexive Memory & Multi-Dimensional Retrieval Architecture",
+    "locale": "en",
+    "output": "reflexion-memory-architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "pre-task-retrieval",
+        "label": "Pre-Task Retrieval Flow",
+        "focus": ["agent_core", "memory_facade", "retriever", "scoring_engine", "sqlite_db"],
+        "note": "Pre-task query using FTS5 tokenization with 3D weighted scoring: Relevance, Recency, and Importance"
+      },
+      {
+        "id": "post-recovery-reflexion",
+        "label": "Post-Recovery Reflexion Flow",
+        "focus": ["agent_core", "memory_facade", "reflexion_engine", "sqlite_db"],
+        "note": "Distills causal chain and corrective heuristics after error recovery, deduplicating and reinforcing memory"
+      },
+      {
+        "id": "rule-consolidation",
+        "label": "Rule Consolidation",
+        "focus": ["reflexion_engine", "consolidation_checker", "agents_rules"],
+        "note": "Reflections with hit_count >= 3 are flagged as candidates and promoted to permanent AGENTS.md rules"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "agent_core",
+      "type": "external",
+      "label": "Agent Core",
+      "sublabel": "Planner / Executor",
+      "pos": [40, 250],
+      "size": [140, 60]
+    },
+    {
+      "id": "memory_facade",
+      "type": "backend",
+      "label": "Memory Facade",
+      "sublabel": "index.js (getMemory)",
+      "pos": [260, 250],
+      "size": [150, 60]
+    },
+    {
+      "id": "retriever",
+      "type": "backend",
+      "label": "Retrieval Engine",
+      "sublabel": "retriever.js (Tokens + FTS5)",
+      "pos": [480, 120],
+      "size": [150, 60]
+    },
+    {
+      "id": "scoring_engine",
+      "type": "backend",
+      "label": "3D Scoring Engine",
+      "sublabel": "Final = α·S_rel + β·S_rec + γ·S_imp",
+      "tag": "α:0.5 β:0.2 γ:0.3",
+      "pos": [700, 120],
+      "size": [160, 60]
+    },
+    {
+      "id": "sqlite_db",
+      "type": "database",
+      "label": "Persistent SQLite",
+      "sublabel": ".agents/memory.db",
+      "tag": "WAL + FTS5",
+      "pos": [700, 250],
+      "size": [160, 60]
+    },
+    {
+      "id": "reflexion_engine",
+      "type": "backend",
+      "label": "Reflexion Engine",
+      "sublabel": "reflexion.js (Distill & Dedupe)",
+      "pos": [480, 380],
+      "size": [150, 60]
+    },
+    {
+      "id": "consolidation_checker",
+      "type": "security",
+      "label": "Consolidation Check",
+      "sublabel": "Rule Promotion Evaluator",
+      "pos": [700, 380],
+      "size": [160, 60]
+    },
+    {
+      "id": "agents_rules",
+      "type": "frontend",
+      "label": "Project Rules",
+      "sublabel": "AGENTS.md Authoritative Rules",
+      "pos": [930, 380],
+      "size": [140, 60]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Reflexion Memory Engine",
+      "wraps": ["memory_facade", "retriever", "scoring_engine", "sqlite_db", "reflexion_engine", "consolidation_checker"]
+    },
+    {
+      "kind": "security-group",
+      "label": "Multi-Dimensional Scoring Pipeline",
+      "wraps": ["retriever", "scoring_engine"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "agent-facade",
+      "from": "agent_core",
+      "to": "memory_facade",
+      "label": "Pre-check",
+      "variant": "emphasis"
+    },
+    {
+      "id": "facade-retriever",
+      "from": "memory_facade",
+      "to": "retriever",
+      "fromSide": "top",
+      "toSide": "left",
+      "label": "Query Lessons"
+    },
+    {
+      "id": "retriever-scoring",
+      "from": "retriever",
+      "to": "scoring_engine",
+      "label": "Score"
+    },
+    {
+      "id": "retriever-db",
+      "from": "retriever",
+      "to": "sqlite_db",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "label": "FTS5 Match"
+    },
+    {
+      "id": "scoring-db",
+      "from": "scoring_engine",
+      "to": "sqlite_db",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "Refresh Activation",
+      "labelDy": 24
+    },
+    {
+      "id": "facade-reflexion",
+      "from": "memory_facade",
+      "to": "reflexion_engine",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "label": "Reflect Failure"
+    },
+    {
+      "id": "reflexion-db",
+      "from": "reflexion_engine",
+      "to": "sqlite_db",
+      "fromSide": "top",
+      "toSide": "left",
+      "label": "Store & Reinforce",
+      "variant": "emphasis"
+    },
+    {
+      "id": "reflexion-checker",
+      "from": "reflexion_engine",
+      "to": "consolidation_checker",
+      "label": "Check"
+    },
+    {
+      "id": "checker-rules",
+      "from": "consolidation_checker",
+      "to": "agents_rules",
+      "label": "Promote Rule",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Pre-Task Retrieval & 3D Scoring",
+      "items": [
+        "Extract query tokens before executing high-risk commands",
+        "Rank by Relevance (FTS5), Recency (exponential decay), and Importance (severity level)",
+        "Inject high-density heuristic guidance into Agent prompt (< 100 tokens)"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Post-Recovery Reflexion & Reinforcement",
+      "items": [
+        "Extract causal chain and root cause after error recovery",
+        "Deduplicate identical triggers, increment hit count, and boost confidence",
+        "Refresh last_accessed_at timestamp upon retrieval hit"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Storage Engine & Rule Consolidation",
+      "items": [
+        "Powered by native node:sqlite with zero native compilation dependencies",
+        "Trigger rule promotion candidate when hit_count >= 3",
+        "Consolidate into AGENTS.md for permanent project guardrails"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "My First AI Agent 运行工作流",
+    "locale": "zh-CN",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "intent_lane", "label": "意图与记忆" },
+    { "id": "perception_lane", "label": "感知与拓扑" },
+    { "id": "quality_lane", "label": "质量与安全", "variant": "exception" },
+    { "id": "evolution_lane", "label": "进化与资产" }
+  ],
+  "phases": [
+    { "id": "intake_phase", "label": "规划", "fromCol": 0, "toCol": 1 },
+    { "id": "verify_phase", "label": "验证", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "delivery_phase", "label": "提交与学习", "fromCol": 4, "toCol": 5 }
+  ],
+  "mainPath": [
+    "user_intent",
+    "memory_recall",
+    "blast_radius",
+    "tdd_loop",
+    "pre_push_gate",
+    "local_commit"
+  ],
+  "nodes": [
+    { "id": "user_intent", "lane": "intent_lane", "col": 0, "type": "external", "label": "用户请求", "sublabel": "任务或缺陷", "width": 120 },
+    { "id": "memory_recall", "lane": "intent_lane", "col": 1, "type": "database", "label": "记忆召回", "sublabel": "FTS5 三维分", "width": 120 },
+    { "id": "symbol_graph", "lane": "perception_lane", "col": 1, "type": "backend", "label": "符号图", "sublabel": "AST 调用者", "width": 120 },
+    { "id": "blast_radius", "lane": "perception_lane", "col": 2, "type": "backend", "label": "爆炸半径", "sublabel": "影响与测试", "tag": "改前", "width": 120 },
+    { "id": "tdd_loop", "lane": "quality_lane", "col": 3, "type": "security", "label": "TDD 循环", "sublabel": "红绿重构", "tag": "离线", "width": 120 },
+    { "id": "pre_push_gate", "lane": "quality_lane", "col": 4, "type": "security", "label": "推送门禁", "sublabel": "密钥与 CVE", "tag": "硬拦截", "width": 120 },
+    { "id": "local_commit", "lane": "quality_lane", "col": 5, "type": "backend", "label": "本地提交", "sublabel": "仅用户推送", "width": 120 },
+    { "id": "reflexion_store", "lane": "evolution_lane", "col": 3, "type": "database", "label": "反思库", "sublabel": "sqlite WAL", "width": 120 },
+    { "id": "toolmaker", "lane": "evolution_lane", "col": 4, "type": "backend", "label": "自工具", "sublabel": "频次 >= 3", "tag": "runner.js", "width": 120 },
+    { "id": "agents_rules", "lane": "evolution_lane", "col": 5, "type": "external", "label": "AGENTS.md", "sublabel": "晋升规则", "width": 120 }
+  ],
+  "edges": [
+    { "id": "intent-to-memory", "from": "user_intent", "to": "memory_recall", "label": "检索教训", "variant": "emphasis" },
+    { "id": "graph-to-blast", "from": "symbol_graph", "to": "blast_radius", "label": "索引符号" },
+    { "id": "memory-to-blast", "from": "memory_recall", "to": "blast_radius", "label": "限定范围", "variant": "emphasis" },
+    { "id": "blast-to-tdd", "from": "blast_radius", "to": "tdd_loop", "label": "锁定测试", "variant": "emphasis" },
+    { "id": "tdd-to-gate", "from": "tdd_loop", "to": "pre_push_gate", "label": "全绿", "variant": "emphasis" },
+    { "id": "gate-to-commit", "from": "pre_push_gate", "to": "local_commit", "label": "通过", "variant": "emphasis" },
+    { "id": "tdd-to-store", "from": "tdd_loop", "to": "reflexion_store", "label": "沉淀修复", "variant": "dashed" },
+    { "id": "store-to-toolmaker", "from": "reflexion_store", "to": "toolmaker", "label": "统计模式" },
+    { "id": "toolmaker-to-rules", "from": "toolmaker", "to": "agents_rules", "label": "晋升规则", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "先规划后改代码",
+      "items": [
+        "先召回反思教训，再计算 AST 爆炸半径并锁定受影响测试",
+        "TDD 离线执行；推送前门禁拦截密钥、CVE 与坏味道"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "修复后沉淀",
+      "items": [
+        "失败蒸馏进 SQLite WAL + FTS5 启发式",
+        "重复三次的模式合成为 runner.js 工具并晋升到 AGENTS.md"
+      ]
+    }
+  ]
+}

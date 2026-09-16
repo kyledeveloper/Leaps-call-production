@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "tools": {
+    "audit-locales": {
+      "name": "audit-locales",
+      "description": "Audit and compare translation keys across locale files (e.g. zh-CN vs en-US)",
+      "scriptPath": ".agents/scripts/audit-locales.js",
+      "args": [
+        {
+          "name": "base",
+          "description": "Base locale directory (default: locales/zh-CN)",
+          "default": "locales/zh-CN"
+        },
+        {
+          "name": "target",
+          "description": "Target locale directory to compare against (default: locales/en-US)",
+          "default": "locales/en-US"
+        }
+      ],
+      "examples": [
+        "--base locales/zh-CN --target locales/en-US",
+        "--json"
+      ],
+      "registeredAt": "2026-09-14T05:01:14.988Z"
+    },
+    "pre-push-check": {
+      "name": "pre-push-check",
+      "description": "Pre-push security & quality gatekeeper: scans secrets, audits dependencies, and flags code smells",
+      "scriptPath": ".agents/scripts/pre-push-check.js",
+      "args": [
+        {
+          "name": "lang",
+          "description": "Output language for CLI messages: en-US | zh-CN (default: auto-detected)",
+          "default": "auto"
+        },
+        {
+          "name": "strict",
+          "description": "Fail (exit 1) on code smell or dependency warnings",
+          "default": false
+        },
+        {
+          "name": "json",
+          "description": "Output gatekeeper report in JSON format",
+          "default": false
+        }
+      ],
+      "examples": [
+        "--lang zh-CN",
+        "--strict",
+        "--json"
+      ],
+      "registeredAt": "2026-09-14T06:22:00.000Z"
+    },
+    "blast-radius": {
+      "name": "blast-radius",
+      "description": "Code Symbol Graph & Blast-Radius analysis: evaluate impact scope and affected tests before refactoring",
+      "scriptPath": ".agents/scripts/blast-radius.js",
+      "args": [
+        {
+          "name": "target",
+          "description": "Target file path or symbol identifier to analyze",
+          "default": null
+        },
+        {
+          "name": "tree",
+          "description": "Render hierarchical ASCII dependency tree",
+          "default": false
+        },
+        {
+          "name": "json",
+          "description": "Output machine-readable JSON format",
+          "default": false
+        },
+        {
+          "name": "lang",
+          "description": "Output language: en-US | zh-CN",
+          "default": "auto"
+        }
+      ],
+      "examples": [
+        "--target src/memory/db.js",
+        "--target MemoryDatabase --tree",
+        "--target calculateScore --json"
+      ],
+      "registeredAt": "2026-09-14T06:37:00.000Z"
+    },
+    "adversary-check": {
+      "name": "adversary-check",
+      "description": "Adversarial Red-Team Code Auditor: scans diffs for missing transactions, non-hermetic tests, greedy regexes, and dirty VCS artifacts",
+      "scriptPath": ".agents/scripts/adversary-check.js",
+      "args": [
+        {
+          "name": "staged",
+          "description": "Audit staged git diff instead of latest commit",
+          "default": false
+        },
+        {
+          "name": "json",
+          "description": "Output machine-readable JSON format",
+          "default": false
+        }
+      ],
+      "examples": [
+        "--staged",
+        "--json"
+      ],
+      "registeredAt": "2026-09-14T16:57:02.392Z"
+    }
+  }
+}

@@ -1,0 +1,210 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "长期反思记忆与多维检索系统架构",
+    "locale": "zh-CN",
+    "output": "reflexion-memory-architecture-zh.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "pre-task-retrieval",
+        "label": "前置多维检索流",
+        "focus": ["agent_core", "memory_facade", "retriever", "scoring_engine", "sqlite_db"],
+        "note": "高危任务执行前通过 CJK 分词匹配并基于相关度、新近度、重要度三维加权排序"
+      },
+      {
+        "id": "post-recovery-reflexion",
+        "label": "事后反思提炼流",
+        "focus": ["agent_core", "memory_facade", "reflexion_engine", "sqlite_db"],
+        "note": "任务异常恢复后结构化提取因果链与避坑指南，自动写入并去重强化"
+      },
+      {
+        "id": "rule-consolidation",
+        "label": "规则晋升固化",
+        "focus": ["reflexion_engine", "consolidation_checker", "agents_rules"],
+        "note": "历史验证规避次数 >= 3 的高频经验候选晋升为 AGENTS.md 永久规则"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "agent_core",
+      "type": "external",
+      "label": "Agent 核心",
+      "sublabel": "Planner / Executor",
+      "pos": [40, 250],
+      "size": [140, 60]
+    },
+    {
+      "id": "memory_facade",
+      "type": "backend",
+      "label": "长期记忆门面",
+      "sublabel": "index.js (getMemory)",
+      "pos": [260, 250],
+      "size": [150, 60]
+    },
+    {
+      "id": "retriever",
+      "type": "backend",
+      "label": "多维检索引擎",
+      "sublabel": "retriever.js (CJK + FTS5)",
+      "pos": [480, 120],
+      "size": [150, 60]
+    },
+    {
+      "id": "scoring_engine",
+      "type": "backend",
+      "label": "三维打分器",
+      "sublabel": "Final = α·S_rel + β·S_rec + γ·S_imp",
+      "tag": "α:0.5 β:0.2 γ:0.3",
+      "pos": [700, 120],
+      "size": [160, 60]
+    },
+    {
+      "id": "sqlite_db",
+      "type": "database",
+      "label": "持久化记忆库",
+      "sublabel": ".agents/memory.db",
+      "tag": "WAL + FTS5",
+      "pos": [700, 250],
+      "size": [160, 60]
+    },
+    {
+      "id": "reflexion_engine",
+      "type": "backend",
+      "label": "反思提炼引擎",
+      "sublabel": "reflexion.js (提炼与自强化)",
+      "pos": [480, 380],
+      "size": [150, 60]
+    },
+    {
+      "id": "consolidation_checker",
+      "type": "security",
+      "label": "规则晋升评估",
+      "sublabel": "Consolidation Check",
+      "pos": [700, 380],
+      "size": [160, 60]
+    },
+    {
+      "id": "agents_rules",
+      "type": "frontend",
+      "label": "项目永久规约",
+      "sublabel": "AGENTS.md 硬性铁律",
+      "pos": [930, 380],
+      "size": [140, 60]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "长期反思记忆核心引擎 (Reflexion Memory Engine)",
+      "wraps": ["memory_facade", "retriever", "scoring_engine", "sqlite_db", "reflexion_engine", "consolidation_checker"]
+    },
+    {
+      "kind": "security-group",
+      "label": "多维检索打分流水线",
+      "wraps": ["retriever", "scoring_engine"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "agent-facade",
+      "from": "agent_core",
+      "to": "memory_facade",
+      "label": "预检反思",
+      "variant": "emphasis"
+    },
+    {
+      "id": "facade-retriever",
+      "from": "memory_facade",
+      "to": "retriever",
+      "fromSide": "top",
+      "toSide": "left",
+      "label": "前置检索"
+    },
+    {
+      "id": "retriever-scoring",
+      "from": "retriever",
+      "to": "scoring_engine",
+      "label": "候选经验",
+      "labelDy": 24
+    },
+    {
+      "id": "retriever-db",
+      "from": "retriever",
+      "to": "sqlite_db",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "label": "FTS5 查询"
+    },
+    {
+      "id": "scoring-db",
+      "from": "scoring_engine",
+      "to": "sqlite_db",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "激活刷新",
+      "labelDy": 24
+    },
+    {
+      "id": "facade-reflexion",
+      "from": "memory_facade",
+      "to": "reflexion_engine",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "label": "异常反思"
+    },
+    {
+      "id": "reflexion-db",
+      "from": "reflexion_engine",
+      "to": "sqlite_db",
+      "fromSide": "top",
+      "toSide": "left",
+      "label": "写入与强化",
+      "variant": "emphasis"
+    },
+    {
+      "id": "reflexion-checker",
+      "from": "reflexion_engine",
+      "to": "consolidation_checker",
+      "label": "频次检查"
+    },
+    {
+      "id": "checker-rules",
+      "from": "consolidation_checker",
+      "to": "agents_rules",
+      "label": "规则晋升",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "前置检索与三维打分",
+      "items": [
+        "高危任务执行前通过 CJK Bigram 分词提取关键词",
+        "综合相关度 (FTS5)、新近度 (指数时间衰减) 与重要度 (严重等级) 排序",
+        "格式化提炼高密度避坑指南注入 Agent 提示词"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "事后反思与自强化",
+      "items": [
+        "任务异常恢复后结构化提取因果链与深层根因",
+        "相同触发场景自动识别去重，自增命中次数并提升置信度",
+        "检索命中经验自动刷新最后激活时间戳 (last_accessed_at)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "存储架构与规则晋升",
+      "items": [
+        "底层采用 Node.js 原生 node:sqlite (WAL 模式)，零外部编译依赖",
+        "当单条经验历史规避次数 hit_count >= 3 时触发晋升候选",
+        "固化为 AGENTS.md 权威项目规则，形成工程级自进化护栏"
+      ]
+    }
+  ]
+}

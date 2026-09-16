@@ -1,0 +1,18 @@
+{
+  "name": "my-first-ai-agent",
+  "version": "1.0.0",
+  "description": "Coding-agent skill pack and local tools: reflexion memory, blast-radius, self-toolmaker, pre-push gates.",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test/memory.test.js && node test/toolmaker.test.js && node test/pre-push-check.test.js && node test/blast-radius.test.js && node test/agent.test.js && node test/intent-gate.test.js && node test/i18n.test.js && node test/adversary.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "acorn": "^8.18.0",
+    "acorn-walk": "^8.3.5",
+    "i18next": "^26.4.2"
+  }
+}

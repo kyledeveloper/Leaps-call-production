@@ -1,0 +1,224 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "My First AI Agent Operational Workflow",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {
+      "id": "intent_lane",
+      "label": "Intent & Memory"
+    },
+    {
+      "id": "perception_lane",
+      "label": "Perception & Topology"
+    },
+    {
+      "id": "quality_lane",
+      "label": "Quality & Security",
+      "variant": "exception"
+    },
+    {
+      "id": "evolution_lane",
+      "label": "Evolution & Assets"
+    }
+  ],
+  "phases": [
+    {
+      "id": "intake_phase",
+      "label": "Plan",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "verify_phase",
+      "label": "Verify",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "delivery_phase",
+      "label": "Commit & Learn",
+      "fromCol": 4,
+      "toCol": 5
+    }
+  ],
+  "mainPath": [
+    "user_intent",
+    "memory_recall",
+    "blast_radius",
+    "tdd_loop",
+    "pre_push_gate",
+    "local_commit"
+  ],
+  "nodes": [
+    {
+      "id": "user_intent",
+      "lane": "intent_lane",
+      "col": 0,
+      "type": "external",
+      "label": "User Request",
+      "sublabel": "task or bug"
+    },
+    {
+      "id": "memory_recall",
+      "lane": "intent_lane",
+      "col": 1,
+      "type": "database",
+      "label": "Memory Recall",
+      "sublabel": "FTS5 3D score"
+    },
+    {
+      "id": "symbol_graph",
+      "lane": "perception_lane",
+      "col": 1,
+      "type": "backend",
+      "label": "Symbol Graph",
+      "sublabel": "AST callers"
+    },
+    {
+      "id": "blast_radius",
+      "lane": "perception_lane",
+      "col": 2,
+      "type": "backend",
+      "label": "Blast Radius",
+      "sublabel": "impact + tests",
+      "tag": "before edit"
+    },
+    {
+      "id": "tdd_loop",
+      "lane": "quality_lane",
+      "col": 3,
+      "type": "security",
+      "label": "TDD Loop",
+      "sublabel": "red-green",
+      "tag": "offline"
+    },
+    {
+      "id": "pre_push_gate",
+      "lane": "quality_lane",
+      "col": 4,
+      "type": "security",
+      "label": "Pre-Push Gate",
+      "sublabel": "secrets + CVE",
+      "tag": "hard block"
+    },
+    {
+      "id": "local_commit",
+      "lane": "quality_lane",
+      "col": 5,
+      "type": "backend",
+      "label": "Local Commit",
+      "sublabel": "user push only"
+    },
+    {
+      "id": "reflexion_store",
+      "lane": "evolution_lane",
+      "col": 3,
+      "type": "database",
+      "label": "Reflexion",
+      "sublabel": "sqlite WAL"
+    },
+    {
+      "id": "toolmaker",
+      "lane": "evolution_lane",
+      "col": 4,
+      "type": "backend",
+      "label": "Self-Toolmaker",
+      "sublabel": "freq >= 3",
+      "tag": "runner.js"
+    },
+    {
+      "id": "agents_rules",
+      "lane": "evolution_lane",
+      "col": 5,
+      "type": "external",
+      "label": "AGENTS.md",
+      "sublabel": "promoted rules"
+    }
+  ],
+  "edges": [
+    {
+      "id": "intent-to-memory",
+      "from": "user_intent",
+      "to": "memory_recall",
+      "label": "query lessons",
+      "variant": "emphasis"
+    },
+    {
+      "id": "graph-to-blast",
+      "from": "symbol_graph",
+      "to": "blast_radius",
+      "label": "index symbols"
+    },
+    {
+      "id": "memory-to-blast",
+      "from": "memory_recall",
+      "to": "blast_radius",
+      "label": "guided scope",
+      "variant": "emphasis"
+    },
+    {
+      "id": "blast-to-tdd",
+      "from": "blast_radius",
+      "to": "tdd_loop",
+      "label": "target tests",
+      "variant": "emphasis"
+    },
+    {
+      "id": "tdd-to-gate",
+      "from": "tdd_loop",
+      "to": "pre_push_gate",
+      "label": "all green",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gate-to-commit",
+      "from": "pre_push_gate",
+      "to": "local_commit",
+      "label": "passed",
+      "variant": "emphasis"
+    },
+    {
+      "id": "tdd-to-store",
+      "from": "tdd_loop",
+      "to": "reflexion_store",
+      "label": "distill fixes",
+      "variant": "dashed"
+    },
+    {
+      "id": "store-to-toolmaker",
+      "from": "reflexion_store",
+      "to": "toolmaker",
+      "label": "track patterns"
+    },
+    {
+      "id": "toolmaker-to-rules",
+      "from": "toolmaker",
+      "to": "agents_rules",
+      "label": "promote rules",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Plan before code",
+      "items": [
+        "Recall reflexion lessons, then compute AST blast-radius and lock impacted tests",
+        "TDD runs offline; pre-push blocks secrets, CVEs, and smells before a local commit"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Learn after recovery",
+      "items": [
+        "Failures distill into SQLite WAL + FTS5 heuristics",
+        "Patterns seen three times synthesize into runner.js CLI tools and AGENTS.md rules"
+      ]
+    }
+  ]
+}
