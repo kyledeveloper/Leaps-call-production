@@ -102,6 +102,7 @@ class TestCSPApi(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertIn("text/html", headers["Content-Type"])
         self.assertIn(b"Cash-Secured Put", body)
+        self.assertNotIn(b'href="/workflow"', body)
 
         code_wf, headers_wf, body_wf = self.handler_cls.dispatch("GET", "/workflow", b"")
         self.assertEqual(code_wf, 200)
