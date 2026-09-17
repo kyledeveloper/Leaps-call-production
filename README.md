@@ -1,24 +1,40 @@
-# LEAPS Call Quant Scanner
+# Options Quant Strategy Scanner
 
-Research scanner for **US far-dated call options** (DTE ≥ 250). It ranks contracts across three independent boards. It is **not** an auto-trader.
+Research scanner for **US Options Strategies** featuring dual strategy families: **LEAPS Call** (buyer stock-replacement, $DTE \ge 250$) and **Cash-Secured Put (CSP)** (systematic seller yield, $DTE\ 7–45$). It is **not** an auto-trader.
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 ## What it does
 
-| Board | Idea | Notes |
-|---|---|---|
-| **1. Deep ITM** | Stock-replacement / PMCC base | Strike 0.65S–0.85S, Δ 0.70–0.85 PASS, Δ > 0.90 skipped at ingest. Carry = extrinsic / (P_exec × T) + dividend yield. Liquidity prioritizes spread & OI; volume is not a one-vote veto (requires ask_size ≥ 5). Daily θ / P_exec gated. |
-| **2. Volatility discount** | Cheap vol, long vega | Real IV percentile after ≥90 stored ATM IV days. Until then Delayed uses HV20 percentile and **caps at WATCH**. |
-| **3. Oversold confluence** | Mean-reversion on core names | RSI / 200DMA / 52w / bounce score. Needs core-universe membership and ≥200 daily bars. |
+### 1. LEAPS Call Family (Buyer Strategies, $DTE \ge 250$)
 
-Unusual-flow (old strategy 4) was removed: delayed volume is too weak to use as a signal.
+| Board | Idea | Key Rules & Filters |
+|---|---|---|
+| **1. Deep ITM** | Stock-replacement / PMCC base | Strike 0.65S–0.85S, Δ 0.70–0.85 PASS, Δ > 0.90 skipped at ingest. Carry = extrinsic / (P_exec × T) + dividend yield drag. Spread & OI prioritized; volume requires ask_size ≥ 5 (not a one-vote veto). Daily θ / P_exec gated. |
+| **2. Volatility discount** | Cheap vol, long vega | Real IV percentile after ≥90 stored ATM IV days. Delayed uses HV20 percentile until then and **caps at WATCH**. |
+| **3. Oversold confluence** | Mean-reversion on core names | RSI / 200DMA / 52w / bounce score. Requires core-universe membership and ≥200 daily bars. |
+
+### 2. Cash-Secured Put (CSP) Family (Seller Strategies, $DTE\ 7–45$)
+
+| Board | Idea | Key Rules & Filters |
+|---|---|---|
+| **1. Premium Harvest** | Systematic annual yield harvest | $\Delta \in [-0.30, -0.15]$, DTE 7–45, ranked by Annualized Return on Capital (AROC). Zero-bid and spread-inversion veto. |
+| **2. Wheel / Accumulation** | Value dip accumulation | $\Delta \in [-0.45, -0.30]$, downside buffer $\ge 5\%$, RSI $\le 55$, price-to-200DMA $\le 1.05$. |
+| **3. High IV Rank** | Volatility crush & mean reversion | IV Rank $\ge 50\%$, $\Delta \in [-0.35, -0.15]$, capturing elevated implied volatility premiums. |
+
+#### 🛡️ CSP Seller Risk Modeling & Controls
+- **Execution Slippage ($P_{exec}$)**: Penalizes wide spreads and thin order books ($Bid + (1 - \alpha) \times (Ask - Bid) \times DepthFactor$). Zero-bid ($Bid \le 0$) is immediately rejected.
+- **DTE < 7 Guard & Gamma Penalty**: Prevents terminal gamma explosion and AROC division-by-zero ($DTE_{safe} = \max(DTE, 7)$; 15% haircut for $DTE < 14$).
+- **POP & Downside Buffer**: Delta-linear probability of profit ($1 - |\Delta|$) with disclaimer; buffer $(S - K) / S$.
+- **Capital Allocation & Max Loss**: Computes nominal required collateral ($K \times 100$), maximum possible loss ($K \times 100 - P_{exec} \times 100$), and caps single-stock exposure at 25% of the total cash pool.
+- **-15% Market Crash Stress Test**: Simulates net portfolio PnL under a sudden 15% underlying gap down.
+- **Earnings Date Guard**: Flags earnings within DTE (`🚨 In DTE` or `⚠️ Unverified`).
 
 ## Data sources
 
 | Mode | Feed | Keys |
 |---|---|---|
-| **Sandbox** | Local fixtures | None |
+| **Sandbox** | Local fixtures | None (offline hermetic test fixtures) |
 | **Delayed public** | Yahoo daily bars + Nasdaq OPRA delayed chains | None (~15 min delay, not NBBO) |
 | **Live Webull** | Webull OpenAPI | App Key + Secret, memory-only (never written to disk) |
 
@@ -26,11 +42,11 @@ Webull keys must not be committed or pasted into chat. `.env` is gitignored.
 
 ATM IV from Delayed/Webull scans is appended to `data/iv_history.json` so strategy 2 can graduate from the HV proxy after ~90 trading days.
 
-Delayed scans pull names in parallel (default 8 workers, 0.12s global spacing; `LEAPS_FETCH_WORKERS` / `LEAPS_FETCH_MIN_INTERVAL`). Yahoo daily bars are reused until the US session date rolls (`data/daily_bars.json`, gitignored). Option chains are still fetched each scan.
+Delayed scans fetch ticker chains concurrently (configurable via `LEAPS_FETCH_WORKERS` / `LEAPS_FETCH_MIN_INTERVAL`). Yahoo daily bars are cached locally per trading session date (`data/daily_bars.json`, gitignored). LEAPS and CSP scan pipelines are strictly isolated to eliminate cross-strategy overhead.
 
 ## Run
 
-Python 3.9+.
+Requires Python 3.9+.
 
 ```bash
 cd Leaps-call-production
@@ -38,46 +54,52 @@ pip install -r requirements.txt
 PYTHONPATH=. python -m src.leaps_scanner.cli --offline --serve --port 8000
 ```
 
-Open the dashboard, then pick Sandbox / Delayed public / Live Webull.
+Open the dashboard:
+- Default dashboard: `http://localhost:8000/`
+- Direct CSP deep-link: `http://localhost:8000/csp` or `?family=csp`
 
-CLI scan (no UI):
+### CLI Scans (No UI)
 
 ```bash
-PYTHONPATH=. python -m src.leaps_scanner.cli --offline --symbols SPY,QQQ --alpha 0.5
+# LEAPS Call scan
+PYTHONPATH=. python -m src.leaps_scanner.cli --offline --family leaps --symbols SPY,QQQ --alpha 0.5
 PYTHONPATH=. python -m src.leaps_scanner.cli --strategy deep_itm --universe etfs
+
+# Cash-Secured Put scan
+PYTHONPATH=. python -m src.leaps_scanner.cli --offline --family csp --symbols AAPL,MSFT,NVDA
+PYTHONPATH=. python -m src.leaps_scanner.cli --family csp --strategy csp_harvest --universe core
 ```
 
-Dashboard: α slider re-ranks in memory (no network). Status filter defaults to PASS + WATCH. EN / 中文 toggle is in the header (saved in `localStorage`).
-
-Scan universe tiers: **ETFs** (12) · **DJIA** (30) · **SP100** · **NDX** · **Core** (union). Delayed scans run in the background.
+### Dashboard Features
+- **Strategy Switcher**: Toggle between LEAPS Call and Cash-Secured Put.
+- **Dynamic In-Memory Re-ranking**: Adjust α slippage, cash pool, single-ticker exposure, or 6 filter pills (AROC, Buffer, IV Rank, POP, Earnings, Liquidity) instantly without network re-fetching.
+- **Multi-language**: EN / 中文 toggle in the header (persisted in `localStorage`).
+- **Universe Tiers**: **ETFs** (12) · **DJIA** (30) · **SP100** · **NDX** · **Core** (union).
 
 ## Tests
 
 ```bash
+# Run all Python unit and hermetic edge-case tests (165 tests)
 PYTHONPATH=. python -m unittest discover -s tests/python -q
+
+# Run JavaScript toolchain and pre-push gatekeeper tests
+npm test
 ```
 
-Tests are hermetic: sockets are blocked. Do not rely on live Yahoo/Nasdaq/Webull in CI.
+All unit tests are hermetic: network sockets are blocked.
 
-## Deploy
+## Pricing & Greeks
 
-This is a **long-running Python process** (in-memory ranker + background Delayed scan). Do **not** publish to Vercel, Netlify, Cloudflare Pages, or Grok Publish.
+- **American Option Pricing**: Bjerksund–Stensland (2002) model with exact Put-Call symmetry transformation ($AmericanPut(S, K, T, r, q, \sigma) = AmericanCall(K, S, T, q, r, \sigma)$).
+- **Physical No-Arbitrage Bounds**: $K e^{-rT} \le EuropeanPut \le AmericanPut \le K$.
+- **Model Greeks**: Analytic Black-Scholes / Bjerksund-Stensland Greeks. Put delta strictly bounded in $[-1.0, 0.0]$.
+- **Execution Price**:
+  - LEAPS: $P_{exec} = mid + \alpha \times (ask - mid)$
+  - CSP: $P_{exec} = bid + (1 - \alpha) \times (ask - bid) \times DepthFactor$
 
-Practical setups:
-
-- Always-on Mac mini + [Tailscale](https://tailscale.com/pricing) (Personal is $0) to open the dashboard from the office
-- Small VPS ($4–6/mo) if you need a public HTTPS URL (put a password in front of it)
-
-No database is required for personal use. Strategy 2’s IV file is local JSON.
-
-## Pricing / Greeks
-
-American calls use Bjerksund–Stensland 2002. Execution price:
-
-`P_exec = mid + α × (ask − mid)` (α = 0.5 by default)
-
-Delta / theta are model Greeks, not exchange Greeks. Treat PASS as a shortlist, then confirm on a broker tape before trading.
+Greeks are model estimates, not real-time exchange feeds. Treat PASS/WATCH as an analytical shortlist and verify on your broker terminal before executing.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
+

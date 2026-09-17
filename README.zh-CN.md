@@ -1,36 +1,52 @@
-# LEAPS 看涨期权量化扫描器
+# 美股期权量化多策略扫描器 (Options Quant Strategy Scanner)
 
-美股 **远月看涨（DTE ≥ 250）** 研究扫描器，三个策略分榜输出。 **不是** 自动下单系统。
+美股期权量化研究与筛选扫描器，支持两大核心策略家族：**LEAPS 远月看涨期权**（买方代正股，$\text{DTE} \ge 250$）与 **Cash-Secured Put (CSP 现金担保卖 Put)**（卖方系统化权利金收割，$\text{DTE } 7–45$）。**不是** 自动下单交易系统。
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-## 做什么
+## 策略矩阵
 
-| 策略 | 思路 | 要点 |
+### 1. LEAPS 看涨期权家族（买方代正股策略，$\text{DTE} \ge 250$）
+
+| 看板 | 核心逻辑 | 筛选规则与风控 |
 |---|---|---|
-| **1. 深度实值** | 代正股 / PMCC 底仓 | 行权价 0.65S–0.85S，Δ 0.70–0.85 为 PASS，Δ > 0.90 扫描前剔除。磨损 = 时间价值 / (P_exec × T) + 股息率。深实值流动性以点差与 OI 为主，日成交量不作一票否决（要求 ask_size ≥ 5）。单日 θ / P_exec 设门槛。 |
-| **2. 波动率洼地** | 便宜波动上做多 Vega | 存满 ≥90 天 ATM IV 后走真 IV 分位。此前 Delayed 用 HV20 分位顶上，**最高只给 WATCH**。 |
-| **3. 蓝筹超跌共振** | 核心池均值回归 | RSI / 200 日均 / 52 周 / 反弹打分。需属于核心池且 ≥200 根日线。 |
+| **1. 深度实值** | 代正股 / PMCC 底仓 | 行权价 0.65S–0.85S，$\Delta$ 0.70–0.85 为 PASS，$\Delta > 0.90$ 扫描前剔除。持有磨损 = 时间价值 / ($P_{exec} \times T$) + 股息拖累。深实值流动性优先看点差与 OI，日成交量不作一票否决（要求 `ask_size` $\ge 5$）。单日 $\theta / P_{exec}$ 强门槛拦截。 |
+| **2. 波动率洼地** | 便宜波动率做多 Vega | 累积存满 $\ge 90$ 天平值 ATM IV 历史后启用真实 IV 分位。此前公开延迟行情以 HV20 历史波动率分位代替，**最高评级封顶 WATCH**。 |
+| **3. 蓝筹超跌共振** | 核心资产均值回归 | RSI / 200 日均线乖离 / 52 周位置 / 短线反弹得分共振。要求必须属于核心股票池且具备 $\ge 200$ 根日线数据。 |
 
-原策略四（远期异动大单）已删除：延迟行情的成交量不够当信号。
+### 2. Cash-Secured Put (CSP) 家族（卖方收益策略，$\text{DTE } 7–45$）
+
+| 看板 | 核心逻辑 | 筛选规则与风控 |
+|---|---|---|
+| **1. 权利金年化收割** | 系统化年化高收益率筛选 | $\Delta \in [-0.30, -0.15]$，DTE 7–45，按年化资本回报率（AROC）排序。买一挂单为零（Zero-Bid）或买卖盘倒挂立即一票否决。 |
+| **2. Wheel 轮动抄底** | 优质折扣建仓与安全垫 | $\Delta \in [-0.45, -0.30]$，向下安全缓冲 $\ge 5\%$，标的 RSI $\le 55$，现价距 200 日均线 $\le 1.05$。 |
+| **3. 高 IV Rank 溢价** | 波动率均值回归与压制 | IV Rank $\ge 50\%$，$\Delta \in [-0.35, -0.15]$，专门收割高溢价波动率暴跌回归红利。 |
+
+#### 🛡️ CSP 卖方风控与指标模型
+- **卖方执行价滑点 ($P_{exec}$)**：买卖价差与深度乘数惩罚模型（$P_{exec} = \text{Bid} + (1 - \alpha) \times (\text{Ask} - \text{Bid}) \times \text{DepthFactor}$）。无买盘（$\text{Bid} \le 0$）一票否决。
+- **DTE < 7 门限与 Gamma 惩罚**：杜绝临期 Gamma 风险与年化失真（$\text{DTE}_{safe} = \max(\text{DTE}, 7)$，$\text{DTE} < 14$ 天施加 15% 衰减保护）。
+- **POP 胜率与向下安全缓冲**：基于 Delta 线性逼近的获利概率估计（$1 - |\Delta|$，附带免责声明）；安全缓冲 $(S - K) / S$。
+- **资金占用与最大亏损**：名义担保金（$K \times 100$），最大可能亏损（$K \times 100 - P_{exec} \times 100$），支持现金池分配，并强制单标的最高占用总资金 25% 敞口上限。
+- **-15% 极端暴跌压力测试**：测算标的急跌 15% 时每张合约的净盈亏与组合抗压能力。
+- **财报日预警**：显式标注 DTE 内财报风险（`🚨 位于 DTE 内` 或 `⚠️ 财报待核`）。
 
 ## 数据源
 
-| 模式 | 行情 | 密钥 |
+| 模式 | 行情源 | 密钥配置 |
 |---|---|---|
-| **沙盒** | 本地样本 | 无 |
-| **公开延迟** | Yahoo 日线 + Nasdaq OPRA 延迟期权链 | 无（约 15 分钟延迟，非 NBBO） |
-| **Webull 实盘** | Webull OpenAPI | App Key + Secret，只留在内存，不写盘 |
+| **沙盒 (Sandbox)** | 本地纯静态离线测试样本 | 无（完全断网隔离执行） |
+| **公开延迟 (Delayed public)** | Yahoo 日线 + Nasdaq OPRA 延迟期权链 | 无（约 15 分钟延迟，非真实 NBBO） |
+| **Webull 实盘** | Webull OpenAPI 直连 | App Key + Secret，纯驻留内存，绝不写盘 |
 
-不要把 Webull 密钥提交进 Git，也不要贴到聊天。`.env` 已被忽略。
+请勿将 Webull 密钥提交至 Git 或贴在聊天记录中，`.env` 已被全局 gitignore。
 
-Delayed / Webull 每次扫描会把各标的最接近 ATM 的 IV 追加到 `data/iv_history.json`，大约 90 个交易日后策略二切回真 IV 分位。
+每次扫描提取的 ATM IV 均自动追加至 `data/iv_history.json`，在积累约 90 个交易日后策略二即可解除 HV 代理封顶。
 
-公开延迟按标的并发拉取（默认 8 线程，全局间隔 0.12s；可用 `LEAPS_FETCH_WORKERS` / `LEAPS_FETCH_MIN_INTERVAL`）。Yahoo 日线按美东交易日缓存（`data/daily_bars.json`，不入库）。期权链每次扫描仍会重拉。
+公开延迟行情支持多标的并发抓取（可通过 `LEAPS_FETCH_WORKERS` / `LEAPS_FETCH_MIN_INTERVAL` 调节）。Yahoo 日线按美股交易日统一缓存本地（`data/daily_bars.json`，不入库）。LEAPS 与 CSP 的扫描管道完全独立隔离，互不产生数据争用与冗余消耗。
 
 ## 运行
 
-需要 Python 3.9+。
+运行环境要求 Python 3.9+。
 
 ```bash
 cd Leaps-call-production
@@ -38,46 +54,52 @@ pip install -r requirements.txt
 PYTHONPATH=. python -m src.leaps_scanner.cli --offline --serve --port 8000
 ```
 
-打开看板后选择 沙盒 / 公开延迟 / Webull 实盘。
+打开浏览器看板：
+- 默认主看板：`http://localhost:8000/`
+- 直达 CSP 看板：`http://localhost:8000/csp` 或携带参数 `?family=csp`
 
-无界面命令行：
+### 无界面命令行 (CLI)
 
 ```bash
-PYTHONPATH=. python -m src.leaps_scanner.cli --offline --symbols SPY,QQQ --alpha 0.5
+# 扫描 LEAPS Call 远月看涨
+PYTHONPATH=. python -m src.leaps_scanner.cli --offline --family leaps --symbols SPY,QQQ --alpha 0.5
 PYTHONPATH=. python -m src.leaps_scanner.cli --strategy deep_itm --universe etfs
+
+# 扫描 Cash-Secured Put 卖方
+PYTHONPATH=. python -m src.leaps_scanner.cli --offline --family csp --symbols AAPL,MSFT,NVDA
+PYTHONPATH=. python -m src.leaps_scanner.cli --family csp --strategy csp_harvest --universe core
 ```
 
-看板上的 α 滑条在内存里重排（不重新拉网）。状态筛选默认 PASS + WATCH。右上角 **EN / 中文** 开关，选择存在 `localStorage`。
+### 看板核心功能
+- **策略家族切换器**：顶栏一键在 LEAPS Call 与 Cash-Secured Put 之间无缝切换。
+- **纯内存毫秒级重排**：实时拖动 $\alpha$ 滑条、输入可用现金池与单标的敞口上限、点选 6 个过滤药丸胶囊（AROC、安全缓冲、IV Rank、POP、财报、流动性），零网络请求瞬间重排。
+- **中英双语切换**：右上角 **EN / 中文** 随时切换，选择持久化保存在 `localStorage`。
+- **标的分级池**：**ETF**（12 只）· **道指**（30 只）· **标普 100** · **纳指 100** · **核心并集**。
 
-扫描分档：**ETF**（12）· **道指**（30）· **标普100** · **纳指100** · **核心并集**。公开延迟在后台扫。
-
-## 测试
+## 测试与校验
 
 ```bash
+# 执行全部 Python 单元测试与无网络气密性测试（165 项单测）
 PYTHONPATH=. python -m unittest discover -s tests/python -q
+
+# 执行 JS 研发工具链与 Pre-push 安全门禁测试
+npm test
 ```
 
-测试环境阻断真实网络。CI 不要依赖 Yahoo / Nasdaq / Webull 在线。
+所有单元测试完全气密隔离：禁止网络 Socket 连接。
 
-## 部署
+## 定价模型与希腊字母
 
-这是一台 **常驻 Python 进程**（内存 Ranker + 后台 Delayed 扫描）。 **不要** 发到 Vercel、Netlify、Cloudflare Pages 或 Grok Publish。
+- **美式期权定价**：Bjerksund–Stensland (2002) 解析模型，美式 Put 采用严格的看跌-看涨对称性变换（$AmericanPut(S, K, T, r, q, \sigma) = AmericanCall(K, S, T, q, r, \sigma)$）。
+- **物理无套利上下界**：$K e^{-rT} \le \text{EuropeanPut} \le \text{AmericanPut} \le K$。
+- **模型 Greeks**：解析导数 Black-Scholes / Bjerksund-Stensland 希腊字母。Put Delta 严格约束在负数区间 $[-1.0, 0.0]$。
+- **执行价滑点计算**：
+  - LEAPS 买方：$P_{exec} = \text{Mid} + \alpha \times (\text{Ask} - \text{Mid})$
+  - CSP 卖方：$P_{exec} = \text{Bid} + (1 - \alpha) \times (\text{Ask} - \text{Bid}) \times \text{DepthFactor}$
 
-可用的做法：
+模型 Greeks 与估算指标属于量化筛选参考值，并非交易所实时行情。PASS 与 WATCH 仅作为备选初筛池，下单前请务必在券商交易终端核对实时盘口。
 
-- 家里 Mac mini 常开 + [Tailscale](https://tailscale.com/pricing)（Personal 免费）从公司打开看板
-- 需要公网 https 再上一台小 VPS（务必加门禁，不要裸挂）
+## 许可协议
 
-个人自用不必数据库。策略二的 IV 仓库是本地 JSON。
+MIT，详见 [LICENSE](LICENSE)。
 
-## 定价 / Greeks
-
-美式 call 用 Bjerksund–Stensland 2002。执行价：
-
-`P_exec = 中间价 + α × (卖一 − 中间价)`（默认 α = 0.5）
-
-Delta / Theta 是模型值，不是交易所 Greeks。PASS 只当观察名单，下单前到券商盘口核对。
-
-## 许可
-
-MIT，见 [LICENSE](LICENSE)。
