@@ -815,47 +815,66 @@ class PublicDelayedClient:
                 seen.add(key)
                 collected.append(row)
 
+        def fetch_dates(asset: str, dates: List[str]) -> bool:
+            """GET each expiry concurrently. True if cancelled."""
+            if not dates:
+                return False
+            urls = [
+                (
+                    "https://api.nasdaq.com/api/quote/"
+                    f"{ticker}/option-chain?assetclass={asset}&limit=0"
+                    f"&fromdate={day}&todate={day}"
+                )
+                for day in dates
+            ]
+
+            def one(url: str) -> dict:
+                return self._get_json(url, headers, should_stop=should_stop)
+
+            workers = min(4, len(urls))
+            if workers <= 1:
+                try:
+                    ingest(one(urls[0]))
+                except InterruptedError:
+                    return True
+                except Exception:
+                    return False
+                return False
+
+            pool = ThreadPoolExecutor(max_workers=workers)
+            try:
+                futs = {pool.submit(one, url): url for url in urls}
+                for fut in as_completed(futs):
+                    if should_stop and should_stop():
+                        for pending in futs:
+                            pending.cancel()
+                        return True
+                    try:
+                        payload = fut.result()
+                    except InterruptedError:
+                        for pending in futs:
+                            pending.cancel()
+                        return True
+                    except Exception:
+                        continue
+                    ingest(payload)
+            finally:
+                pool.shutdown(wait=True, cancel_futures=True)
+            return False
+
         for asset in asset_classes:
             if collected:
                 break
-            for expiry in expiries:
-                if should_stop and should_stop():
-                    return collected, last
-                url = (
-                    "https://api.nasdaq.com/api/quote/"
-                    f"{ticker}/option-chain?assetclass={asset}&limit=0"
-                    f"&fromdate={expiry}&todate={expiry}"
-                )
-                try:
-                    payload = self._get_json(url, headers, should_stop=should_stop)
-                except InterruptedError:
-                    return collected, last
-                except Exception:
-                    continue
-                ingest(payload)
-
+            if fetch_dates(asset, expiries):
+                return collected, last
             if collected:
                 break
-            # Front-week-only responses: walk every Friday in the CSP window.
-            for expiry in csp_target_expiries(asof, min_dte=7.0, max_dte=45.0, include_weeklies=True):
-                if expiry in expiries:
-                    continue
-                if should_stop and should_stop():
-                    return collected, last
-                url = (
-                    "https://api.nasdaq.com/api/quote/"
-                    f"{ticker}/option-chain?assetclass={asset}&limit=0"
-                    f"&fromdate={expiry}&todate={expiry}"
-                )
-                try:
-                    payload = self._get_json(url, headers, should_stop=should_stop)
-                except InterruptedError:
-                    return collected, last
-                except Exception:
-                    continue
-                ingest(payload)
-                if collected:
-                    break
+            extra = [
+                d for d in csp_target_expiries(asof, min_dte=7.0, max_dte=45.0, include_weeklies=True)
+                if d not in expiries
+            ]
+            if fetch_dates(asset, extra):
+                return collected, last
         return collected, last
 
     def _scan_csp_symbol(

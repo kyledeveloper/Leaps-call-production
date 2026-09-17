@@ -6,6 +6,8 @@ Tests:
 - DC-CSP-10 thread-safe snapshot pointer swap
 """
 import json
+import threading
+import time
 import unittest
 from datetime import datetime, timezone
 
@@ -334,6 +336,27 @@ class TestCSPApi(unittest.TestCase):
         PublicDelayedClient(fetch_fn=fetch)._nasdaq_csp_chain("AAPL", asof)
         self.assertTrue(any("fromdate=2026-09-25" in u for u in urls))
         self.assertTrue(any("fromdate=2026-10-16" in u for u in urls))
+
+    def test_nasdaq_csp_expiries_fetch_concurrently(self):
+        """Multiple pinned expiries for one symbol must overlap in flight."""
+        from src.leaps_scanner.data.public_delayed import PublicDelayedClient
+        asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
+        lock = threading.Lock()
+        in_flight = 0
+        max_flight = 0
+
+        def fetch(url, headers):
+            nonlocal in_flight, max_flight
+            with lock:
+                in_flight += 1
+                max_flight = max(max_flight, in_flight)
+            time.sleep(0.08)
+            with lock:
+                in_flight -= 1
+            return 200, json.dumps({"data": {"lastTrade": "$220.00", "table": {"rows": []}}}).encode()
+
+        PublicDelayedClient(fetch_fn=fetch, max_workers=1, min_interval_s=0)._nasdaq_csp_chain("AAPL", asof)
+        self.assertGreaterEqual(max_flight, 2)
 
     def test_delayed_csp_uses_put_iv_solver(self):
         from unittest.mock import patch
