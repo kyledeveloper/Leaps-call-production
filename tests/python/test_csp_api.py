@@ -27,6 +27,11 @@ class TestCSPApi(unittest.TestCase):
         self.assertIn("harvest", data["boards"])
         self.assertIn("wheel", data["boards"])
         self.assertIn("vol_rank", data["boards"])
+        # Dual-key alias support for frontend tabs (csp_*)
+        self.assertIn("csp_harvest", data["boards"])
+        self.assertIn("csp_wheel", data["boards"])
+        self.assertIn("csp_vol_rank", data["boards"])
+        self.assertEqual(data["boards"]["harvest"], data["boards"]["csp_harvest"])
         self.assertEqual(data["cash_pool"], 50000.0)
 
     def test_post_csp_rerank_in_memory(self):

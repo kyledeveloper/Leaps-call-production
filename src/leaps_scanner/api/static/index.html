@@ -1443,6 +1443,7 @@
             clearInterval(scanPollTimer);
             scanPollTimer = null;
             await applyConfig(cfg);
+            await loadBoards(currentAlpha, false);
           }
         } catch (e) {}
       }, 2000);
@@ -1677,7 +1678,10 @@
     }
 
     function renderActiveBoard() {
-      const allItems = cachedBoards[currentBoardKey] || [];
+      const allItems = cachedBoards[currentBoardKey]
+        || cachedBoards[currentBoardKey.replace(/^csp_/, '')]
+        || cachedBoards['csp_' + currentBoardKey]
+        || [];
       const counts = { PASS: 0, WATCH: 0, REJECT: 0 };
       allItems.forEach(it => {
         const st = effectiveStatus(it);

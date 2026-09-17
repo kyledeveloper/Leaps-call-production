@@ -442,9 +442,12 @@ class AppState:
         )
 
         # DC-CSP-10: Assemble immutable snapshot and perform atomic pointer swap
-        frozen_boards = {
-            b_name: tuple(items) for b_name, items in raw_boards.items()
-        }
+        frozen_boards: Dict[str, Tuple[RankedCSPItem, ...]] = {}
+        for b_name, items in raw_boards.items():
+            clean_name = b_name.replace("csp_", "")
+            frozen_boards[clean_name] = tuple(items)
+            frozen_boards[f"csp_{clean_name}"] = tuple(items)
+
         new_snapshot = CSPBoardSnapshot(
             timestamp=datetime.now(timezone.utc).isoformat(),
             alpha=alpha,
@@ -458,7 +461,10 @@ class AppState:
 
         result: Dict[str, List[Dict[str, Any]]] = {}
         for b_name, items in raw_boards.items():
-            result[b_name] = [asdict(it) for it in items]
+            serialized = [asdict(it) for it in items]
+            clean_name = b_name.replace("csp_", "")
+            result[clean_name] = serialized
+            result[f"csp_{clean_name}"] = serialized
         return result
 
     def _has_credentials(self) -> bool:
