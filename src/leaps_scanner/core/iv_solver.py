@@ -6,7 +6,10 @@ Adheres strictly to Defensive Clause 4.
 import math
 from dataclasses import dataclass
 from typing import Optional
-from src.leaps_scanner.core.american_pricing import bjerksund_stensland_2002
+from src.leaps_scanner.core.american_pricing import (
+    bjerksund_stensland_2002,
+    bjerksund_stensland_put,
+)
 
 
 @dataclass(frozen=True)
@@ -161,3 +164,78 @@ def solve_implied_volatility(
         return IVResult(iv=round(brent_vol, 4), status="CONVERGED")
 
     return IVResult(iv=None, status="IV_UNAVAILABLE")
+
+
+def solve_american_put_iv(
+    spot: float,
+    strike: float,
+    t: float,
+    r: float,
+    q: float,
+    price: float,
+    initial_guess: float = 0.30
+) -> IVResult:
+    """
+    Solve for American Put Implied Volatility.
+    Pre-checks arbitrage bounds and seamlessly falls back from Newton to Brent.
+    Adheres to DC-CSP-1.
+    """
+    if spot <= 0.0 or strike <= 0.0 or t <= 0.0:
+        return IVResult(iv=None, status="INVALID_INPUTS")
+
+    # Lower bound: max(0, K - S, K*e^(-rT) - S*e^(-qT))
+    eur_lower = max(0.0, strike * math.exp(-r * t) - spot * math.exp(-q * t))
+    intrinsic = max(0.0, strike - spot)
+    lower_bound = max(eur_lower, intrinsic)
+
+    # Upper bound: American Put <= Strike
+    upper_bound = strike
+
+    if price < lower_bound - 1e-4 or price > upper_bound + 1e-4:
+        return IVResult(iv=None, status="ARBITRAGE_VIOLATION")
+
+    if abs(price - intrinsic) < 1e-4:
+        return IVResult(iv=None, status="ZERO_EXTRINSIC")
+
+    def model_price(vol: float) -> float:
+        return bjerksund_stensland_put(spot, strike, t, r, q, max(1e-4, vol))
+
+    def price_diff(vol: float) -> float:
+        return model_price(vol) - price
+
+    # Newton-Raphson
+    vol = max(0.05, min(1.5, initial_guess))
+    converged = False
+
+    for _ in range(25):
+        curr_price = model_price(vol)
+        diff = curr_price - price
+
+        if abs(diff) < 1e-4:
+            converged = True
+            break
+
+        d_vol = 0.002
+        p_up = model_price(vol + d_vol)
+        p_down = model_price(max(1e-4, vol - d_vol))
+        vega = (p_up - p_down) / (2.0 * d_vol)
+
+        if vega < 1e-5:
+            break
+
+        step = diff / vega
+        vol -= step
+
+        if vol <= 0.001 or vol > 4.0:
+            break
+
+    if converged and 0.001 < vol < 5.0:
+        return IVResult(iv=round(vol, 4), status="CONVERGED")
+
+    # Brent fallback
+    brent_vol = _brent_root(price_diff, a=0.001, b=5.0, tol=1e-4, max_iter=40)
+    if brent_vol is not None and 0.001 <= brent_vol <= 5.0:
+        return IVResult(iv=round(brent_vol, 4), status="CONVERGED")
+
+    return IVResult(iv=None, status="IV_UNAVAILABLE")
+

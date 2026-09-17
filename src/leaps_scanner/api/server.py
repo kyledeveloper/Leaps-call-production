@@ -19,10 +19,12 @@ from src.leaps_scanner.data.public_delayed import PublicDelayedClient
 from src.leaps_scanner.data.store.iv_history import IVHistoryStore, default_iv_history_path
 from src.leaps_scanner.data.store.daily_bars import DailyBarCache, default_daily_bar_cache_path
 from src.leaps_scanner.scoring.ranker import MemoryRanker, RankedItem, StrategyCandidate
+from src.leaps_scanner.scoring.csp_ranker import CSPCandidate, CSPFilterConfig, rank_csp_boards, CSPBoardSnapshot
 from src.leaps_scanner.data.rebalancer import get_universe_manager
 from src.leaps_scanner.data.universe import SymbologyNormalizer
 
 logger = logging.getLogger(__name__)
+
 
 
 DEFAULT_SCAN_SYMBOLS = ["SPY", "QQQ", "AAPL", "NVDA", "MSFT"]
@@ -102,9 +104,12 @@ class AppState:
             self.bar_cache = DailyBarCache(persist_path=str(default_daily_bar_cache_path()))
 
         self.candidates: List[StrategyCandidate] = []
+        self.csp_candidates: List[CSPCandidate] = []
         self.ranker: Optional[MemoryRanker] = None
+
         self.last_scan_time: Optional[str] = None
         self.current_alpha: float = 0.5
+        self.csp_snapshot: Optional[CSPBoardSnapshot] = None
         self.last_error: Optional[str] = None
         self.source: str = "sandbox" if offline_mode else "webull"
         self.connection_status: str = "sandbox" if offline_mode else "live"
@@ -303,6 +308,54 @@ class AppState:
             result[b_name] = [asdict(it) for it in items]
         return result
 
+    def get_csp_boards(
+        self,
+        alpha: float = 0.5,
+        config: Optional[CSPFilterConfig] = None,
+        cash_pool: float = 50000.0
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        with self._lock:
+            self.current_alpha = alpha
+            csp_cands = list(self.csp_candidates)
+
+        if not csp_cands:
+            syms = self.resolve_scan_symbols()
+            if hasattr(self.client, "get_csp_candidates"):
+                try:
+                    csp_cands = self.client.get_csp_candidates(syms)
+                except Exception as e:
+                    logger.warning("Failed to query CSP candidates: %s", e)
+                    csp_cands = []
+            with self._lock:
+                self.csp_candidates = list(csp_cands)
+
+        raw_boards = rank_csp_boards(
+            csp_cands,
+            config=config,
+            alpha=alpha,
+            cash_pool=cash_pool
+        )
+
+        # DC-CSP-10: Assemble immutable snapshot and perform atomic pointer swap
+        frozen_boards = {
+            b_name: tuple(items) for b_name, items in raw_boards.items()
+        }
+        new_snapshot = CSPBoardSnapshot(
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            alpha=alpha,
+            cash_pool=cash_pool,
+            candidates=tuple(csp_cands),
+            boards=frozen_boards,
+        )
+        with self._lock:
+            self.csp_snapshot = new_snapshot
+            self.csp_candidates = list(csp_cands)
+
+        result: Dict[str, List[Dict[str, Any]]] = {}
+        for b_name, items in raw_boards.items():
+            result[b_name] = [asdict(it) for it in items]
+        return result
+
     def _has_credentials(self) -> bool:
         if self.source != "webull":
             return False
@@ -330,6 +383,7 @@ class AppState:
             "last_error": self.last_error,
             "last_scan_time": self.last_scan_time,
             "candidate_count": len(self.candidates),
+            "csp_candidate_count": len(self.csp_candidates),
             "current_alpha": self.current_alpha,
             "scan_tier": self.scan_tier,
             "scan_status": self.scan_status,
@@ -342,9 +396,10 @@ class AppState:
                 "ndx": len(self.universe_manager.get_constituents("nasdaq100")),
                 "core": len(self.universe_manager.get_master_universe()),
             },
-
             "strategies": ["deep_itm", "vol_discount", "oversold"],
+            "csp_strategies": ["harvest", "wheel", "vol_rank"],
         }
+
 
     def set_mode(
         self,
@@ -579,6 +634,75 @@ def create_api_handler_class(state: AppState):
                     "recalculation_mode": "IN_MEMORY_ZERO_NETWORK"
                 }
                 return 200, headers, json.dumps(data).encode("utf-8")
+
+            # GET /api/v1/csp/boards or /api/csp/boards
+            if method in ("GET", "HEAD") and clean_path in ("/api/v1/csp/boards", "/api/csp/boards"):
+                alpha = float(query_params.get("alpha", [state.current_alpha])[0])
+                cash_pool = float(query_params.get("cash_pool", [50000.0])[0])
+                max_cap = query_params.get("max_capital", [None])[0]
+                max_capital = float(max_cap) if max_cap else None
+
+                cfg = CSPFilterConfig(
+                    filter_aroc=query_params.get("filter_aroc", ["true"])[0].lower() == "true",
+                    min_aroc=float(query_params.get("min_aroc", [0.12])[0]),
+                    filter_buffer=query_params.get("filter_buffer", ["true"])[0].lower() == "true",
+                    min_buffer=float(query_params.get("min_buffer", [0.03])[0]),
+                    filter_ivr=query_params.get("filter_ivr", ["false"])[0].lower() == "true",
+                    min_ivr=float(query_params.get("min_ivr", [0.50])[0]),
+                    filter_pop=query_params.get("filter_pop", ["true"])[0].lower() == "true",
+                    min_pop=float(query_params.get("min_pop", [0.70])[0]),
+                    filter_earnings=query_params.get("filter_earnings", ["true"])[0].lower() == "true",
+                    strict_earnings=query_params.get("strict_earnings", ["false"])[0].lower() == "true",
+                    filter_liquidity=query_params.get("filter_liquidity", ["true"])[0].lower() == "true",
+                    max_capital_per_contract=max_capital,
+                )
+                boards = state.get_csp_boards(alpha=alpha, config=cfg, cash_pool=cash_pool)
+                data = {
+                    "alpha": alpha,
+                    "cash_pool": cash_pool,
+                    "boards": boards,
+                    "offline_mode": state.offline_mode,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                return 200, headers, json.dumps(data).encode("utf-8")
+
+            # POST /api/v1/csp/rerank or /api/csp/rerank
+            if method == "POST" and clean_path in ("/api/v1/csp/rerank", "/api/csp/rerank"):
+                alpha = state.current_alpha
+                cash_pool = 50000.0
+                cfg = CSPFilterConfig()
+                if body:
+                    try:
+                        req_data = json.loads(body.decode("utf-8"))
+                        alpha = float(req_data.get("alpha", alpha))
+                        cash_pool = float(req_data.get("cash_pool", cash_pool))
+                        c_dict = req_data.get("config", {})
+                        if isinstance(c_dict, dict):
+                            cfg = CSPFilterConfig(
+                                filter_aroc=c_dict.get("filter_aroc", cfg.filter_aroc),
+                                min_aroc=float(c_dict.get("min_aroc", cfg.min_aroc)),
+                                filter_buffer=c_dict.get("filter_buffer", cfg.filter_buffer),
+                                min_buffer=float(c_dict.get("min_buffer", cfg.min_buffer)),
+                                filter_ivr=c_dict.get("filter_ivr", cfg.filter_ivr),
+                                min_ivr=float(c_dict.get("min_ivr", cfg.min_ivr)),
+                                filter_pop=c_dict.get("filter_pop", cfg.filter_pop),
+                                min_pop=float(c_dict.get("min_pop", cfg.min_pop)),
+                                filter_earnings=c_dict.get("filter_earnings", cfg.filter_earnings),
+                                strict_earnings=c_dict.get("strict_earnings", cfg.strict_earnings),
+                                filter_liquidity=c_dict.get("filter_liquidity", cfg.filter_liquidity),
+                                max_capital_per_contract=c_dict.get("max_capital_per_contract"),
+                            )
+                    except Exception:
+                        pass
+                boards = state.get_csp_boards(alpha=alpha, config=cfg, cash_pool=cash_pool)
+                data = {
+                    "alpha": alpha,
+                    "cash_pool": cash_pool,
+                    "boards": boards,
+                    "recalculation_mode": "IN_MEMORY_ZERO_NETWORK"
+                }
+                return 200, headers, json.dumps(data).encode("utf-8")
+
 
             # GET /api/v1/universe
             if method == "GET" and clean_path in ("/api/v1/universe", "/api/universe"):

@@ -156,3 +156,136 @@ def calculate_effective_leverage(
     if p_exec <= 0.0:
         return 0.0
     return (delta * spot) / p_exec
+
+
+def calculate_sell_pexec(
+    bid: float,
+    ask: float,
+    alpha: float = 0.5,
+    bid_size: int = 10,
+    target_contracts: int = 1
+) -> float:
+    """
+    DC-CSP-6: Conservative sell-side execution price:
+    P_exec = Mid - alpha * (Mid - Bid)
+    Elevates alpha to at least 0.85 if bid_size < target_contracts.
+    Strictly guarantees Bid <= P_exec <= Mid.
+    """
+    if bid <= 0.0 or ask <= 0.0 or bid >= ask:
+        raise ValueError(f"Invalid sell quote: bid={bid}, ask={ask}")
+
+    mid = (bid + ask) / 2.0
+    half_spread = (ask - bid) / 2.0
+
+    effective_alpha = float(alpha)
+    if bid_size < target_contracts:
+        effective_alpha = max(effective_alpha, 0.85)
+
+    p_exec = mid - effective_alpha * half_spread
+    return max(bid, min(mid, p_exec))
+
+
+def calculate_roc(pexec: float, strike: float) -> float:
+    """Single period Return on Capital (ROC) = P_exec / Strike."""
+    if strike <= 0.0:
+        return 0.0
+    return max(0.0, pexec / strike)
+
+
+def calculate_aroc(pexec: float, strike: float, dte: float) -> float:
+    """
+    DC-CSP-4: Annualized Return on Capital (AROC) = ROC * (365 / dte_safe).
+    Floors DTE at 7.0 to eliminate short-DTE division-by-zero or astronomical distortion.
+    """
+    if strike <= 0.0:
+        return 0.0
+    dte_safe = max(float(dte), 7.0)
+    roc = calculate_roc(pexec, strike)
+    return roc * (365.0 / dte_safe)
+
+
+def calculate_downside_buffer(spot: float, strike: float) -> float:
+    """Downside Buffer = (Spot - Strike) / Spot."""
+    if spot <= 0.0:
+        return 0.0
+    return (spot - strike) / spot
+
+
+def calculate_pop(
+    delta: Optional[float] = None,
+    spot: Optional[float] = None,
+    breakeven: Optional[float] = None,
+    dte: Optional[float] = None,
+    r: float = 0.04,
+    q: float = 0.01,
+    sigma: float = 0.25
+) -> float:
+    """
+    DC-CSP-5: Probability of Profit (POP) estimation.
+    Uses Delta proxy (1 - |Delta|) if available, otherwise Black-Scholes lognormal integral.
+    """
+    if delta is not None:
+        return max(0.0, min(1.0, 1.0 - abs(float(delta))))
+
+    if spot and breakeven and dte and spot > 0 and breakeven > 0 and dte > 0 and sigma > 0:
+        t = dte / 365.25
+        d2 = (math.log(spot / breakeven) + (r - q - 0.5 * sigma * sigma) * t) / (sigma * math.sqrt(t))
+        from src.leaps_scanner.core.american_pricing import _cnd
+        return max(0.0, min(1.0, _cnd(d2)))
+
+    return 0.50
+
+
+def calculate_csp_capital_allocation(
+    cash_pool: float,
+    strike: float,
+    pexec: float,
+    max_exposure_pct: float = 0.25
+) -> dict:
+    """
+    DC-CSP-7: Concentration-capped contract allocation and Max Loss.
+    """
+    capital_per_contract = max(0.0, strike * CONTRACT_MULTIPLIER)
+    if capital_per_contract <= 0.0 or cash_pool <= 0.0:
+        return {
+            "required_capital_per_contract": capital_per_contract,
+            "recommended_contracts": 0,
+            "max_loss_per_contract": 0.0,
+            "total_max_loss": 0.0,
+            "total_premium": 0.0,
+        }
+
+    max_ticker_capital = cash_pool * max(0.01, min(1.0, float(max_exposure_pct)))
+    contracts_by_exposure = int(max_ticker_capital // capital_per_contract)
+    contracts_by_total = int(cash_pool // capital_per_contract)
+    recommended = max(0, min(contracts_by_exposure, contracts_by_total))
+
+    max_loss_per_share = max(0.0, strike - pexec)
+    max_loss_per_contract = max_loss_per_share * CONTRACT_MULTIPLIER
+    total_max_loss = recommended * max_loss_per_contract
+    total_premium = recommended * pexec * CONTRACT_MULTIPLIER
+
+    return {
+        "required_capital_per_contract": capital_per_contract,
+        "recommended_contracts": recommended,
+        "max_loss_per_contract": round(max_loss_per_contract, 2),
+        "total_max_loss": round(total_max_loss, 2),
+        "total_premium": round(total_premium, 2),
+    }
+
+
+def calculate_stress_test_pnl(
+    spot: float,
+    strike: float,
+    pexec: float,
+    drop_pct: float = 0.15
+) -> float:
+    """
+    DC-CSP-5: Stress test PnL per contract for underlying single-day jump drop (default -15%).
+    Stress PnL = 100 * (P_exec - max(0, Strike - Spot * (1 - drop_pct)))
+    """
+    stressed_spot = spot * (1.0 - drop_pct)
+    stressed_intrinsic = max(0.0, strike - stressed_spot)
+    pnl_per_share = pexec - stressed_intrinsic
+    return pnl_per_share * CONTRACT_MULTIPLIER
+

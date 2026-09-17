@@ -248,6 +248,109 @@
     }
     .btn:hover { opacity: 0.9; }
 
+    /* Strategy Family Switcher */
+    .family-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .family-switcher {
+      display: inline-flex;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 3px;
+      gap: 4px;
+    }
+    .family-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 8px 18px;
+      font-size: 14px;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .family-btn:hover {
+      color: var(--text-main);
+    }
+    .family-btn.active {
+      background: var(--bg-card);
+      color: var(--accent-blue);
+      border-color: rgba(56, 189, 248, 0.4);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+    }
+
+    /* CSP Controls Panel */
+    .csp-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .csp-inputs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: center;
+    }
+    .csp-input-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .csp-input-group input {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 13px;
+      width: 110px;
+    }
+    .csp-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .csp-pill {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 9999px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .csp-pill:hover {
+      border-color: var(--text-muted);
+    }
+    .csp-pill.active {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent-blue);
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+
     /* Strategy Tabs */
     .tabs {
       display: flex;
@@ -454,6 +557,18 @@
     </div>
   </div>
 
+  <!-- Strategy Family Switcher -->
+  <div class="family-bar">
+    <div class="family-switcher" role="group" aria-label="Strategy Family">
+      <button type="button" id="famLeaps" class="family-btn active" onclick="switchFamily('leaps')">
+        🦅 <span data-i18n="familyLeaps">LEAPS Call</span>
+      </button>
+      <button type="button" id="famCsp" class="family-btn" onclick="switchFamily('csp')">
+        🛡️ <span data-i18n="familyCsp">Cash-Secured Put (CSP)</span>
+      </button>
+    </div>
+  </div>
+
   <div class="source-panel">
     <div class="source-row">
       <div>
@@ -497,7 +612,7 @@
       <div class="slider-legend">
         <span data-i18n="alphaAggressive">0.0 (Aggressive Mid)</span>
         <span data-i18n="alphaConservative">0.5 (Conservative Mid)</span>
-        <span data-i18n="alphaAsk">1.0 (Worst-case Ask)</span>
+        <span id="sliderLegendRight" data-i18n="alphaAsk">1.0 (Worst-case Ask)</span>
       </div>
     </div>
     <div class="panel-meta">
@@ -506,8 +621,30 @@
     </div>
   </div>
 
+  <!-- CSP Specific Parameter & Filter Controls Panel -->
+  <div class="csp-panel" id="cspPanel" style="display: none;">
+    <div class="csp-inputs">
+      <div class="csp-input-group">
+        <label for="cashPoolInput"><strong data-i18n="cashPool">Cash Pool ($):</strong></label>
+        <input type="number" id="cashPoolInput" value="50000" step="5000" min="1000" oninput="handleCspParamChange()">
+      </div>
+      <div class="csp-input-group">
+        <label for="maxCapInput"><strong data-i18n="maxCap">Max Cap / Ticker ($):</strong></label>
+        <input type="number" id="maxCapInput" placeholder="No limit" step="5000" min="0" oninput="handleCspParamChange()">
+      </div>
+    </div>
+    <div class="csp-pills">
+      <button type="button" class="csp-pill active" id="pillAroc" onclick="toggleCspFilter('aroc')">📈 <span data-i18n="filterAroc">AROC ≥ 12%</span></button>
+      <button type="button" class="csp-pill active" id="pillBuffer" onclick="toggleCspFilter('buffer')">🛡️ <span data-i18n="filterBuffer">Buffer ≥ 3%</span></button>
+      <button type="button" class="csp-pill" id="pillIvr" onclick="toggleCspFilter('ivr')">⚡ <span data-i18n="filterIvRank">IV Rank ≥ 50%</span></button>
+      <button type="button" class="csp-pill active" id="pillPop" onclick="toggleCspFilter('pop')">🎯 <span data-i18n="filterPop">POP ≥ 70%</span></button>
+      <button type="button" class="csp-pill active" id="pillEarnings" onclick="toggleCspFilter('earnings')">📅 <span data-i18n="filterEarnings">Earnings Gate</span></button>
+      <button type="button" class="csp-pill active" id="pillLiquidity" onclick="toggleCspFilter('liquidity')">💧 <span data-i18n="filterLiquidity">Liquidity Gate</span></button>
+    </div>
+  </div>
+
   <!-- Strategy Board Tabs -->
-  <div class="tabs">
+  <div class="tabs" id="boardTabs">
     <button class="tab-btn active" onclick="switchBoard('deep_itm', this)"><span class="tab-full" data-i18n="tab1Full">1. Deep ITM Stock Replacement</span><span class="tab-short" data-i18n="tab1Short">1. Deep ITM</span></button>
     <button class="tab-btn" onclick="switchBoard('vol_discount', this)"><span class="tab-full" data-i18n="tab2Full">2. Volatility Discount</span><span class="tab-short" data-i18n="tab2Short">2. Vol Discount</span></button>
     <button class="tab-btn" onclick="switchBoard('oversold', this)"><span class="tab-full" data-i18n="tab3Full">3. Blue-Chip Oversold Confluence</span><span class="tab-short" data-i18n="tab3Short">3. Oversold</span></button>
@@ -539,16 +676,30 @@
   </div>
 
   <script>
+    let currentFamily = 'leaps'; // 'leaps' | 'csp'
     let currentAlpha = 0.5;
     let currentBoardKey = 'deep_itm';
     let cachedBoards = {};
     const visibleStatuses = new Set(['PASS', 'WATCH']);
     let scanPollTimer = null;
     let lastCfg = null;
+    let cspDebounceTimer = null;
+    let cspAbortController = null;
+    let cspFilters = {
+      aroc: true,
+      buffer: true,
+      ivr: false,
+      pop: true,
+      earnings: true,
+      liquidity: true
+    };
     const FILTER_IDS = {
       deep_itm: ['strike','delta','intrinsic','leverage','carry','theta','dte','oi','spread','volume'],
       vol_discount: ['iv_history','iv_percentile','iv_hv','hv_proxy','regime_b','crash','strike','dte','earnings'],
-      oversold: ['universe','bars','rsi','dma','dma_hv','drawdown','bounce','confluence','strike','dte']
+      oversold: ['universe','bars','rsi','dma','dma_hv','drawdown','bounce','confluence','strike','dte'],
+      csp_harvest: ['delta','aroc','dte','buffer','pop','liquidity'],
+      csp_wheel: ['delta','buffer','oversold','aroc','dte','liquidity'],
+      csp_vol_rank: ['iv_rank','delta','aroc','earnings','liquidity']
     };
     const SIGNAL_IDS = ['rsi','dma','dma_hv','drawdown','bounce'];
     const FILTER_STORE = 'leaps_filters_v2';
@@ -586,6 +737,35 @@
 
     const I18N = {
       en: {
+        familyLeaps: 'LEAPS Call',
+        familyCsp: 'Cash-Secured Put (CSP)',
+        appTitleLeaps: 'LEAPS Call Quant Scanner',
+        appTitleCsp: 'Cash-Secured Put Quant Scanner',
+        appSubtitleLeaps: 'Multi-Strategy Quantitative Screening for Far-Dated Call Options (DTE ≥ 250d)',
+        appSubtitleCsp: 'Cash-Secured Put Selling with Systematic Delta & Capital Risk Controls (7-45 DTE)',
+        cashPool: 'Cash Pool ($):',
+        maxCap: 'Max Cap / Ticker ($):',
+        filterAroc: 'AROC ≥ 12%',
+        filterBuffer: 'Buffer ≥ 3%',
+        filterIvRank: 'IV Rank ≥ 50%',
+        filterPop: 'POP ≥ 70%',
+        filterEarnings: 'Earnings Gate',
+        filterLiquidity: 'Liquidity Gate',
+        cspTab1Full: '1. Premium Harvesting',
+        cspTab1Short: '1. Harvesting',
+        cspTab2Full: '2. Wheel / Dip-Buying',
+        cspTab2Short: '2. Wheel',
+        cspTab3Full: '3. High IV Rank Harvest',
+        cspTab3Short: '3. High IV',
+        alphaBid: '1.0 (Worst-case Bid)',
+        colAroc: 'ROC / AROC',
+        colBuffer: 'Downside Buffer',
+        colPop: 'POP (Δ-Approx)',
+        popTooltip: 'Delta linear approximation POP (1 - |Δ|). Thick tail events may result in lower actual win rates.',
+        colContracts: 'Rec. Contracts',
+        colMaxLoss: 'Capital / Max Loss (Stress)',
+        earningsUnverified: '⚠️ Unverified',
+        earningsImpacted: '🚨 In DTE',
         pageTitle: 'LEAPS Call Quantitative Scanner',
         appTitle: 'LEAPS Call Quant Scanner',
         appSubtitle: 'Multi-Strategy Quantitative Screening for Far-Dated Call Options (DTE ≥ 250d)',
@@ -674,6 +854,35 @@
         keyHint: 'key {hint}'
       },
       zh: {
+        familyLeaps: 'LEAPS 看涨',
+        familyCsp: '现金担保卖 Put (CSP)',
+        appTitleLeaps: 'LEAPS 看涨期权量化扫描器',
+        appTitleCsp: '现金担保卖 Put (CSP) 量化扫描器',
+        appSubtitleLeaps: '远月看涨期权多策略量化筛选（到期日 ≥ 250 天）',
+        appSubtitleCsp: '现金担保卖方策略量化筛选与仓位敞口风控（7-45 天 DTE）',
+        cashPool: '可用现金池 ($):',
+        maxCap: '单一标的上限 ($):',
+        filterAroc: '年化 AROC ≥ 12%',
+        filterBuffer: '安全边际 ≥ 3%',
+        filterIvRank: 'IV Rank ≥ 50%',
+        filterPop: '估算胜率 ≥ 70%',
+        filterEarnings: '财报风险规避',
+        filterLiquidity: '流动性风控',
+        cspTab1Full: '1. 权利金年化收割',
+        cspTab1Short: '1. 权利金收割',
+        cspTab2Full: '2. 轮动抄底折扣入场',
+        cspTab2Short: '2. 轮动抄底',
+        cspTab3Full: '3. 高 IV 溢价收割',
+        cspTab3Short: '3. 高 IV',
+        alphaBid: '1.0（最差买一价 Bid）',
+        colAroc: '单期 ROC / 年化 AROC',
+        colBuffer: '安全缓冲',
+        colPop: '胜率 POP (Δ逼近)',
+        popTooltip: 'Delta 线性逼近胜率 (1 - |Δ|)，极端厚尾行情下实际胜率可能偏低',
+        colContracts: '建议张数',
+        colMaxLoss: '名义资金 / 最大亏损 (压力)',
+        earningsUnverified: '⚠️ 财报待核',
+        earningsImpacted: '🚨 位于 DTE 内',
         pageTitle: '美股 LEAPS 看涨期权量化扫描器',
         appTitle: 'LEAPS 看涨期权量化扫描器',
         appSubtitle: '远月看涨期权多策略量化筛选（到期日 ≥ 250 天）',
@@ -772,19 +981,125 @@
     function applyStaticI18n() {
       document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
       document.documentElement.dataset.lang = lang;
-      document.title = t('pageTitle');
+      document.title = currentFamily === 'csp' ? t('appTitleCsp') : t('pageTitle');
+      const titleEl = document.querySelector('.title-group h1 span');
+      if (titleEl) titleEl.innerText = currentFamily === 'csp' ? t('appTitleCsp') : t('appTitleLeaps');
+      const subTitleEl = document.querySelector('.title-group p');
+      if (subTitleEl) subTitleEl.innerText = currentFamily === 'csp' ? t('appSubtitleCsp') : t('appSubtitleLeaps');
       document.querySelectorAll('[data-i18n]').forEach(el => { el.innerText = t(el.dataset.i18n); });
       const enBtn = document.getElementById('langEn');
       const zhBtn = document.getElementById('langZh');
       if (enBtn) enBtn.className = lang === 'en' ? 'on-lang' : '';
       if (zhBtn) zhBtn.className = lang === 'zh' ? 'on-lang' : '';
       paintAlphaDisplay();
+      renderTabs();
+    }
+
+    function renderTabs() {
+      const tabs = document.getElementById('boardTabs');
+      if (!tabs) return;
+      if (currentFamily === 'csp') {
+        tabs.innerHTML = `
+          <button class="tab-btn ${currentBoardKey === 'csp_harvest' ? 'active' : ''}" onclick="switchBoard('csp_harvest', this)"><span class="tab-full">${t('cspTab1Full')}</span><span class="tab-short">${t('cspTab1Short')}</span></button>
+          <button class="tab-btn ${currentBoardKey === 'csp_wheel' ? 'active' : ''}" onclick="switchBoard('csp_wheel', this)"><span class="tab-full">${t('cspTab2Full')}</span><span class="tab-short">${t('cspTab2Short')}</span></button>
+          <button class="tab-btn ${currentBoardKey === 'csp_vol_rank' ? 'active' : ''}" onclick="switchBoard('csp_vol_rank', this)"><span class="tab-full">${t('cspTab3Full')}</span><span class="tab-short">${t('cspTab3Short')}</span></button>
+        `;
+      } else {
+        tabs.innerHTML = `
+          <button class="tab-btn ${currentBoardKey === 'deep_itm' ? 'active' : ''}" onclick="switchBoard('deep_itm', this)"><span class="tab-full">${t('tab1Full')}</span><span class="tab-short">${t('tab1Short')}</span></button>
+          <button class="tab-btn ${currentBoardKey === 'vol_discount' ? 'active' : ''}" onclick="switchBoard('vol_discount', this)"><span class="tab-full">${t('tab2Full')}</span><span class="tab-short">${t('tab2Short')}</span></button>
+          <button class="tab-btn ${currentBoardKey === 'oversold' ? 'active' : ''}" onclick="switchBoard('oversold', this)"><span class="tab-full">${t('tab3Full')}</span><span class="tab-short">${t('tab3Short')}</span></button>
+        `;
+      }
+    }
+
+    function switchFamily(fam) {
+      if (currentFamily === fam) return;
+      currentFamily = fam;
+      document.getElementById('famLeaps').classList.toggle('active', fam === 'leaps');
+      document.getElementById('famCsp').classList.toggle('active', fam === 'csp');
+      document.getElementById('cspPanel').style.display = fam === 'csp' ? 'flex' : 'none';
+      currentBoardKey = fam === 'csp' ? 'csp_harvest' : 'deep_itm';
+      applyStaticI18n();
+      paintStrategyHelp(currentBoardKey);
+      loadBoards(currentAlpha);
+    }
+
+    function toggleCspFilter(key) {
+      cspFilters[key] = !cspFilters[key];
+      const pillMap = {
+        aroc: 'pillAroc', buffer: 'pillBuffer', ivr: 'pillIvr',
+        pop: 'pillPop', earnings: 'pillEarnings', liquidity: 'pillLiquidity'
+      };
+      const el = document.getElementById(pillMap[key]);
+      if (el) el.classList.toggle('active', cspFilters[key]);
+      handleCspParamChange();
+    }
+
+    function handleCspParamChange() {
+      clearTimeout(cspDebounceTimer);
+      cspDebounceTimer = setTimeout(() => {
+        rerankCsp();
+      }, 250);
+    }
+
+    async function rerankCsp() {
+      if (cspAbortController) {
+        cspAbortController.abort();
+      }
+      cspAbortController = new AbortController();
+      const t0 = performance.now();
+      const cashPool = parseFloat(document.getElementById('cashPoolInput').value) || 50000;
+      const maxCapRaw = document.getElementById('maxCapInput').value.trim();
+      const maxCap = maxCapRaw ? parseFloat(maxCapRaw) : null;
+      const payload = {
+        alpha: currentAlpha,
+        cash_pool: cashPool,
+        config: {
+          filter_aroc: cspFilters.aroc,
+          min_aroc: 0.12,
+          filter_buffer: cspFilters.buffer,
+          min_buffer: 0.03,
+          filter_ivr: cspFilters.ivr,
+          min_ivr: 0.50,
+          filter_pop: cspFilters.pop,
+          min_pop: 0.70,
+          filter_earnings: cspFilters.earnings,
+          strict_earnings: false,
+          filter_liquidity: cspFilters.liquidity,
+          max_capital_per_contract: maxCap
+        }
+      };
+      try {
+        const res = await fetch('/api/v1/csp/rerank', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload),
+          signal: cspAbortController.signal
+        });
+        if (res.ok) {
+          const data = await res.json();
+          cachedBoards = data.boards;
+          const elapsed = (performance.now() - t0).toFixed(1);
+          document.getElementById('rerankTime').innerText = `${elapsed} ms`;
+          renderActiveBoard();
+        }
+      } catch (e) {
+        if (e.name !== 'AbortError') {
+          console.warn('CSP rerank error:', e);
+        }
+      }
     }
 
     function paintAlphaDisplay() {
       const el = document.getElementById('alphaDisplay');
-      if (!el) return;
-      el.innerText = t('alphaDisplay', { alpha: currentAlpha.toFixed(2), pct: Math.round(currentAlpha * 100) });
+      if (el) {
+        el.innerText = t('alphaDisplay', { alpha: currentAlpha.toFixed(2), pct: Math.round(currentAlpha * 100) });
+      }
+      const right = document.getElementById('sliderLegendRight');
+      if (right) {
+        right.innerText = currentFamily === 'csp' ? t('alphaBid') : t('alphaAsk');
+      }
     }
 
     function setLang(next) {
@@ -845,6 +1160,41 @@
           ["Strike / spot", "0.50S – 1.25S", "—", "Outside window"],
           ["DTE", "≥ 250", "—", "< 250"]
         ]
+      },
+      csp_harvest: {
+        title: "1. Cash-Secured Put — Premium Harvesting",
+        blurb: "Systematic premium collection on high-quality underlying assets with low delta (-0.30 to -0.15) and moderate DTE (7-45 days). Strict DC-CSP-4 prevents short DTE distortion.",
+        rows: [
+          ["Delta", "−0.30 to −0.15", "−0.35 to −0.30", "> −0.15 or < −0.35"],
+          ["AROC (Ann.)", "≥ 20%", "15% – 20%", "< 15%"],
+          ["DTE", "14 – 45 days", "7 – 14 days", "< 7 days (Hard Reject)"],
+          ["Downside Buffer", "≥ 5%", "3% – 5%", "< 3%"],
+          ["POP (Win-Rate)", "≥ 75%", "70% – 75%", "< 70%"],
+          ["Liquidity", "Bid > 0, rel spread ≤ 8%", "rel spread 8% – 12%", "Bid = 0, crossed, spread > 12%"]
+        ]
+      },
+      csp_wheel: {
+        title: "2. Cash-Secured Put — Wheel / Dip-Buying",
+        blurb: "Target blue-chip names at a discount with delta -0.45 to -0.30, preparing for stock assignment or wheeling.",
+        rows: [
+          ["Delta", "−0.45 to −0.30", "−0.50 to −0.45", "> −0.30 or < −0.50"],
+          ["Downside Buffer", "≥ 7%", "4% – 7%", "< 4%"],
+          ["Oversold Score", "≥ 1.5", "1.0 – 1.5", "< 1.0"],
+          ["AROC (Ann.)", "≥ 12%", "8% – 12%", "< 8%"],
+          ["DTE", "21 – 45 days", "14 – 21 days", "< 7 days (Hard Reject)"],
+          ["Liquidity", "Bid > 0, rel spread ≤ 8%", "rel spread 8% – 12%", "Bid = 0, crossed, spread > 12%"]
+        ]
+      },
+      csp_vol_rank: {
+        title: "3. Cash-Secured Put — High IV Rank Harvest",
+        blurb: "Exploit elevated implied volatility when IV Rank ≥ 50% for accelerated premium contraction.",
+        rows: [
+          ["IV Rank", "≥ 60%", "50% – 60%", "< 50%"],
+          ["Delta", "−0.35 to −0.15", "−0.40 to −0.35", "> −0.15 or < −0.40"],
+          ["AROC (Ann.)", "≥ 25%", "18% – 25%", "< 18%"],
+          ["Earnings Gate", "No earnings within DTE", "Earnings within 7d (WATCH)", "High risk surprise"],
+          ["Liquidity", "Bid > 0, rel spread ≤ 10%", "rel spread 10% – 15%", "Bid = 0 or crossed"]
+        ]
       }
     };
 
@@ -894,6 +1244,41 @@
           ["共振分数", "≥ 2.0 且 ≥1 个核心", "1.0 – 2.0", "< 1.0"],
           ["行权价 / 现价", "0.50S – 1.25S", "—", "窗外"],
           ["剩余天数", "≥ 250", "—", "< 250"]
+        ]
+      },
+      csp_harvest: {
+        title: "1. 现金担保卖 Put — 权利金年化收割",
+        blurb: "在高质量标的上系统性收割权利金，选取低 Delta（-0.30 至 -0.15）与适中期限（7-45 天）。DC-CSP-4 严格防范极短 DTE 年化失真。",
+        rows: [
+          ["Delta", "−0.30 至 −0.15", "−0.35 至 −0.30", "> −0.15 或 < −0.35"],
+          ["年化 AROC", "≥ 20%", "15% – 20%", "< 15%"],
+          ["剩余天数 DTE", "14 – 45 天", "7 – 14 天", "< 7 天（强制拒绝）"],
+          ["安全缓冲 Buffer", "≥ 5%", "3% – 5%", "< 3%"],
+          ["胜率 POP", "≥ 75%", "70% – 75%", "< 70%"],
+          ["流动性风控", "买一价 > 0 且价差 ≤ 8%", "相对价差 8% – 12%", "买一为 0、倒挂或价差 > 12%"]
+        ]
+      },
+      csp_wheel: {
+        title: "2. 现金担保卖 Put — 轮动抄底折扣入场",
+        blurb: "针对优质蓝筹标的打折吸筹，Delta 处于 -0.45 至 -0.30，为低成本接正股或开展 Wheel（车轮策略）准备。",
+        rows: [
+          ["Delta", "−0.45 至 −0.30", "−0.50 至 −0.45", "> −0.30 或 < −0.50"],
+          ["安全缓冲 Buffer", "≥ 7%", "4% – 7%", "< 4%"],
+          ["超跌评分 Oversold", "≥ 1.5", "1.0 – 1.5", "< 1.0"],
+          ["年化 AROC", "≥ 12%", "8% – 12%", "< 8%"],
+          ["剩余天数 DTE", "21 – 45 天", "14 – 21 天", "< 7 天（强制拒绝）"],
+          ["流动性风控", "买一价 > 0 且价差 ≤ 8%", "相对价差 8% – 12%", "买一为 0、倒挂或价差 > 12%"]
+        ]
+      },
+      csp_vol_rank: {
+        title: "3. 现金担保卖 Put — 高 IV 溢价收割",
+        blurb: "当标的 IV Rank ≥ 50% 时利用高估值波动率溢价，加速权利金衰减获利。",
+        rows: [
+          ["IV Rank", "≥ 60%", "50% – 60%", "< 50%"],
+          ["Delta", "−0.35 至 −0.15", "−0.40 至 −0.35", "> −0.15 或 < −0.40"],
+          ["年化 AROC", "≥ 25%", "18% – 25%", "< 18%"],
+          ["财报风险预警", "DTE 内无财报事件", "7 天内有财报（WATCH）", "重大风险事件"],
+          ["流动性风控", "买一价 > 0 且价差 ≤ 10%", "相对价差 10% – 15%", "买一为 0 或倒挂"]
         ]
       }
     };
@@ -945,6 +1330,8 @@
     }
 
     function effectiveStatus(item) {
+      if (item && item.guard_status) return item.guard_status;
+      if (currentFamily === 'csp') return (item && (item.guard_status || item.status)) || 'PASS';
       const board = currentBoardKey;
       const ids = FILTER_IDS[board] || [];
       const enabled = enabledFilters[board] || new Set(ids);
@@ -1169,7 +1556,14 @@
     async function loadBoards(alpha, quiet) {
       const t0 = performance.now();
       try {
-        const res = await fetch(`/api/v1/boards?alpha=${alpha}`);
+        let url = `/api/v1/boards?alpha=${alpha}`;
+        if (currentFamily === 'csp') {
+          const cashPool = parseFloat(document.getElementById('cashPoolInput').value) || 50000;
+          const maxCapRaw = document.getElementById('maxCapInput').value.trim();
+          const maxCap = maxCapRaw ? parseFloat(maxCapRaw) : '';
+          url = `/api/v1/csp/boards?alpha=${alpha}&cash_pool=${cashPool}&filter_aroc=${cspFilters.aroc}&filter_buffer=${cspFilters.buffer}&filter_ivr=${cspFilters.ivr}&filter_pop=${cspFilters.pop}&filter_earnings=${cspFilters.earnings}&filter_liquidity=${cspFilters.liquidity}&max_capital=${maxCap}`;
+        }
+        const res = await fetch(url);
         if (res.ok) {
           const data = await res.json();
           cachedBoards = data.boards;
@@ -1185,6 +1579,11 @@
     async function handleAlphaChange(val) {
       currentAlpha = parseFloat(val);
       paintAlphaDisplay();
+
+      if (currentFamily === 'csp') {
+        handleCspParamChange();
+        return;
+      }
 
       const t0 = performance.now();
       try {
@@ -1287,8 +1686,24 @@
       const thead = document.getElementById('tableHeader');
       const tbody = document.getElementById('tableBody');
 
-      // Set headers based on board
-      if (currentBoardKey === 'deep_itm') {
+      // Set headers based on family and board
+      if (currentFamily === 'csp') {
+        thead.innerHTML = `
+          <th>${t('colSymbol')}</th>
+          <th>${t('colUnderlying')}</th>
+          <th>${t('colStrikeSpot')}</th>
+          <th>${t('colDte')}</th>
+          <th>${t('colBidAsk')}</th>
+          <th>${t('colPexec')}</th>
+          <th>${t('colDelta')}</th>
+          <th>${t('colAroc')}</th>
+          <th>${t('colBuffer')}</th>
+          <th title="${t('popTooltip')}">${t('colPop')}</th>
+          <th>${t('colContracts')}</th>
+          <th>${t('colMaxLoss')}</th>
+          <th>${t('colStatus')}</th>
+        `;
+      } else if (currentBoardKey === 'deep_itm') {
         thead.innerHTML = `
           <th>${t('colSymbol')}</th>
           <th>${t('colUnderlying')}</th>
@@ -1329,17 +1744,72 @@
       }
 
       if (allItems.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('emptyBoard')}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('emptyBoard')}</td></tr>`;
         return;
       }
       if (items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('emptyFilter')}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('emptyFilter')}</td></tr>`;
         return;
       }
 
       tbody.innerHTML = items.map(it => {
         const st = effectiveStatus(it);
         const statusBadge = `<span class="badge badge-${st.toLowerCase()}">${st}</span>`;
+        if (currentFamily === 'csp') {
+          const c = it.candidate || it;
+          const cap = it.capital_info || {};
+          const symbol = c.symbol || '';
+          const underlying = c.underlying || '';
+          const strike = typeof c.strike === 'number' ? c.strike : 0;
+          const spot = typeof c.spot === 'number' ? c.spot : 0;
+          const dte = typeof c.dte === 'number' ? c.dte : 0;
+          const bid = typeof c.bid === 'number' ? c.bid : 0;
+          const ask = typeof c.ask === 'number' ? c.ask : 0;
+          const delta = typeof c.delta === 'number' ? c.delta : 0;
+          const pExec = typeof it.p_exec === 'number' ? it.p_exec : 0;
+          const roc = typeof it.roc === 'number' ? it.roc : 0;
+          const aroc = typeof it.aroc === 'number' ? it.aroc : 0;
+          const buffer = typeof it.buffer === 'number' ? it.buffer : (typeof it.downside_buffer === 'number' ? it.downside_buffer : 0);
+          const pop = typeof it.pop === 'number' ? it.pop : 0;
+          const stressPnl = typeof it.stress_pnl === 'number' ? it.stress_pnl : 0;
+          const contracts = cap.recommended_contracts != null ? cap.recommended_contracts : (it.recommended_contracts || 0);
+          const reqCap = cap.required_capital_per_contract != null ? cap.required_capital_per_contract : (it.capital_required || (strike * 100));
+          const maxLoss = cap.total_max_loss != null ? cap.total_max_loss : (it.max_loss || (reqCap - pExec * 100));
+
+          const arocPct = (aroc * 100).toFixed(1);
+          const rocPct = (roc * 100).toFixed(2);
+          const bufPct = (buffer * 100).toFixed(2);
+          const popPct = (pop * 100).toFixed(1);
+          const capFormatted = '$' + Math.round(reqCap).toLocaleString();
+          const lossFormatted = '$' + Math.round(maxLoss).toLocaleString();
+          const stressFormatted = (stressPnl >= 0 ? '+$' : '-$') + Math.round(Math.abs(stressPnl)).toLocaleString();
+
+          let earningsBadge = '';
+          const eStatus = c.earnings_status || '';
+          if (eStatus === 'EARNINGS_UNVERIFIED' || eStatus.includes('UNVERIFIED')) {
+            earningsBadge = `<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); font-size: 10px; margin-left: 4px;" title="Earnings date not confirmed within DTE window">${t('earningsUnverified')}</span>`;
+          } else if (eStatus === 'EARNINGS_IMPACTED' || eStatus.includes('IMPACTED')) {
+            earningsBadge = `<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); font-size: 10px; margin-left: 4px;" title="Earnings date falls within option DTE">${t('earningsImpacted')}</span>`;
+          }
+
+          return `
+            <tr>
+              <td><strong>${symbol}</strong></td>
+              <td>${underlying}${earningsBadge}</td>
+              <td class="num">$${strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${spot.toFixed(1)}</span></td>
+              <td class="num">${Math.round(dte)}d</td>
+              <td class="num">$${bid.toFixed(2)} / $${ask.toFixed(2)}</td>
+              <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${pExec.toFixed(2)}</td>
+              <td class="num">${delta.toFixed(2)}</td>
+              <td class="num" style="color: var(--accent-green); font-weight: 600;">${arocPct}%/yr <span class="sub-info">ROC: ${rocPct}%</span></td>
+              <td class="num">${bufPct}%</td>
+              <td class="num" title="${t('popTooltip')}">${popPct}%</td>
+              <td class="num"><strong>${contracts}</strong> <span class="sub-info">alloc</span></td>
+              <td class="num">${capFormatted} <span class="sub-info">loss: ${lossFormatted} | stress: <span style="color: ${stressPnl < 0 ? 'var(--accent-rose)' : 'inherit'}">${stressFormatted}</span></span></td>
+              <td>${statusBadge}</td>
+            </tr>
+          `;
+        }
         if (currentBoardKey === 'deep_itm') {
           return `
             <tr>

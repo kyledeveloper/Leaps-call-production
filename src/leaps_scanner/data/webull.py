@@ -23,8 +23,10 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from src.leaps_scanner.scoring.ranker import StrategyCandidate
+from src.leaps_scanner.scoring.csp_ranker import CSPCandidate, EarningsStatus
 from src.leaps_scanner.data.universe import CORE_ETFS, SymbologyNormalizer
 from src.leaps_scanner.data.funnel import keep_scan_delta
+
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,38 @@ def _synthetic_offline_spec(symbol: str) -> dict:
         "is_etf": is_etf,
         "options": options,
     }
+
+
+def _synthetic_offline_csp_spec(symbol: str) -> dict:
+    """Deterministic sandbox CSP put chain for tickers without a hand-written fixture."""
+    digest = hashlib.md5(symbol.upper().encode("utf-8")).hexdigest()
+    seed = int(digest[:8], 16)
+    spot = float(60 + (seed % 440))
+    is_etf = symbol.upper() in _ETF_SET
+    dte = 30.0 + (seed % 15)  # 30 to 44 DTE
+    strikes = [round(spot * m, 2) for m in (0.85, 0.90, 0.95, 1.00)]
+    options = []
+    for i, strike in enumerate(strikes):
+        intrinsic = max(0.0, strike - spot)
+        extra = 4.5 - i * 0.8
+        bid = round(max(0.40, intrinsic + extra), 2)
+        ask = round(bid + 0.35, 2)
+        delta = round(-0.15 - i * 0.08, 2)
+        occ = f"{symbol.upper().replace('.', '')}261016P{int(strike * 1000):08d}"
+        options.append((occ, strike, dte, bid, ask, delta, 1200 + i * 400, 80 + i * 30))
+    return {
+        "spot": spot,
+        "div": 0.012 if is_etf else 0.008,
+        "rsi": 32.0 if seed % 3 == 0 else 48.0,
+        "dma": -0.08 if seed % 3 == 0 else 0.02,
+        "dd": 0.16 if seed % 3 == 0 else 0.07,
+        "bounce": 0.05,
+        "iv": 0.28,
+        "iv_pct": 0.55 if seed % 2 == 0 else 0.35,
+        "is_etf": is_etf,
+        "options": options,
+    }
+
 
 
 class PermissionDeniedOpraError(RuntimeError):
@@ -761,3 +795,101 @@ class WebullClient:
                 logger.error("Failed to query live contracts for %s: %s", sym, e)
 
         return candidates
+
+    def get_csp_candidates(self, symbols: List[str]) -> List[CSPCandidate]:
+        """
+        Fetch CSP candidates for given symbols.
+        In offline mode, loads realistic fixtures safely without network.
+        In online mode, connects to live Webull OpenAPI.
+        """
+        candidates: List[CSPCandidate] = []
+
+        if self.offline_mode:
+            mock_specs = {
+                "AAPL": {
+                    "spot": 220.0,
+                    "div": 0.005,
+                    "rsi": 38.0,
+                    "dma": -0.06,
+                    "dd": 0.12,
+                    "bounce": 0.04,
+                    "iv": 0.24,
+                    "iv_pct": 0.45,
+                    "options": [
+                        ("AAPL261016P00200000", 200.0, 30.0, 1.80, 2.05, -0.16, 2500, 420),
+                        ("AAPL261016P00210000", 210.0, 30.0, 3.40, 3.70, -0.28, 4800, 1100),
+                        ("AAPL261016P00215000", 215.0, 30.0, 4.80, 5.15, -0.38, 3500, 950),
+                        ("AAPL261016P00220000", 220.0, 30.0, 6.70, 7.10, -0.50, 6200, 1500),
+                    ]
+                },
+                "SPY": {
+                    "spot": 550.0,
+                    "div": 0.013,
+                    "rsi": 44.0,
+                    "dma": -0.02,
+                    "dd": 0.04,
+                    "bounce": 0.08,
+                    "iv": 0.15,
+                    "iv_pct": 0.35,
+                    "is_etf": True,
+                    "options": [
+                        ("SPY261016P00520000", 520.0, 30.0, 2.40, 2.65, -0.18, 15000, 3200),
+                        ("SPY261016P00535000", 535.0, 30.0, 4.50, 4.85, -0.29, 22000, 5800),
+                        ("SPY261016P00545000", 545.0, 30.0, 7.20, 7.60, -0.42, 18000, 4500),
+                    ]
+                },
+                "NVDA": {
+                    "spot": 120.0,
+                    "div": 0.001,
+                    "rsi": 46.0,
+                    "dma": 0.08,
+                    "dd": 0.14,
+                    "bounce": 0.10,
+                    "iv": 0.48,
+                    "iv_pct": 0.75,
+                    "options": [
+                        ("NVDA261016P00105000", 105.0, 28.0, 2.60, 2.90, -0.18, 8000, 2100),
+                        ("NVDA261016P00110000", 110.0, 28.0, 4.10, 4.45, -0.27, 12500, 3400),
+                        ("NVDA261016P00115000", 115.0, 28.0, 6.30, 6.70, -0.39, 9500, 2800),
+                    ]
+                }
+            }
+
+            for raw_sym in symbols:
+                sym = SymbologyNormalizer.to_canonical(raw_sym)
+                spec = mock_specs.get(sym.upper())
+                if not spec:
+                    spec = _synthetic_offline_csp_spec(sym)
+                spot = spec["spot"]
+                is_etf = spec.get("is_etf", False)
+                for opt_sym, strike, dte, bid, ask, delta, oi, vol in spec["options"]:
+                    candidates.append(CSPCandidate(
+                        symbol=opt_sym,
+                        underlying=sym.upper(),
+                        strike=strike,
+                        spot=spot,
+                        dte=dte,
+                        bid=bid,
+                        ask=ask,
+                        delta=delta,
+                        open_interest=oi,
+                        volume=vol,
+                        iv=spec.get("iv"),
+                        iv_percentile=spec.get("iv_pct"),
+                        iv_rank=spec.get("iv_pct"),
+                        rsi_14=spec.get("rsi", 50.0),
+                        pct_to_200dma=spec.get("dma", 0.0),
+                        earnings_status=EarningsStatus.CONFIRMED_SAFE if sym.upper() in mock_specs else EarningsStatus.EARNINGS_UNVERIFIED,
+                        is_etf=is_etf
+                    ))
+            return candidates
+
+        for raw_sym in symbols:
+            sym = SymbologyNormalizer.to_canonical(raw_sym)
+            try:
+                raw_contracts = self.query_options_contracts(sym)
+            except Exception as e:
+                logger.error("Failed to query live CSP contracts for %s: %s", sym, e)
+
+        return candidates
+

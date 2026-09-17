@@ -1,0 +1,188 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Cash Secured Put (CSP) 期权卖方量化扫描端到端全流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {
+      "id": "data_lane",
+      "label": "标的与期权链接入层"
+    },
+    {
+      "id": "core_lane",
+      "label": "定价风控与资金管理层"
+    },
+    {
+      "id": "strategy_lane",
+      "label": "三大策略分流引擎"
+    },
+    {
+      "id": "delivery_lane",
+      "label": "内存重排与双端交互"
+    }
+  ],
+  "phases": [
+    {
+      "id": "phase_ingest",
+      "label": "标的筛选与Put链拉取",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "phase_pricing",
+      "label": "美式Put定价与资金护栏",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "phase_scoring",
+      "label": "策略分榜与开关过滤",
+      "fromCol": 4,
+      "toCol": 5
+    }
+  ],
+  "mainPath": [
+    "universe_intake",
+    "put_chain_adapter",
+    "capital_guard",
+    "put_pricing_engine",
+    "csp_strategy_engine",
+    "interactive_delivery"
+  ],
+  "nodes": [
+    {
+      "id": "universe_intake",
+      "lane": "data_lane",
+      "col": 0,
+      "type": "external",
+      "label": "核心标的池",
+      "sublabel": "SP100 + NDX + ETF",
+      "tag": "优质标的",
+      "width": 120
+    },
+    {
+      "id": "put_chain_adapter",
+      "lane": "data_lane",
+      "col": 1,
+      "type": "backend",
+      "label": "Put期权链适配",
+      "sublabel": "7~45 DTE 目标区间",
+      "tag": "复用数据源",
+      "width": 120
+    },
+    {
+      "id": "capital_guard",
+      "lane": "core_lane",
+      "col": 2,
+      "type": "security",
+      "label": "资金与名义护栏",
+      "sublabel": "单手现金上限与手数",
+      "tag": "Cash Secured",
+      "width": 120
+    },
+    {
+      "id": "hist_store",
+      "lane": "data_lane",
+      "col": 3,
+      "type": "database",
+      "label": "日线与IV仓",
+      "sublabel": "200DMA + IV Rank",
+      "tag": "历史沉淀",
+      "width": 120
+    },
+    {
+      "id": "put_pricing_engine",
+      "lane": "core_lane",
+      "col": 3,
+      "type": "backend",
+      "label": "美式Put定价与POP",
+      "sublabel": "BS2002对称解 + P_exec",
+      "tag": "卖方收益率",
+      "width": 120
+    },
+    {
+      "id": "csp_strategy_engine",
+      "lane": "strategy_lane",
+      "col": 4,
+      "type": "backend",
+      "label": "三大CSP策略分流",
+      "sublabel": "收割/建仓/高IVR",
+      "tag": "三榜独立",
+      "width": 120
+    },
+    {
+      "id": "interactive_delivery",
+      "lane": "delivery_lane",
+      "col": 5,
+      "type": "frontend",
+      "label": "交互重排与交付",
+      "sublabel": "6项过滤开关 + 双端",
+      "tag": "零网络重排",
+      "width": 120
+    }
+  ],
+  "edges": [
+    {
+      "id": "universe-to-chain",
+      "from": "universe_intake",
+      "to": "put_chain_adapter",
+      "label": "注入优选标的"
+    },
+    {
+      "id": "chain-to-capital",
+      "from": "put_chain_adapter",
+      "to": "capital_guard",
+      "label": "过滤DTE区间",
+      "variant": "emphasis"
+    },
+    {
+      "id": "capital-to-pricing",
+      "from": "capital_guard",
+      "to": "put_pricing_engine",
+      "label": "满足资金上限",
+      "variant": "emphasis"
+    },
+    {
+      "id": "hist-to-strategy",
+      "from": "hist_store",
+      "to": "csp_strategy_engine",
+      "label": "技术面与IVR"
+    },
+    {
+      "id": "pricing-to-strategy",
+      "from": "put_pricing_engine",
+      "to": "csp_strategy_engine",
+      "label": "AROC与安全垫",
+      "variant": "emphasis"
+    },
+    {
+      "id": "strategy-to-delivery",
+      "from": "csp_strategy_engine",
+      "to": "interactive_delivery",
+      "label": "三策略候选池",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "卖方严谨定价与资金护栏",
+      "items": [
+        "P_exec 执行价严格遵照卖方滑点：P_exec = mid - alpha * (mid - bid)，绝不虚高估算收取权利金",
+        "足额现金担保（Cash-Secured）约束：单手名义资金 Strike * 100 设立硬门槛，自动换算账户可开手数"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "三大策略并举与用户级过滤开关",
+      "items": [
+        "同时支撑「高胜率权利金收割」、「折价建仓 / Wheel 轮动」及「高 IVR 波动率溢价」三大榜单",
+        "AROC、下行安全垫、IV Rank、POP 胜率、流动性门槛与财报预警均支持前端即时开关，零额外网络请求"
+      ]
+    }
+  ]
+}
