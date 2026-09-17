@@ -151,6 +151,16 @@ def evaluate_liquidity_guard(
     elif rel_tier == GuardStatus.WATCH or abs_tier == GuardStatus.WATCH:
         spread_status = GuardStatus.WATCH
     else:
-        spread_status = GuardStatus.REJECT
-        extra.append(f"SPREAD_TOO_WIDE_rel={rel_spread:.1%}_abs=${half_spread:.2f}")
+        # Width alone never hard-rejects: a wide quoted spread is an execution
+        # concern (limit orders rest at the trader's own price), not a
+        # screening concern. Structural liquidity is enforced separately via
+        # the OI / volume / quote-validity gates, which still REJECT.
+        spread_status = GuardStatus.WATCH
+        extra.append(f"SPREAD_WIDE_rel={rel_spread:.1%}_abs=${half_spread:.2f}")
+
+    # Relative-spread ceiling (informational only): dollar-based leniency must
+    # not silently bless extremely wide quotes.
+    if rel_spread >= 0.25:
+        spread_status = GuardStatus.WATCH
+        extra.append(f"SPREAD_RELATIVE_WIDE_{rel_spread:.0%}")
     return _done(spread_status, extra)
