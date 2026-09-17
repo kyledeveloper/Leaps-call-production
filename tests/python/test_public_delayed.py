@@ -202,6 +202,54 @@ class TestPublicDelayedParsers(unittest.TestCase):
         self.assertEqual(seen[-1][0], 3)
         self.assertEqual(seen[-1][1], 3)
 
+    def test_app_state_defaults_to_delayed_without_credentials(self):
+        import os
+        old_k = os.environ.pop("WEBULL_APP_KEY", None)
+        old_s = os.environ.pop("WEBULL_APP_SECRET", None)
+        try:
+            state = AppState(offline_mode=False)
+            self.assertEqual(state.source, "delayed")
+            self.assertEqual(state.connection_status, "delayed")
+            self.assertFalse(state.offline_mode)
+            self.assertIsInstance(state.client, PublicDelayedClient)
+        finally:
+            if old_k is not None:
+                os.environ["WEBULL_APP_KEY"] = old_k
+            if old_s is not None:
+                os.environ["WEBULL_APP_SECRET"] = old_s
+
+    def test_get_boards_does_not_hydrate_mock_in_delayed_mode(self):
+        state = AppState(offline_mode=True)
+        # Pre-seed sandbox candidates in LEAPS to test cross-family data purging
+        state.run_scan(symbols=["AAPL", "SPY"], family="leaps")
+        self.assertGreater(len(state.candidates), 0)
+        self.assertIsNotNone(state.ranker)
+
+        # Switch to delayed under CSP family
+        state.set_mode(source="delayed", family="csp")
+        state.cancel_scan()
+        if state._scan_thread and state._scan_thread.is_alive():
+            state._scan_thread.join(timeout=1.0)
+
+        self.assertEqual(state.source, "delayed")
+        # Ensure previous LEAPS sandbox candidates were purged
+        self.assertEqual(state.candidates, [])
+        self.assertIsNone(state.ranker)
+        self.assertEqual(state.csp_candidates, [])
+        self.assertIsNone(state.csp_snapshot)
+
+        # In delayed mode, get_boards must not return synthetic mock candidates
+        boards = state.get_boards(alpha=0.5)
+        self.assertEqual(boards["deep_itm"], [])
+        self.assertEqual(boards["vol_discount"], [])
+        self.assertEqual(boards["oversold"], [])
+        # get_csp_boards must also not return synthetic mock candidates
+        csp_boards = state.get_csp_boards(alpha=0.5)
+        self.assertEqual(csp_boards["harvest"], [])
+        self.assertEqual(csp_boards["wheel"], [])
+        self.assertEqual(csp_boards["vol_rank"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
+

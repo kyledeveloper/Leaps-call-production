@@ -79,20 +79,6 @@ class AppState:
         bar_cache: Optional[DailyBarCache] = None,
     ):
         _load_dotenv()
-        # Live only when explicitly requested AND credentials exist.
-        if not offline_mode and not (
-            (os.environ.get("WEBULL_APP_KEY") or "").strip()
-            and (os.environ.get("WEBULL_APP_SECRET") or "").strip()
-        ):
-            offline_mode = True
-        self.offline_mode = offline_mode
-        if offline_mode:
-            _forget_env_secrets()
-        self.client = WebullClient(
-            offline_mode=offline_mode,
-            token_file=None,
-        )
-        self.universe_manager = get_universe_manager(offline_mode=offline_mode)
 
         if iv_store is not None:
             self.iv_store = iv_store
@@ -104,6 +90,23 @@ class AppState:
         else:
             self.bar_cache = DailyBarCache(persist_path=str(default_daily_bar_cache_path()))
 
+        self.offline_mode = offline_mode
+        if offline_mode:
+            _forget_env_secrets()
+            self.client = WebullClient(
+                offline_mode=True,
+                token_file=None,
+            )
+            self.universe_manager = get_universe_manager(offline_mode=True)
+            self.source = "sandbox"
+            self.connection_status = "sandbox"
+        else:
+            _forget_env_secrets()
+            self.client = PublicDelayedClient(iv_store=self.iv_store, bar_cache=self.bar_cache)
+            self.universe_manager = get_universe_manager(offline_mode=True)
+            self.source = "delayed"
+            self.connection_status = "delayed"
+
         self.candidates: List[StrategyCandidate] = []
         self.csp_candidates: List[CSPCandidate] = []
         self.ranker: Optional[MemoryRanker] = None
@@ -112,8 +115,6 @@ class AppState:
         self.current_alpha: float = 0.5
         self.csp_snapshot: Optional[CSPBoardSnapshot] = None
         self.last_error: Optional[str] = None
-        self.source: str = "sandbox" if offline_mode else "webull"
-        self.connection_status: str = "sandbox" if offline_mode else "live"
         self.scan_tier: str = "etfs"
         self.scan_family: str = "leaps"
         self.scan_status: str = "idle"
@@ -411,11 +412,9 @@ class AppState:
     def get_boards(self, alpha: float = 0.5) -> Dict[str, List[Dict[str, Any]]]:
         with self._lock:
             self.current_alpha = alpha
+            if self.ranker is None and self.source == "sandbox":
+                self.run_scan()
             ranker = self.ranker
-        if ranker is None:
-            self.run_scan()
-            with self._lock:
-                ranker = self.ranker
         if ranker is None:
             return {"deep_itm": [], "vol_discount": [], "oversold": []}
         raw_boards = ranker.rank_boards(alpha=alpha)
@@ -553,6 +552,10 @@ class AppState:
             self.scan_status = "idle"
             self.scan_progress = {"done": 0, "total": 0, "symbol": None}
             self.scanned_symbols = []
+            self.candidates = []
+            self.ranker = None
+            self.csp_candidates = []
+            self.csp_snapshot = None
         thread = self._scan_thread
         if thread is not None and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=2.0)
@@ -607,15 +610,13 @@ class AppState:
                 except Exception as exc:
                     _forget_env_secrets()
                     self.connection_status = "error"
-                    self.last_error = "auth_failed"
-                    self.offline_mode = True
-                    self.source = "sandbox"
-                    self.client = WebullClient(offline_mode=True, token_file=None)
+                    self.offline_mode = False
+                    self.source = "delayed"
+                    self.client = PublicDelayedClient(iv_store=self.iv_store, bar_cache=self.bar_cache)
                     self.universe_manager = get_universe_manager(offline_mode=True)
-                    scan_after = "sync"
+                    scan_after = "async"
                     self._pending_auth_error = (
-                        "Webull login failed. Check App Key/Secret, then approve OpenAPI access "
-                        "in the Webull app. Staying on sandbox until that succeeds. "
+                        "Webull login failed. Falling back to Delayed public. "
                         f"Detail: {type(exc).__name__}"
                     )
                 else:
@@ -923,10 +924,13 @@ def run_server(port: int = 8000, offline_mode: bool = False):
     Launch HTTP server on specified port.
     """
     state = AppState(offline_mode=offline_mode)
-    state.run_scan()
+    if offline_mode:
+        state.run_scan()
+    else:
+        state.request_scan(tier="etfs", family="csp")
     handler_cls = create_api_handler_class(state)
     server = ThreadingHTTPServer(("0.0.0.0", port), handler_cls)
-    print(f"LEAPS Scanner server running at 0.0.0.0:{port} (Offline: {state.offline_mode})")
+    print(f"LEAPS/CSP Scanner server running at 0.0.0.0:{port} (Source: {state.source})")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

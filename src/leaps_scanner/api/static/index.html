@@ -577,7 +577,7 @@
         <button type="button" id="langEn" class="on-lang" onclick="setLang('en')">EN</button>
         <button type="button" id="langZh" onclick="setLang('zh')">中文</button>
       </div>
-      <span class="badge badge-online" id="engineStatus" data-i18n="statusSandbox">Sandbox Mode</span>
+      <span class="badge badge-online" id="engineStatus" data-i18n="statusDelayed">Delayed Public</span>
       <span class="badge" style="background: rgba(147, 51, 234, 0.15); color: #c084fc; border: 1px solid rgba(147, 51, 234, 0.3);" id="universeBadge" data-i18n="universeLoading">Universe: Loading...</span>
       <button class="btn" style="background: #334155; color: #f8fafc;" id="btnSync" onclick="triggerUniverseSync(event)" data-i18n="syncRebalance">⚡ Sync Rebalance</button>
       <button class="btn" id="btnScan" onclick="triggerScan()" data-i18n="refreshScan">🔄 Refresh Scan</button>
@@ -604,10 +604,10 @@
     <div class="source-row">
       <div>
         <strong data-i18n="marketDataSource">Market data source</strong>
-        <div class="hint" id="sourceHint" data-i18n="sourceHintDefault">Delayed public uses Yahoo daily bars + Nasdaq OPRA delayed chains — no keys required (Sandbox and Live Webull disabled).</div>
+        <div class="hint" id="sourceHint" data-i18n="sourceHintDefault">Delayed public uses Yahoo daily bars + Nasdaq OPRA delayed chains — no keys required.</div>
       </div>
       <div class="toggle" role="group" aria-label="Data source">
-        <button type="button" id="btnSandbox" class="disabled" disabled title="Sandbox mode disabled" data-i18n="btnSandbox">Sandbox</button>
+        <button type="button" id="btnSandbox" style="display:none;" class="disabled" disabled title="Sandbox mode disabled" data-i18n="btnSandbox">Sandbox</button>
         <button type="button" id="btnDelayed" class="on-delayed" onclick="switchSource('delayed')" data-i18n="btnDelayed">Delayed public</button>
         <button type="button" id="btnLive" class="disabled" disabled title="Live Webull disabled" data-i18n="btnLive">Live Webull</button>
       </div>
@@ -809,7 +809,7 @@
         pageTitle: 'Options Quant Strategy Scanner',
         appTitle: 'Options Quant Strategy Scanner',
         appSubtitle: 'Multi-Strategy Quantitative Screening & Risk Modeling (LEAPS Call · Cash-Secured Put · Covered Call)',
-        statusSandbox: 'Sandbox Mode',
+        statusSandbox: 'Delayed public',
         statusDelayed: 'Delayed public',
         statusLive: 'Live Webull',
         universeLoading: 'Universe: Loading...',
@@ -884,13 +884,13 @@
         fetchingDelayed: 'Fetching Yahoo bars + Nasdaq delayed LEAPS chains. This can take a short while…',
         fetchingDelayedCsp: 'Fetching Yahoo bars + Nasdaq delayed CSP put chains. This can take a short while…',
         missingCreds: 'Live Webull needs App Key and App Secret. Or use Delayed public (no keys).',
-        feedFailed: 'Feed failed. Staying on sandbox.',
-        sandboxHint: 'Sandbox fixtures (not the tape). Delayed public needs no keys. Do not paste Webull keys into chat.',
+        feedFailed: 'Market data feed failed. Retrying delayed public feed.',
+        sandboxHint: 'Delayed public uses Yahoo daily bars + Nasdaq OPRA delayed chains — no keys required.',
         pasteKeys: 'Paste Webull OpenAPI keys, then Connect live. Prefer Delayed public if you do not want to send keys.',
-        loadingSandbox: 'Loading sandbox…',
+        loadingSandbox: 'Loading market data…',
         switchFailed: 'Could not switch data source.',
         contactingWebull: 'Contacting Webull. If the token is PENDING, approve OpenAPI access in the Webull app.',
-        liveConnectFailed: 'Live connect failed before Webull answered. Stay on sandbox or try Delayed public.',
+        liveConnectFailed: 'Live connect failed. Using Delayed public.',
         scanStartFailed: 'Could not start universe scan.',
         syncDone: 'Index rebalance finished.\\nMaster pool: {n}\\nTimestamp: {ts}',
         syncError: 'Rebalance sync error: {err}',
@@ -935,7 +935,7 @@
         pageTitle: '美股期权量化多策略扫描器',
         appTitle: '美股期权量化多策略扫描器',
         appSubtitle: '多策略系统化量化筛选与风控系统（LEAPS 远月看涨 · CSP 现金担保卖 Put · Covered Call 备兑看涨）',
-        statusSandbox: '沙盒模式',
+        statusSandbox: '公开延迟行情',
         statusDelayed: '公开延迟行情',
         statusLive: 'Webull 实盘',
         universeLoading: '股票池：加载中…',
@@ -1008,15 +1008,15 @@
         delayedScan: 'Yahoo 历史 + Nasdaq 延迟 OPRA · {n} 张 LEAPS · 约 15 分钟延迟，非 NBBO。',
         delayedScanCsp: 'Yahoo 历史 + Nasdaq 延迟 OPRA · {n} 张 CSP Put（7–45 天）· 约 15 分钟延迟，非 NBBO。',
         missingCreds: 'Webull 实盘需要 App Key 和 App Secret。也可改用公开延迟（无需密钥）。',
-        feedFailed: '行情接入失败，仍停留在沙盒。',
-        sandboxHint: '沙盒样本（不是盘口）。公开延迟无需密钥。请勿把 Webull 密钥贴到聊天里。',
+        feedFailed: '公共行情连接失败，已保留公开延迟行情。',
+        sandboxHint: '公开延迟行情通过 Yahoo 日线 + Nasdaq OPRA 延迟期权链获取真实数据，无需密钥。',
         pasteKeys: '粘贴 Webull OpenAPI 密钥后点连接实盘。不想提交密钥请用公开延迟。',
         fetchingDelayed: '正在拉取 Yahoo 日线 + Nasdaq 延迟 LEAPS 链，稍等片刻…',
         fetchingDelayedCsp: '正在拉取 Yahoo 日线 + Nasdaq 延迟 CSP Put 链，稍等片刻…',
-        loadingSandbox: '正在加载沙盒…',
+        loadingSandbox: '正在加载行情数据…',
         switchFailed: '无法切换数据源。',
         contactingWebull: '正在连接 Webull。若 token 为 PENDING，请在 Webull App 里批准 OpenAPI 授权。',
-        liveConnectFailed: '连接在 Webull 应答前失败。可留在沙盒或改用公开延迟。',
+        liveConnectFailed: '实盘连接未成功，已使用公开延迟行情。',
         scanStartFailed: '无法启动股票池扫描。',
         syncDone: '成分股同步完成。\\n核心池规模：{n}\\n时间：{ts}',
         syncError: '成分股同步出错：{err}',
@@ -1509,7 +1509,7 @@
       const statusEl = document.getElementById('engineStatus');
       const hint = document.getElementById('sourceHint');
       const n = familyContractCount(cfg);
-      const source = cfg.source || (cfg.offline_mode ? 'sandbox' : 'webull');
+      const source = cfg.source || (cfg.offline_mode ? 'sandbox' : 'delayed');
       if (source === 'webull' && !cfg.offline_mode) {
         statusEl.innerText = t('statusLive');
         hint.className = 'hint ok';
@@ -1522,17 +1522,17 @@
         hint.className = 'hint ok';
         hint.innerText = t(currentFamily === 'csp' ? 'delayedScanCsp' : 'delayedScan', { n });
       } else if (cfg.error === 'missing_credentials' || cfg.last_error === 'missing_credentials') {
-        statusEl.innerText = t('statusSandbox');
-        hint.className = 'hint error';
-        hint.innerText = t('missingCreds');
+        statusEl.innerText = t('statusDelayed');
+        hint.className = 'hint';
+        hint.innerText = t('sourceHintDefault');
       } else if (cfg.error === 'auth_failed' || cfg.last_error === 'auth_failed' || cfg.error === 'delayed_failed') {
-        statusEl.innerText = t('statusSandbox');
+        statusEl.innerText = t('statusDelayed');
         hint.className = 'hint error';
         hint.innerText = t('feedFailed');
       } else {
-        statusEl.innerText = t('statusSandbox');
-        hint.className = 'hint';
-        hint.innerText = t('sandboxHint');
+        statusEl.innerText = t('statusDelayed');
+        hint.className = 'hint ok';
+        hint.innerText = t(currentFamily === 'csp' ? 'delayedScanCsp' : 'delayedScan', { n });
       }
     }
 
@@ -1603,7 +1603,7 @@
       const liveBtn = document.getElementById('btnLive');
       const form = document.getElementById('credForm');
       if (sandboxBtn) {
-        sandboxBtn.className = 'disabled';
+        sandboxBtn.style.display = 'none';
         sandboxBtn.disabled = true;
       }
       if (liveBtn) {
@@ -1614,6 +1614,10 @@
         delayedBtn.className = 'on-delayed';
       }
       if (form) form.style.display = 'none';
+      if (cfg && cfg.source === 'sandbox') {
+        switchSource('delayed');
+        return;
+      }
       paintSourceStatus(cfg);
       paintScanTier(cfg.scan_tier, cfg);
       if (cfg.scan_status === 'running' && scanMatchesFamily(cfg)) startScanPoll();
