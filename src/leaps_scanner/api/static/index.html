@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LEAPS Call Quantitative Scanner</title>
+  <title>Options Quant Strategy Scanner</title>
   <style>
     :root {
       --bg-base: #0f172a;
@@ -286,6 +286,27 @@
       border-color: rgba(56, 189, 248, 0.4);
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
     }
+    .family-btn:disabled, .family-btn.disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      border-color: transparent !important;
+    }
+    .family-btn:disabled:hover, .family-btn.disabled:hover {
+      color: var(--text-muted) !important;
+      border-color: transparent !important;
+    }
+    .family-pill-soon {
+      font-size: 10px;
+      padding: 1px 6px;
+      margin-left: 4px;
+      border-radius: 9999px;
+      background: rgba(251, 191, 36, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(251, 191, 36, 0.3);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
 
     /* CSP Controls Panel */
     .csp-panel {
@@ -541,8 +562,8 @@
 
   <div class="header">
     <div class="title-group">
-      <h1>🦅 <span data-i18n="appTitle">LEAPS Call Quant Scanner</span></h1>
-      <p data-i18n="appSubtitle">Multi-Strategy Quantitative Screening for Far-Dated Call Options (DTE ≥ 250d)</p>
+      <h1>📈 <span data-i18n="platformTitle">Options Quant Strategy Scanner</span></h1>
+      <p data-i18n="platformSubtitle">Multi-Strategy Quantitative Screening & Risk Modeling (LEAPS Call · Cash-Secured Put · Covered Call)</p>
     </div>
     <div class="status-badges">
       <div class="toggle lang-toggle" role="group" aria-label="Language">
@@ -565,6 +586,10 @@
       </button>
       <button type="button" id="famCsp" class="family-btn" onclick="switchFamily('csp')">
         🛡️ <span data-i18n="familyCsp">Cash-Secured Put (CSP)</span>
+      </button>
+      <button type="button" id="famCc" class="family-btn disabled" disabled title="Covered Call Scanner coming soon">
+        🎯 <span data-i18n="familyCc">Covered Call (CC)</span>
+        <span class="family-pill-soon" data-i18n="badgeComingSoon">Soon</span>
       </button>
     </div>
   </div>
@@ -737,12 +762,18 @@
 
     const I18N = {
       en: {
+        platformTitle: 'Options Quant Strategy Scanner',
+        platformSubtitle: 'Multi-Strategy Quantitative Screening & Risk Modeling (LEAPS Call · Cash-Secured Put · Covered Call)',
         familyLeaps: 'LEAPS Call',
         familyCsp: 'Cash-Secured Put (CSP)',
+        familyCc: 'Covered Call (CC)',
+        badgeComingSoon: 'Soon',
         appTitleLeaps: 'LEAPS Call Quant Scanner',
         appTitleCsp: 'Cash-Secured Put Quant Scanner',
+        appTitleCc: 'Covered Call Quant Scanner',
         appSubtitleLeaps: 'Multi-Strategy Quantitative Screening for Far-Dated Call Options (DTE ≥ 250d)',
         appSubtitleCsp: 'Cash-Secured Put Selling with Systematic Delta & Capital Risk Controls (7-45 DTE)',
+        appSubtitleCc: 'Systematic Yield Harvesting & Overwrite Screening for Long Stock Portfolios',
         cashPool: 'Cash Pool ($):',
         maxCap: 'Max Cap / Ticker ($):',
         filterAroc: 'AROC ≥ 12%',
@@ -767,9 +798,9 @@
         earningsUnverified: '⚠️ Unverified',
         earningsImpacted: '🚨 In DTE',
         navWorkflow: '📊 CSP Workflow',
-        pageTitle: 'LEAPS Call Quantitative Scanner',
-        appTitle: 'LEAPS Call Quant Scanner',
-        appSubtitle: 'Multi-Strategy Quantitative Screening for Far-Dated Call Options (DTE ≥ 250d)',
+        pageTitle: 'Options Quant Strategy Scanner',
+        appTitle: 'Options Quant Strategy Scanner',
+        appSubtitle: 'Multi-Strategy Quantitative Screening & Risk Modeling (LEAPS Call · Cash-Secured Put · Covered Call)',
         statusSandbox: 'Sandbox Mode',
         statusDelayed: 'Delayed public',
         statusLive: 'Live Webull',
@@ -855,12 +886,18 @@
         keyHint: 'key {hint}'
       },
       zh: {
+        platformTitle: '美股期权量化多策略扫描器',
+        platformSubtitle: '多策略系统化量化筛选与风控系统（LEAPS 远月看涨 · CSP 现金担保卖 Put · Covered Call 备兑看涨）',
         familyLeaps: 'LEAPS 看涨',
         familyCsp: '现金担保卖 Put (CSP)',
+        familyCc: 'Covered Call (备兑看涨)',
+        badgeComingSoon: '规划中',
         appTitleLeaps: 'LEAPS 看涨期权量化扫描器',
         appTitleCsp: '现金担保卖 Put (CSP) 量化扫描器',
+        appTitleCc: '备兑看涨 (Covered Call) 量化扫描器',
         appSubtitleLeaps: '远月看涨期权多策略量化筛选（到期日 ≥ 250 天）',
         appSubtitleCsp: '现金担保卖方策略量化筛选与仓位敞口风控（7-45 天 DTE）',
+        appSubtitleCc: '正股持仓备兑看涨系统化量化筛选与年化增益模型',
         cashPool: '可用现金池 ($):',
         maxCap: '单一标的上限 ($):',
         filterAroc: '年化 AROC ≥ 12%',
@@ -885,9 +922,9 @@
         earningsUnverified: '⚠️ 财报待核',
         earningsImpacted: '🚨 位于 DTE 内',
         navWorkflow: '📊 CSP 流程架构',
-        pageTitle: '美股 LEAPS 看涨期权量化扫描器',
-        appTitle: 'LEAPS 看涨期权量化扫描器',
-        appSubtitle: '远月看涨期权多策略量化筛选（到期日 ≥ 250 天）',
+        pageTitle: '美股期权量化多策略扫描器',
+        appTitle: '美股期权量化多策略扫描器',
+        appSubtitle: '多策略系统化量化筛选与风控系统（LEAPS 远月看涨 · CSP 现金担保卖 Put · Covered Call 备兑看涨）',
         statusSandbox: '沙盒模式',
         statusDelayed: '公开延迟行情',
         statusLive: 'Webull 实盘',
@@ -983,11 +1020,11 @@
     function applyStaticI18n() {
       document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
       document.documentElement.dataset.lang = lang;
-      document.title = currentFamily === 'csp' ? t('appTitleCsp') : t('pageTitle');
+      document.title = currentFamily === 'csp' ? `${t('familyCsp')} | ${t('platformTitle')}` : `${t('familyLeaps')} | ${t('platformTitle')}`;
       const titleEl = document.querySelector('.title-group h1 span');
-      if (titleEl) titleEl.innerText = currentFamily === 'csp' ? t('appTitleCsp') : t('appTitleLeaps');
+      if (titleEl) titleEl.innerText = t('platformTitle');
       const subTitleEl = document.querySelector('.title-group p');
-      if (subTitleEl) subTitleEl.innerText = currentFamily === 'csp' ? t('appSubtitleCsp') : t('appSubtitleLeaps');
+      if (subTitleEl) subTitleEl.innerText = t('platformSubtitle');
       document.querySelectorAll('[data-i18n]').forEach(el => { el.innerText = t(el.dataset.i18n); });
       const enBtn = document.getElementById('langEn');
       const zhBtn = document.getElementById('langZh');
