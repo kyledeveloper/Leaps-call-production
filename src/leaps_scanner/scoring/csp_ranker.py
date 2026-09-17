@@ -110,57 +110,63 @@ def evaluate_csp_filters(
     aroc: float,
     buffer: float,
     pop: float,
-    capital_info: dict
+    capital_info: dict,
+    board: str = "harvest",
 ) -> tuple[bool, List[str]]:
     """
     Check candidate against user toggleable filters.
-    Returns (passes_all_filters, filter_reasons).
+    Harvest owns AROC / Buffer / POP hard gates. Wheel does not — those
+    thresholds are incompatible with the Wheel delta window.
+    Vol-rank owns the IVR hard gate.
+    Earnings, liquidity, and max-capital apply on every board.
     """
     reasons = []
+    key = (board or "harvest").replace("csp_", "")
 
-    # 1. Max Capital Per Contract
     if config.max_capital_per_contract is not None and config.max_capital_per_contract > 0:
         if capital_info["required_capital_per_contract"] > config.max_capital_per_contract:
             return False, ["EXCEEDS_MAX_CAPITAL_PER_CONTRACT"]
 
-    # 2. AROC Filter
-    if config.filter_aroc:
+    if config.filter_aroc and key == "harvest":
         if aroc < config.min_aroc:
             return False, [f"AROC_LOW_{aroc*100:.1f}%"]
 
-    # 3. Downside Buffer Filter
-    if config.filter_buffer:
+    if config.filter_buffer and key == "harvest":
         if buffer < config.min_buffer:
             return False, [f"BUFFER_LOW_{buffer*100:.1f}%"]
 
-    # 4. IV Rank Filter
-    if config.filter_ivr:
+    if config.filter_ivr and key == "vol_rank":
         ivr = candidate.iv_rank if candidate.iv_rank is not None else candidate.iv_percentile
         if ivr is None or ivr < config.min_ivr:
             return False, [f"IVR_BELOW_MIN"]
 
-    # 5. POP Filter
-    if config.filter_pop:
+    if config.filter_pop and key == "harvest":
         if pop < config.min_pop:
             return False, [f"POP_LOW_{pop*100:.1f}%"]
 
-    # 6. Earnings Risk Gate (DC-CSP-8)
     if config.filter_earnings:
         if candidate.earnings_status == EarningsStatus.EARNINGS_IMPACTED:
             return False, ["EARNINGS_WITHIN_DTE_WINDOW"]
         if config.strict_earnings and candidate.earnings_status == EarningsStatus.EARNINGS_UNVERIFIED:
             return False, ["EARNINGS_UNVERIFIED_STRICT"]
 
-    # 7. Liquidity Gate (DC-CSP-6)
     if config.filter_liquidity:
         l_guard = evaluate_liquidity_guard(
             bid=candidate.bid,
             ask=candidate.ask,
             open_interest=candidate.open_interest,
-            volume=candidate.volume
+            volume=candidate.volume,
+            bid_size=candidate.bid_size,
+            ask_size=candidate.ask_size,
         )
-        if l_guard.status == GuardStatus.REJECT:
-            return False, l_guard.reasons
+        # OTM puts often print OI without daily volume. Do not hard-drop on volume alone.
+        if (
+            l_guard.spread_status == GuardStatus.REJECT
+            or l_guard.oi_status == GuardStatus.REJECT
+        ):
+            return False, list(l_guard.reasons)
+        if l_guard.volume_status == GuardStatus.REJECT:
+            reasons.append("VOLUME_THIN")
 
     return True, reasons
 
@@ -196,7 +202,14 @@ def rank_csp_boards(
         roc = calculate_roc(p_exec, c.strike)
         aroc = calculate_aroc(p_exec, c.strike, c.dte)
         buffer = calculate_downside_buffer(c.spot, c.strike)
-        pop = calculate_pop(delta=c.delta)
+        breakeven = c.strike - p_exec
+        pop = calculate_pop(
+            delta=c.delta,
+            spot=c.spot,
+            breakeven=breakeven,
+            dte=c.dte,
+            sigma=float(c.iv) if c.iv else 0.25,
+        )
 
         capital_info = calculate_csp_capital_allocation(
             cash_pool=cash_pool,
@@ -207,81 +220,62 @@ def rank_csp_boards(
 
         stress_pnl = calculate_stress_test_pnl(c.spot, c.strike, p_exec, drop_pct=0.15)
 
-        # Apply user toggleable filters
-        passes_filters, filter_reasons = evaluate_csp_filters(
-            candidate=c,
-            config=cfg,
-            p_exec=p_exec,
-            aroc=aroc,
-            buffer=buffer,
-            pop=pop,
-            capital_info=capital_info
-        )
-        if not passes_filters:
-            continue
+        def emit(
+            bucket: List[RankedCSPItem],
+            res,
+            board_key: str,
+            score: float,
+        ) -> None:
+            if res.status == GuardStatus.REJECT:
+                return
+            passes_filters, filter_reasons = evaluate_csp_filters(
+                candidate=c,
+                config=cfg,
+                p_exec=p_exec,
+                aroc=aroc,
+                buffer=buffer,
+                pop=pop,
+                capital_info=capital_info,
+                board=board_key,
+            )
+            status = res.status if passes_filters else GuardStatus.REJECT
+            reasons = list(res.reasons)
+            if not passes_filters:
+                reasons = list(filter_reasons) + reasons
+            bucket.append(RankedCSPItem(
+                candidate=c,
+                status=status,
+                p_exec=round(p_exec, 2),
+                roc=round(roc, 4),
+                aroc=round(aroc, 4),
+                buffer=round(buffer, 4),
+                pop=round(pop, 4),
+                capital_info=capital_info,
+                stress_pnl=round(stress_pnl, 2),
+                score=round(score, 2),
+                reasons=reasons,
+            ))
 
-        # Evaluate Board 1: Harvest
         res_harvest = evaluate_csp_harvest(c)
-        if res_harvest.status != GuardStatus.REJECT:
-            # Score primarily by AROC, with Gamma penalty if DTE < 21 (DC-CSP-4)
-            gamma_factor = 0.85 if c.dte < 21.0 else 1.0
-            score_harvest = aroc * 100.0 * gamma_factor
-            board_harvest.append(RankedCSPItem(
-                candidate=c,
-                status=res_harvest.status,
-                p_exec=round(p_exec, 2),
-                roc=round(roc, 4),
-                aroc=round(aroc, 4),
-                buffer=round(buffer, 4),
-                pop=round(pop, 4),
-                capital_info=capital_info,
-                stress_pnl=round(stress_pnl, 2),
-                score=round(score_harvest, 2),
-                reasons=res_harvest.reasons
-            ))
+        gamma_factor = 0.85 if c.dte < 21.0 else 1.0
+        emit(board_harvest, res_harvest, "harvest", aroc * 100.0 * gamma_factor)
 
-        # Evaluate Board 2: Wheel / Dip-Buying
         res_wheel = evaluate_csp_wheel(c)
-        if res_wheel.status != GuardStatus.REJECT:
-            # Score by combination of Downside Buffer and Oversold Dip
-            oversold_boost = max(0.0, (50.0 - c.rsi_14) / 50.0)
-            score_wheel = (buffer * 100.0) + (oversold_boost * 20.0) + (roc * 50.0)
-            board_wheel.append(RankedCSPItem(
-                candidate=c,
-                status=res_wheel.status,
-                p_exec=round(p_exec, 2),
-                roc=round(roc, 4),
-                aroc=round(aroc, 4),
-                buffer=round(buffer, 4),
-                pop=round(pop, 4),
-                capital_info=capital_info,
-                stress_pnl=round(stress_pnl, 2),
-                score=round(score_wheel, 2),
-                reasons=res_wheel.reasons
-            ))
+        oversold_boost = max(0.0, (50.0 - c.rsi_14) / 50.0)
+        emit(board_wheel, res_wheel, "wheel", (buffer * 100.0) + (oversold_boost * 20.0) + (roc * 50.0))
 
-        # Evaluate Board 3: High IV Rank Harvest
         res_vol = evaluate_csp_vol_rank(c)
-        if res_vol.status != GuardStatus.REJECT:
-            ivr = c.iv_rank if c.iv_rank is not None else (c.iv_percentile or 0.5)
-            score_vol = (ivr * 100.0) + (aroc * 50.0)
-            board_vol_rank.append(RankedCSPItem(
-                candidate=c,
-                status=res_vol.status,
-                p_exec=round(p_exec, 2),
-                roc=round(roc, 4),
-                aroc=round(aroc, 4),
-                buffer=round(buffer, 4),
-                pop=round(pop, 4),
-                capital_info=capital_info,
-                stress_pnl=round(stress_pnl, 2),
-                score=round(score_vol, 2),
-                reasons=res_vol.reasons
-            ))
+        ivr = c.iv_rank if c.iv_rank is not None else (c.iv_percentile or 0.5)
+        emit(board_vol_rank, res_vol, "vol_rank", (ivr * 100.0) + (aroc * 50.0))
 
     # Sort boards: PASS items first, then by score descending
     def sort_key(item: RankedCSPItem):
-        status_rank = 0 if item.status == GuardStatus.PASS else 1
+        if item.status == GuardStatus.PASS:
+            status_rank = 0
+        elif item.status == GuardStatus.WATCH:
+            status_rank = 1
+        else:
+            status_rank = 2
         return (status_rank, -item.score)
 
     board_harvest.sort(key=sort_key)

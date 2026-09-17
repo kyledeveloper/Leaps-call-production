@@ -353,6 +353,11 @@ class AppState:
                     self.last_error = f"scan_failed: {scan_err}"
                     self.scan_status = "error"
                     return
+                asof_day = datetime.now(timezone.utc).date().isoformat()
+                try:
+                    self.iv_store.ingest_from_candidates(collected, asof_day)
+                except OSError as exc:
+                    logger.warning("CSP IV ingest failed: %s", exc)
                 self.scan_status = "done"
             self.get_csp_boards(alpha=self.current_alpha)
             return

@@ -164,6 +164,20 @@ class TestCSPPricingAndMetrics(unittest.TestCase):
         buffer = calculate_downside_buffer(spot=100.0, strike=90.0)
         self.assertAlmostEqual(buffer, 0.10, places=4)
 
+    def test_pop_prefers_breakeven_over_delta(self):
+        """Short-put POP is P(S_T > break-even), not 1-|Delta|."""
+        delta_only = calculate_pop(delta=-0.40)
+        self.assertAlmostEqual(delta_only, 0.60, places=4)
+        be_pop = calculate_pop(
+            delta=-0.40,
+            spot=100.0,
+            breakeven=94.0,
+            dte=30.0,
+            sigma=0.25,
+        )
+        self.assertGreater(be_pop, 0.70)
+        self.assertGreater(be_pop, delta_only)
+
     def test_capital_allocation_and_max_loss(self):
         """DC-CSP-7: Concentration-capped contract recommendations and Max Loss."""
         cash_pool = 50000.0

@@ -221,17 +221,21 @@ def calculate_pop(
     sigma: float = 0.25
 ) -> float:
     """
-    DC-CSP-5: Probability of Profit (POP) estimation.
-    Uses Delta proxy (1 - |Delta|) if available, otherwise Black-Scholes lognormal integral.
+    DC-CSP-5: Probability of Profit for a short put.
+    Prefer the lognormal probability that spot expires above break-even.
+    Fall back to 1-|Delta| (approx. OTM probability) when BE inputs are missing.
     """
-    if delta is not None:
-        return max(0.0, min(1.0, 1.0 - abs(float(delta))))
-
-    if spot and breakeven and dte and spot > 0 and breakeven > 0 and dte > 0 and sigma > 0:
+    if (
+        spot is not None and breakeven is not None and dte is not None
+        and spot > 0.0 and breakeven > 0.0 and dte > 0.0 and sigma > 0.0
+    ):
         t = dte / 365.25
         d2 = (math.log(spot / breakeven) + (r - q - 0.5 * sigma * sigma) * t) / (sigma * math.sqrt(t))
         from src.leaps_scanner.core.american_pricing import _cnd
         return max(0.0, min(1.0, _cnd(d2)))
+
+    if delta is not None:
+        return max(0.0, min(1.0, 1.0 - abs(float(delta))))
 
     return 0.50
 

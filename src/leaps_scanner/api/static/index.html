@@ -723,7 +723,7 @@
       vol_discount: ['iv_history','iv_percentile','iv_hv','hv_proxy','regime_b','crash','strike','dte','earnings'],
       oversold: ['universe','bars','rsi','dma','dma_hv','drawdown','bounce','confluence','strike','dte'],
       csp_harvest: ['delta','aroc','dte','buffer','pop','liquidity'],
-      csp_wheel: ['delta','buffer','oversold','aroc','dte','liquidity'],
+      csp_wheel: ['delta','oversold','dte','liquidity'],
       csp_vol_rank: ['iv_rank','delta','aroc','earnings','liquidity']
     };
     const SIGNAL_IDS = ['rsi','dma','dma_hv','drawdown','bounce'];
@@ -1238,14 +1238,12 @@
       },
       csp_wheel: {
         title: "2. Cash-Secured Put — Wheel / Dip-Buying",
-        blurb: "Target blue-chip names at a discount with delta -0.45 to -0.30, preparing for stock assignment or wheeling.",
+        blurb: "Target blue-chip names at a discount with delta -0.45 to -0.30. Harvest AROC/POP/Buffer pills do not apply here — those gates conflict with the Wheel delta window. PASS requires RSI≤50 or price at/below 200DMA.",
         rows: [
-          ["Delta", "−0.45 to −0.30", "−0.50 to −0.45", "> −0.30 or < −0.50"],
-          ["Downside Buffer", "≥ 7%", "4% – 7%", "< 4%"],
-          ["Oversold Score", "≥ 1.5", "1.0 – 1.5", "< 1.0"],
-          ["AROC (Ann.)", "≥ 12%", "8% – 12%", "< 8%"],
-          ["DTE", "21 – 45 days", "14 – 21 days", "< 7 days (Hard Reject)"],
-          ["Liquidity", "Bid > 0, rel spread ≤ 8%", "rel spread 8% – 12%", "Bid = 0, crossed, spread > 12%"]
+          ["Delta", "−0.45 to −0.30", "−0.50 to −0.45 or −0.30 to −0.25", "> −0.25 or < −0.50"],
+          ["Dip / 200DMA", "RSI ≤ 50 or ≤ 200DMA", "No dip (WATCH)", "—"],
+          ["DTE", "21 – 45 days", "7 – 21 days", "< 7 days (Hard Reject)"],
+          ["Liquidity", "OI ≥ 300, spread OK", "Thin volume with OI", "OI < 100 or dead spread"]
         ]
       },
       csp_vol_rank: {
@@ -1323,14 +1321,12 @@
       },
       csp_wheel: {
         title: "2. 现金担保卖 Put — 轮动抄底折扣入场",
-        blurb: "针对优质蓝筹标的打折吸筹，Delta 处于 -0.45 至 -0.30，为低成本接正股或开展 Wheel（车轮策略）准备。",
+        blurb: "针对优质蓝筹打折吸筹，Delta −0.45 至 −0.30。收割看板的 AROC/POP/Buffer 开关不套用到 Wheel（与目标 Delta 冲突）。PASS 需要 RSI≤50 或跌破/贴近 200DMA。",
         rows: [
-          ["Delta", "−0.45 至 −0.30", "−0.50 至 −0.45", "> −0.30 或 < −0.50"],
-          ["安全缓冲 Buffer", "≥ 7%", "4% – 7%", "< 4%"],
-          ["超跌评分 Oversold", "≥ 1.5", "1.0 – 1.5", "< 1.0"],
-          ["年化 AROC", "≥ 12%", "8% – 12%", "< 8%"],
-          ["剩余天数 DTE", "21 – 45 天", "14 – 21 天", "< 7 天（强制拒绝）"],
-          ["流动性风控", "买一价 > 0 且价差 ≤ 8%", "相对价差 8% – 12%", "买一为 0、倒挂或价差 > 12%"]
+          ["Delta", "−0.45 至 −0.30", "−0.50 至 −0.45 或 −0.30 至 −0.25", "> −0.25 或 < −0.50"],
+          ["超跌 / 200DMA", "RSI ≤ 50 或 ≤ 200DMA", "无超跌（WATCH）", "—"],
+          ["剩余天数 DTE", "21 – 45 天", "7 – 21 天", "< 7 天（强制拒绝）"],
+          ["流动性风控", "OI ≥ 300 且价差正常", "有仓无量", "OI < 100 或价差坏死"]
         ]
       },
       csp_vol_rank: {

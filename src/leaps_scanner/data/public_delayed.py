@@ -29,7 +29,7 @@ from src.leaps_scanner.core.greeks import (
     calculate_american_put_greeks,
     calculate_put_fallback_delta
 )
-from src.leaps_scanner.core.iv_solver import solve_implied_volatility
+from src.leaps_scanner.core.iv_solver import solve_implied_volatility, solve_american_put_iv
 from src.leaps_scanner.core.rates import RateCurve
 from src.leaps_scanner.data.store.prices import PriceBar, PriceStore
 from src.leaps_scanner.data.store.iv_history import IVDataPoint, IVHistoryStore
@@ -323,6 +323,8 @@ def parse_nasdaq_csp_chain(
             "ask": ask,
             "open_interest": oi,
             "volume": vol,
+            "bid_size": int(_parse_num(row.get("p_BidSize") or row.get("p_bidSize")) or 0),
+            "ask_size": int(_parse_num(row.get("p_AskSize") or row.get("p_askSize")) or 0),
             "symbol": occ_symbol(und, expiry, strike, "P") if und else f"PUT_{strike}_{expiry}",
         })
     return out
@@ -364,6 +366,40 @@ def parse_yahoo_chart(payload: dict) -> Tuple[float, List[PriceBar], float]:
             div_cash += float(item.get("amount") or 0.0)
     div_yield = (div_cash / spot) if spot > 0 else 0.0
     return spot, bars, div_yield
+
+
+def parse_yahoo_earnings_dates(payload: dict) -> List[datetime]:
+    """Future+past earnings timestamps from a Yahoo chart events blob."""
+    result = (payload.get("chart") or {}).get("result") or []
+    if not result:
+        return []
+    events = (result[0].get("events") or {}).get("earnings") or {}
+    out: List[datetime] = []
+    for item in events.values() if isinstance(events, dict) else []:
+        if not isinstance(item, dict):
+            continue
+        ts = float(item.get("date") or 0)
+        if ts <= 0:
+            continue
+        out.append(datetime.fromtimestamp(ts, tz=timezone.utc))
+    return out
+
+
+def classify_csp_earnings(
+    is_etf: bool,
+    asof: datetime,
+    dte: float,
+    earnings_dates: Optional[List[datetime]] = None,
+) -> EarningsStatus:
+    if is_etf:
+        return EarningsStatus.CONFIRMED_SAFE
+    if not earnings_dates:
+        return EarningsStatus.EARNINGS_UNVERIFIED
+    expiry = asof + timedelta(days=max(0.0, float(dte)))
+    for ev in earnings_dates:
+        if asof <= ev <= expiry:
+            return EarningsStatus.EARNINGS_IMPACTED
+    return EarningsStatus.CONFIRMED_SAFE
 
 
 def _select_contracts(rows: List[dict], spot: float, max_n: int = 48) -> List[dict]:
@@ -427,6 +463,7 @@ class PublicDelayedClient:
         interval = default_interval if min_interval_s is None else min_interval_s
         self.rate_limiter = RateLimiter(interval)
         self._iv_lock = threading.Lock()
+        self._earnings_dates: Dict[str, List[datetime]] = {}
 
     def _get_json(
         self,
@@ -481,7 +518,7 @@ class PublicDelayedClient:
         ticker = urllib.parse.quote(symbol)
         url = (
             f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-            f"?range=2y&interval=1d&events=div"
+            f"?range=2y&interval=1d&events=div%2Cearn"
         )
         headers = {
             "User-Agent": "Mozilla/5.0 (compatible; LEAPSScanner/2.0)",
@@ -490,6 +527,7 @@ class PublicDelayedClient:
         }
         payload = self._get_json(url, headers, should_stop=should_stop)
         spot, bars, div_yield = parse_yahoo_chart(payload)
+        self._earnings_dates[symbol.upper()] = parse_yahoo_earnings_dates(payload)
         if not (should_stop and should_stop()) and self.bar_cache is not None and bars:
             self.bar_cache.put(symbol, spot, bars, div_yield)
         return spot, bars, div_yield
@@ -551,11 +589,13 @@ class PublicDelayedClient:
                 self.iv_store.add_data_point(sym, IVDataPoint(trade_date=asof_day, atm_iv=atm_iv))
             ivm = self.iv_store.get_metrics(sym, atm_iv if atm_iv is not None else hv)
         for cand in symbol_rows:
-            cand.iv_history_days = ivm.valid_days
+            if hasattr(cand, "iv_history_days"):
+                cand.iv_history_days = ivm.valid_days
             if not ivm.is_degraded:
                 cand.iv_percentile = ivm.iv_percentile
                 cand.iv_rank = ivm.iv_rank
-                cand.iv_z_score = ivm.iv_z_score
+                if hasattr(cand, "iv_z_score"):
+                    cand.iv_z_score = ivm.iv_z_score
 
     def _scan_symbol(
         self,
@@ -758,7 +798,12 @@ class PublicDelayedClient:
         last = None
         collected: List[dict] = []
         seen: set = set()
-        expiries = csp_target_expiries(asof, min_dte=7.0, max_dte=45.0, include_weeklies=False)
+        monthlies = csp_target_expiries(asof, min_dte=7.0, max_dte=45.0, include_weeklies=False)
+        weeklies = [
+            d for d in csp_target_expiries(asof, min_dte=7.0, max_dte=21.0, include_weeklies=True)
+            if d not in monthlies
+        ]
+        expiries = monthlies + weeklies
 
         def ingest(payload: dict) -> None:
             nonlocal last
@@ -866,8 +911,8 @@ class PublicDelayedClient:
             t_years = row["dte"] / 365.25
             r = self.rates.get_rate(t_years)
             mid = (row["bid"] + row["ask"]) / 2.0
-            iv_res = solve_implied_volatility(
-                mid, spot, strike, t_years, r, div_yield, initial_guess=max(0.12, hv)
+            iv_res = solve_american_put_iv(
+                spot, strike, t_years, r, div_yield, mid, initial_guess=max(0.12, hv)
             )
             iv = iv_res.iv if iv_res.iv is not None else (hv if hv > 0 else 0.25)
             try:
@@ -877,6 +922,9 @@ class PublicDelayedClient:
                 delta = calculate_put_fallback_delta(spot, strike)
             if delta >= 0.0 or delta < -1.0:
                 continue
+            earnings_status = classify_csp_earnings(
+                is_etf, asof, row["dte"], self._earnings_dates.get(sym.upper(), [])
+            )
             symbol_rows.append(CSPCandidate(
                 symbol=row["symbol"],
                 underlying=sym.upper(),
@@ -889,13 +937,18 @@ class PublicDelayedClient:
                 open_interest=row["open_interest"],
                 volume=row["volume"],
                 iv=iv,
-                iv_rank=0.50,
-                iv_percentile=0.50,
+                iv_rank=None,
+                iv_percentile=None,
                 rsi_14=rsi,
                 pct_to_200dma=dma,
-                earnings_status=EarningsStatus.EARNINGS_UNVERIFIED,
-                is_etf=is_etf
+                earnings_status=earnings_status,
+                is_etf=is_etf,
+                bid_size=int(row.get("bid_size") or 0),
+                ask_size=int(row.get("ask_size") or 0),
             ))
+        if symbol_rows:
+            atm = min(symbol_rows, key=lambda c: abs(c.strike / spot - 1.0) if spot else 1.0)
+            self._apply_iv_metrics(sym, symbol_rows, atm.iv, hv, asof.date().isoformat())
         return sym, symbol_rows
 
     def get_csp_candidates(

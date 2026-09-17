@@ -47,9 +47,14 @@ def evaluate_csp_wheel(candidate) -> CSPWheelResult:
     else:
         return CSPWheelResult(status=GuardStatus.REJECT, reasons=[f"WHEEL_DELTA_OUT_OF_RANGE_{delta:.2f}"])
 
-    # 4. Technical / Dip Oversold indicator
-    # Prefers pullbacks (RSI <= 50 or 200DMA dip)
+    # 4. Dip / valuation: PASS needs RSI<=50 or trade at/below 200DMA.
+    dip = candidate.rsi_14 <= 50.0 or candidate.pct_to_200dma <= 0.0
     tech_watch = False
+    if not dip:
+        tech_watch = True
+        reasons.append(
+            f"NO_DIP_RSI_{candidate.rsi_14:.1f}_DMA_{candidate.pct_to_200dma:.1%}"
+        )
     if candidate.rsi_14 > 65.0:
         tech_watch = True
         reasons.append(f"RSI_OVERBOUGHT_{candidate.rsi_14:.1f}")

@@ -320,6 +320,93 @@ class TestCSPApi(unittest.TestCase):
         self.assertEqual(boards["wheel"], [])
         self.assertEqual(boards["vol_rank"], [])
 
+    def test_nasdaq_csp_chain_includes_short_weeklies(self):
+        from src.leaps_scanner.data.public_delayed import PublicDelayedClient, csp_target_expiries
+        asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
+        weeklies = csp_target_expiries(asof, min_dte=7.0, max_dte=21.0, include_weeklies=True)
+        self.assertIn("2026-09-25", weeklies)
+        urls = []
+
+        def fetch(url, headers):
+            urls.append(url)
+            return 200, json.dumps({"data": {"table": {"rows": []}}}).encode()
+
+        PublicDelayedClient(fetch_fn=fetch)._nasdaq_csp_chain("AAPL", asof)
+        self.assertTrue(any("fromdate=2026-09-25" in u for u in urls))
+        self.assertTrue(any("fromdate=2026-10-16" in u for u in urls))
+
+    def test_delayed_csp_uses_put_iv_solver(self):
+        from unittest.mock import patch
+        from src.leaps_scanner.core.iv_solver import IVResult
+        from src.leaps_scanner.data.public_delayed import PublicDelayedClient
+        from tests.python.test_public_delayed import YAHOO_CHART_FIXTURE
+
+        nasdaq = {
+            "data": {
+                "lastTrade": "$331.34",
+                "table": {
+                    "rows": [{
+                        "p_Bid": "8.10",
+                        "p_Ask": "8.40",
+                        "p_Volume": "120",
+                        "p_Openinterest": "1500",
+                        "strike": "310.00",
+                        "drillDownURL": "/market-activity/stocks/aapl/option-chain/call-put-options/aapl--261016p00310000",
+                    }]
+                },
+            }
+        }
+
+        def fake_fetch(url, headers):
+            if "yahoo" in url or "query1" in url:
+                return 200, json.dumps(YAHOO_CHART_FIXTURE).encode()
+            return 200, json.dumps(nasdaq).encode()
+
+        called = []
+
+        def fake_put_iv(*args, **kwargs):
+            called.append(True)
+            return IVResult(iv=0.27, status="CONVERGED")
+
+        with patch("src.leaps_scanner.data.public_delayed.solve_american_put_iv", side_effect=fake_put_iv):
+            client = PublicDelayedClient(fetch_fn=fake_fetch, max_workers=1, min_interval_s=0)
+            cands = client.get_csp_candidates(["AAPL"])
+        self.assertTrue(called)
+        self.assertGreaterEqual(len(cands), 1)
+        self.assertAlmostEqual(cands[0].iv, 0.27)
+        self.assertIsNone(cands[0].iv_rank)
+
+    def test_etf_earnings_marked_confirmed_safe(self):
+        from src.leaps_scanner.data.public_delayed import classify_csp_earnings
+        asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
+        self.assertEqual(
+            classify_csp_earnings(True, asof, 30.0, None).value,
+            "CONFIRMED_SAFE",
+        )
+        self.assertEqual(
+            classify_csp_earnings(False, asof, 30.0, None).value,
+            "EARNINGS_UNVERIFIED",
+        )
+        hit = datetime(2026, 10, 5, tzinfo=timezone.utc)
+        self.assertEqual(
+            classify_csp_earnings(False, asof, 30.0, [hit]).value,
+            "EARNINGS_IMPACTED",
+        )
+
+    def test_webull_csp_live_requests_put_chain(self):
+        from src.leaps_scanner.data.webull import WebullClient
+        captured = {}
+        client = WebullClient(offline_mode=True, token_file=None)
+        client.offline_mode = False
+
+        def fake_http(uri, queries=None, **kwargs):
+            captured["queries"] = queries
+            return 200, {"data": [], "pagination_key": None}
+
+        client._http_request = fake_http  # type: ignore[method-assign]
+        client.get_csp_candidates(["AAPL"])
+        self.assertEqual(captured.get("queries", {}).get("option_type"), "PUT")
+
 
 if __name__ == "__main__":
     unittest.main()

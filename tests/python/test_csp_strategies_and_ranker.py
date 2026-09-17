@@ -166,16 +166,18 @@ class TestCSPStrategiesAndRanker(unittest.TestCase):
         self.assertIn("vol_rank", boards)
 
         # Harvest board should have cand_harvest at top
-        harvest_symbols = [item.candidate.symbol for item in boards["harvest"]]
-        self.assertIn(self.cand_harvest.symbol, harvest_symbols)
-        # TSLA (earnings impacted) must NOT be in the PASS list when filter_earnings=True
-        self.assertNotIn(self.cand_earnings_risk.symbol, harvest_symbols)
+        harvest_pass = [item.candidate.symbol for item in boards["harvest"] if item.status != GuardStatus.REJECT]
+        harvest_all = [item.candidate.symbol for item in boards["harvest"]]
+        self.assertIn(self.cand_harvest.symbol, harvest_pass)
+        self.assertNotIn(self.cand_earnings_risk.symbol, harvest_pass)
+        self.assertIn(self.cand_earnings_risk.symbol, harvest_all)
 
-        # 2. Strict earnings test (DC-CSP-8): UNVERIFIED must be filtered out when strict_earnings=True
         cfg_strict = CSPFilterConfig(filter_earnings=True, strict_earnings=True)
         boards_strict = rank_csp_boards(candidates, config=cfg_strict, alpha=0.5)
-        harvest_strict_symbols = [item.candidate.symbol for item in boards_strict["harvest"]]
-        self.assertNotIn(self.cand_unverified.symbol, harvest_strict_symbols)
+        harvest_strict_pass = [
+            item.candidate.symbol for item in boards_strict["harvest"] if item.status != GuardStatus.REJECT
+        ]
+        self.assertNotIn(self.cand_unverified.symbol, harvest_strict_pass)
 
         # 3. Disable earnings filter: TSLA should appear if eligible
         cfg_no_earn = CSPFilterConfig(filter_earnings=False)
@@ -217,6 +219,53 @@ class TestCSPStrategiesAndRanker(unittest.TestCase):
         self.assertEqual(len(boards["harvest"]), 0)
         self.assertEqual(len(boards["wheel"]), 0)
         self.assertEqual(len(boards["vol_rank"]), 0)
+
+    def test_default_filters_do_not_kill_wheel_pass_window(self):
+        """Harvest POP>=70% must not be applied to Wheel's -0.30..-0.45 window."""
+        boards = rank_csp_boards([self.cand_wheel], config=CSPFilterConfig())
+        wheel_pass = [i.candidate.symbol for i in boards["wheel"] if i.status == GuardStatus.PASS]
+        self.assertIn(self.cand_wheel.symbol, wheel_pass)
+
+    def test_volume_thin_otm_put_is_not_hard_dropped(self):
+        thin = CSPCandidate(
+            symbol="AAPL261016P00200000",
+            underlying="AAPL",
+            spot=230.0,
+            strike=210.0,
+            dte=30.0,
+            bid=3.00,
+            ask=3.20,
+            delta=-0.20,
+            open_interest=2500,
+            volume=0,
+            iv_rank=0.55,
+            rsi_14=48.0,
+            earnings_status=EarningsStatus.CONFIRMED_SAFE,
+        )
+        boards = rank_csp_boards([thin], config=CSPFilterConfig(filter_liquidity=True))
+        harvest = [i for i in boards["harvest"] if i.candidate.symbol == thin.symbol]
+        self.assertEqual(len(harvest), 1)
+        self.assertNotEqual(harvest[0].status, GuardStatus.REJECT)
+
+    def test_wheel_without_dip_is_watch(self):
+        hot = CSPCandidate(
+            symbol="NVDA261016P00110000",
+            underlying="NVDA",
+            spot=120.0,
+            strike=110.0,
+            dte=28.0,
+            bid=4.20,
+            ask=4.50,
+            delta=-0.38,
+            open_interest=15000,
+            volume=4200,
+            rsi_14=62.0,
+            pct_to_200dma=0.12,
+            earnings_status=EarningsStatus.CONFIRMED_SAFE,
+        )
+        res = evaluate_csp_wheel(hot)
+        self.assertEqual(res.status, GuardStatus.WATCH)
+        self.assertTrue(any(r.startswith("NO_DIP") for r in res.reasons))
 
 
 if __name__ == "__main__":

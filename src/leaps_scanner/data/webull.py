@@ -642,18 +642,21 @@ class WebullClient:
         contracts = self.query_options_contracts(symbol)
         return {"underlying": broker_symbol, "options": contracts}
 
-    def query_options_contracts(self, symbol: str) -> List[dict]:
+    def query_options_contracts(self, symbol: str, option_type: str = "CALL") -> List[dict]:
         """
         Query listing options contracts for underlying symbol.
-        Uses SafePaginationIterator to fetch pages cleanly.
+        option_type: CALL (LEAPS) or PUT (CSP).
         """
         broker_symbol = SymbologyNormalizer.to_broker(symbol, broker="webull")
+        ot = str(option_type or "CALL").strip().upper()
+        if ot not in ("CALL", "PUT"):
+            ot = "CALL"
 
         def fetch_page(page_key: Optional[str]) -> Tuple[List[dict], Optional[str]]:
             queries = {
                 "underlying_symbols": broker_symbol,
                 "category": "US_OPTION",
-                "option_type": "CALL"
+                "option_type": ot
             }
             if page_key:
                 queries["pagination_key"] = page_key
@@ -889,7 +892,7 @@ class WebullClient:
             sym = SymbologyNormalizer.to_canonical(raw_sym)
             res: List[CSPCandidate] = []
             try:
-                raw_contracts = self.query_options_contracts(sym)
+                raw_contracts = self.query_options_contracts(sym, option_type="PUT")
                 # Parse and filter put contracts
                 for c in raw_contracts:
                     if str(c.get("direction", "")).lower() != "put":
