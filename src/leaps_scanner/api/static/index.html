@@ -553,7 +553,7 @@
       <span class="badge" style="background: rgba(147, 51, 234, 0.15); color: #c084fc; border: 1px solid rgba(147, 51, 234, 0.3);" id="universeBadge" data-i18n="universeLoading">Universe: Loading...</span>
       <button class="btn" style="background: #334155; color: #f8fafc;" id="btnSync" onclick="triggerUniverseSync(event)" data-i18n="syncRebalance">⚡ Sync Rebalance</button>
       <button class="btn" id="btnScan" onclick="triggerScan()" data-i18n="refreshScan">🔄 Refresh Scan</button>
-
+      <a href="/workflow" target="_blank" class="btn ghost" style="text-decoration:none; display:inline-flex; align-items:center; background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); border: 1px solid rgba(56, 189, 248, 0.3);" data-i18n="navWorkflow">📊 CSP Workflow</a>
     </div>
   </div>
 
@@ -766,6 +766,7 @@
         colMaxLoss: 'Capital / Max Loss (Stress)',
         earningsUnverified: '⚠️ Unverified',
         earningsImpacted: '🚨 In DTE',
+        navWorkflow: '📊 CSP Workflow',
         pageTitle: 'LEAPS Call Quantitative Scanner',
         appTitle: 'LEAPS Call Quant Scanner',
         appSubtitle: 'Multi-Strategy Quantitative Screening for Far-Dated Call Options (DTE ≥ 250d)',
@@ -883,6 +884,7 @@
         colMaxLoss: '名义资金 / 最大亏损 (压力)',
         earningsUnverified: '⚠️ 财报待核',
         earningsImpacted: '🚨 位于 DTE 内',
+        navWorkflow: '📊 CSP 流程架构',
         pageTitle: '美股 LEAPS 看涨期权量化扫描器',
         appTitle: 'LEAPS 看涨期权量化扫描器',
         appSubtitle: '远月看涨期权多策略量化筛选（到期日 ≥ 250 天）',
@@ -1020,6 +1022,15 @@
       document.getElementById('famCsp').classList.toggle('active', fam === 'csp');
       document.getElementById('cspPanel').style.display = fam === 'csp' ? 'flex' : 'none';
       currentBoardKey = fam === 'csp' ? 'csp_harvest' : 'deep_itm';
+      try {
+        const url = new URL(window.location);
+        if (fam === 'csp') {
+          url.searchParams.set('family', 'csp');
+        } else {
+          url.searchParams.delete('family');
+        }
+        window.history.replaceState({}, '', url);
+      } catch (e) {}
       applyStaticI18n();
       paintStrategyHelp(currentBoardKey);
       loadBoards(currentAlpha);
@@ -1912,6 +1923,15 @@
     }
 
     // Initialize
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialFamily = urlParams.get('family') || (window.location.pathname.includes('csp') ? 'csp' : 'leaps');
+    if (initialFamily === 'csp') {
+      currentFamily = 'csp';
+      document.getElementById('famLeaps').classList.remove('active');
+      document.getElementById('famCsp').classList.add('active');
+      document.getElementById('cspPanel').style.display = 'flex';
+      currentBoardKey = 'csp_harvest';
+    }
     applyStaticI18n();
     paintStrategyHelp(currentBoardKey);
     fetchConfig();

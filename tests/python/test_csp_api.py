@@ -88,6 +88,18 @@ class TestCSPApi(unittest.TestCase):
         self.assertEqual(snap1.alpha, 0.5)
         self.assertEqual(snap1.cash_pool, 50000.0)
 
+    def test_csp_and_workflow_web_routes(self):
+        """Test GET /csp and GET /workflow return 200 HTML content."""
+        code, headers, body = self.handler_cls.dispatch("GET", "/csp", b"")
+        self.assertEqual(code, 200)
+        self.assertIn("text/html", headers["Content-Type"])
+        self.assertIn(b"Cash-Secured Put", body)
+
+        code_wf, headers_wf, body_wf = self.handler_cls.dispatch("GET", "/workflow", b"")
+        self.assertEqual(code_wf, 200)
+        self.assertIn("text/html", headers_wf["Content-Type"])
+        self.assertIn(b"CSP", body_wf)
+
 
 if __name__ == "__main__":
     unittest.main()

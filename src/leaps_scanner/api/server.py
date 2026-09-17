@@ -538,8 +538,8 @@ def create_api_handler_class(state: AppState):
 
             headers = {"Content-Type": "application/json"}
 
-            # GET / or /index.html
-            if method in ("GET", "HEAD") and clean_path in ("/", "/index.html"):
+            # GET / or /index.html or /csp or /csp.html
+            if method in ("GET", "HEAD") and clean_path in ("/", "/index.html", "/csp", "/csp.html"):
                 index_path = os.path.join(static_dir, "index.html")
                 if os.path.exists(index_path):
                     with open(index_path, "rb") as f:
@@ -548,6 +548,14 @@ def create_api_handler_class(state: AppState):
                 else:
                     html = b"<h1>LEAPS Scanner API</h1>"
                     return 200, {"Content-Type": "text/html; charset=utf-8"}, html if method == "GET" else b""
+
+            # GET /workflow or /workflow.html or /csp-workflow.html
+            if method in ("GET", "HEAD") and clean_path in ("/workflow", "/workflow.html", "/csp-workflow.html", "/docs/csp-workflow-zh.html"):
+                wf_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "docs", "csp-workflow-zh.html"))
+                if os.path.exists(wf_path):
+                    with open(wf_path, "rb") as f:
+                        content = f.read()
+                    return 200, {"Content-Type": "text/html; charset=utf-8"}, content if method == "GET" else b""
 
             # GET /api/v1/config
             if method in ("GET", "HEAD") and clean_path == "/api/v1/config":
