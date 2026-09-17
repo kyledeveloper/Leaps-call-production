@@ -3,6 +3,7 @@ Quantitative and financial metrics module.
 Provides conservative execution price (P_exec), slippage, carry cost, and effective leverage.
 Adheres strictly to the 6 Global Invariants.
 """
+import math
 from dataclasses import dataclass
 from typing import Optional
 
@@ -111,6 +112,14 @@ def calculate_carry_cost(
     Calculate comprehensive annualized carry cost:
     Carry = Extrinsic / (P_exec * T) + q_div
     """
+    if dividend_yield is None or (isinstance(dividend_yield, float) and math.isnan(dividend_yield)):
+        q_clean = 0.0
+    else:
+        try:
+            q_clean = max(0.0, float(dividend_yield))
+        except (TypeError, ValueError):
+            q_clean = 0.0
+
     if dte <= 0:
         t_years = 0.0
     else:
@@ -124,14 +133,14 @@ def calculate_carry_cost(
     else:
         extrinsic_rate = 0.0
 
-    total_carry = extrinsic_rate + dividend_yield
+    total_carry = extrinsic_rate + q_clean
 
     return CarryCostResult(
         intrinsic_per_share=intrinsic,
         extrinsic_per_share=extrinsic,
         annualized_extrinsic_rate=extrinsic_rate,
         total_annualized_carry=total_carry,
-        dividend_yield=dividend_yield,
+        dividend_yield=q_clean,
         t_years=t_years
     )
 

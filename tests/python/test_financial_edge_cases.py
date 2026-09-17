@@ -100,6 +100,97 @@ class TestFinancialEdgeCases(unittest.TestCase):
         self.assertEqual(item.status, GuardStatus.REJECT)
         self.assertTrue(any('IV_UNAVAILABLE' in r or 'MISSING_IV' in r for r in item.reasons))
 
+    def test_ranker_strategy_one_zero_volume_high_oi_and_dividend_sorting(self):
+        from src.leaps_scanner.scoring.ranker import MemoryRanker, StrategyCandidate
+
+        # Candidate A: Low dividend (0.5%), Volume=0, deep OI=600 -> PASS
+        cand_a = StrategyCandidate(
+            symbol='AAPL270115C00150000',
+            underlying='AAPL',
+            strike=150.0,
+            spot=200.0,
+            dte=365.0,
+            bid=53.0,
+            ask=54.0,
+            ask_size=10,
+            delta=0.80,
+            open_interest=600,
+            volume=0,
+            dividend_yield=0.005,
+        )
+
+        # Candidate B: High dividend (4.0%), Volume=0, deep OI=600 -> PASS, but higher carry
+        cand_b = StrategyCandidate(
+            symbol='KO270115C00150000',
+            underlying='KO',
+            strike=150.0,
+            spot=200.0,
+            dte=365.0,
+            bid=53.0,
+            ask=54.0,
+            ask_size=10,
+            delta=0.80,
+            open_interest=600,
+            volume=0,
+            dividend_yield=0.04,
+        )
+
+        # Candidate C: Empty ask order book (ask_size=0) -> REJECT (Defensive Clause 7)
+        cand_c = StrategyCandidate(
+            symbol='BAD270115C00150000',
+            underlying='BAD',
+            strike=150.0,
+            spot=200.0,
+            dte=365.0,
+            bid=53.0,
+            ask=54.0,
+            ask_size=0,
+            delta=0.80,
+            open_interest=600,
+            volume=0,
+            dividend_yield=0.01,
+        )
+
+        # Candidate D: NaN dividend yield -> immune to Timsort crash
+        cand_d = StrategyCandidate(
+            symbol='NAN270115C00150000',
+            underlying='NAN',
+            strike=150.0,
+            spot=200.0,
+            dte=365.0,
+            bid=53.0,
+            ask=54.0,
+            ask_size=10,
+            delta=0.80,
+            open_interest=600,
+            volume=0,
+            dividend_yield=float('nan'),
+        )
+
+        ranker = MemoryRanker([cand_b, cand_c, cand_a, cand_d])
+        boards = ranker.rank_boards()
+        deep_items = boards['deep_itm']
+
+        self.assertEqual(len(deep_items), 4)
+
+        # Candidate A and Candidate B both PASS despite Volume=0!
+        item_a = next(it for it in deep_items if it.underlying == 'AAPL')
+        item_b = next(it for it in deep_items if it.underlying == 'KO')
+        item_c = next(it for it in deep_items if it.underlying == 'BAD')
+        item_d = next(it for it in deep_items if it.underlying == 'NAN')
+
+        self.assertEqual(item_a.status, GuardStatus.PASS)
+        self.assertEqual(item_b.status, GuardStatus.PASS)
+        self.assertEqual(item_c.status, GuardStatus.REJECT)
+
+        # Low dividend Candidate A has lower total carry than high dividend Candidate B
+        self.assertLess(item_a.carry_cost, item_b.carry_cost)
+
+        # Ranker sorts by (tier_order, carry_cost), so AAPL (0.5% div) ranks ahead of KO (4% div)
+        pass_items = [it for it in deep_items if it.status == GuardStatus.PASS]
+        pass_symbols = [it.underlying for it in pass_items]
+        self.assertLess(pass_symbols.index('AAPL'), pass_symbols.index('KO'))
+
 
 if __name__ == '__main__':
     unittest.main()

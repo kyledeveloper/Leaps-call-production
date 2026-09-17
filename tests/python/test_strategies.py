@@ -61,13 +61,168 @@ class TestStrategies(unittest.TestCase):
         self.assertEqual(heavy.status, GuardStatus.REJECT)
         self.assertTrue(any(r.startswith("HIGH_CARRY_DRAG_") for r in heavy.reasons))
 
-        # ~20% drag: acceptable WATCH, not reject (q must not be added)
+        # Extrinsic + 4% dividend drag: carry ~22.3%, acceptable WATCH (not reject)
         mid = evaluate_deep_itm(
             spot=100.0, strike=76.0, dte=400.0, p_exec=30.0, delta=0.80, dividend_yield=0.04
         )
         self.assertGreaterEqual(mid.carry_cost, 0.15)
         self.assertLess(mid.carry_cost, 0.25)
         self.assertNotEqual(mid.status, GuardStatus.REJECT)
+
+    def test_strategy_one_high_dividend_drag_elevated(self):
+        from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
+        from src.leaps_scanner.strategies.guards import GuardStatus
+
+        # Low extrinsic ~2.6% + High dividend yield 15% -> Total carry ~17.6% (WATCH, elevated)
+        high_div = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80, dividend_yield=0.15
+        )
+        self.assertEqual(high_div.gates["carry"], GuardStatus.WATCH)
+        self.assertGreaterEqual(high_div.carry_cost, 0.15)
+        self.assertLess(high_div.carry_cost, 0.25)
+
+        # Low extrinsic ~2.6% + Excessive dividend yield 33% -> Total carry ~35.6% (REJECT)
+        excessive_div = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80, dividend_yield=0.33
+        )
+        self.assertEqual(excessive_div.gates["carry"], GuardStatus.REJECT)
+        self.assertEqual(excessive_div.status, GuardStatus.REJECT)
+        self.assertTrue(any(r.startswith("HIGH_CARRY_DRAG_") for r in excessive_div.reasons))
+
+    def test_strategy_one_dividend_sanitization(self):
+        import math
+        from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
+        from src.leaps_scanner.strategies.guards import GuardStatus
+
+        # None dividend yield should not crash with TypeError
+        none_div = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80, dividend_yield=None
+        )
+        self.assertTrue(math.isfinite(none_div.carry_cost))
+        self.assertGreater(none_div.carry_cost, 0.0)
+
+        # NaN dividend yield should be treated as 0.0 and not poison Timsort
+        nan_div = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80, dividend_yield=float("nan")
+        )
+        self.assertTrue(math.isfinite(nan_div.carry_cost))
+        self.assertFalse(math.isnan(nan_div.carry_cost))
+
+        # Negative dividend yield should not reduce carry below pure extrinsic
+        neg_div = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80, dividend_yield=-0.05
+        )
+        zero_div = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80, dividend_yield=0.0
+        )
+        self.assertAlmostEqual(neg_div.carry_cost, zero_div.carry_cost, places=5)
+
+        # Extreme dividend yield (>50%) should flag abnormal warning
+        extreme_div = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80, dividend_yield=0.65
+        )
+        self.assertTrue(any("ABNORMAL_DIVIDEND_YIELD" in r for r in extreme_div.reasons))
+
+    def test_strategy_one_low_volume_high_oi_adequate_ask_pass(self):
+        from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
+        from src.leaps_scanner.strategies.guards import GuardStatus
+
+        # Defensive Clause 7: volume=0, OI=500, ask_size=10, tight spread -> PASS!
+        res = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80,
+            bid=27.4, ask=28.0, open_interest=500, volume=0, ask_size=10,
+        )
+        self.assertEqual(res.status, GuardStatus.PASS)
+        self.assertEqual(res.gates["volume"], GuardStatus.PASS)
+        self.assertEqual(res.gates["oi"], GuardStatus.PASS)
+        self.assertEqual(res.gates["spread"], GuardStatus.PASS)
+        self.assertEqual(res.gates["liquidity"], GuardStatus.PASS)
+        self.assertFalse(any(r.startswith("INSUFFICIENT_ACTIVITY_") for r in res.reasons))
+
+    def test_strategy_one_low_volume_thin_ask_downgrades_to_watch(self):
+        from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
+        from src.leaps_scanner.strategies.guards import GuardStatus
+
+        # Defensive Clause 7: volume=0, OI=500, ask_size=2 (< 5 target contracts) -> WATCH
+        res = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80,
+            bid=27.4, ask=28.0, open_interest=500, volume=0, ask_size=2,
+        )
+        self.assertEqual(res.status, GuardStatus.WATCH)
+        self.assertEqual(res.gates["volume"], GuardStatus.WATCH)
+        self.assertTrue(any(r.startswith("THIN_ASK_DEPTH_") for r in res.reasons))
+
+    def test_strategy_one_low_volume_empty_ask_rejects(self):
+        from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
+        from src.leaps_scanner.strategies.guards import GuardStatus
+
+        # Defensive Clause 7: volume=0, OI=500, ask_size=0 -> REJECT (phantom quote)
+        res = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80,
+            bid=27.4, ask=28.0, open_interest=500, volume=0, ask_size=0,
+        )
+        self.assertEqual(res.status, GuardStatus.REJECT)
+        self.assertEqual(res.gates["volume"], GuardStatus.REJECT)
+        self.assertTrue(any("EMPTY_ASK_BOOK" in r for r in res.reasons))
+
+    def test_strategy_one_open_interest_boundaries(self):
+        from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
+        from src.leaps_scanner.strategies.guards import GuardStatus
+
+        # OI = 300 boundary -> PASS
+        p300 = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80,
+            bid=27.4, ask=28.0, open_interest=300, volume=0, ask_size=10,
+        )
+        self.assertEqual(p300.gates["oi"], GuardStatus.PASS)
+        self.assertEqual(p300.gates["volume"], GuardStatus.PASS)
+        self.assertEqual(p300.status, GuardStatus.PASS)
+
+        # OI = 299 boundary -> WATCH on OI and volume
+        w299 = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80,
+            bid=27.4, ask=28.0, open_interest=299, volume=0, ask_size=10,
+        )
+        self.assertEqual(w299.gates["oi"], GuardStatus.WATCH)
+        self.assertEqual(w299.status, GuardStatus.WATCH)
+
+        # OI = 100 boundary -> WATCH
+        w100 = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80,
+            bid=27.4, ask=28.0, open_interest=100, volume=0, ask_size=10,
+        )
+        self.assertEqual(w100.gates["oi"], GuardStatus.WATCH)
+        self.assertEqual(w100.status, GuardStatus.WATCH)
+
+        # OI = 99 boundary -> REJECT
+        r99 = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80,
+            bid=27.4, ask=28.0, open_interest=99, volume=0, ask_size=10,
+        )
+        self.assertEqual(r99.gates["oi"], GuardStatus.REJECT)
+        self.assertEqual(r99.status, GuardStatus.REJECT)
+
+    def test_strategy_one_broken_ask_quote_unconditional_reject(self):
+        from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
+        from src.leaps_scanner.strategies.guards import GuardStatus
+
+        # Defensive Clause 8: ask <= 0 must never bypass liquidity gate
+        broken_ask = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80,
+            bid=10.0, ask=0.0, open_interest=500, volume=100, ask_size=10,
+        )
+        self.assertEqual(broken_ask.status, GuardStatus.REJECT)
+        self.assertEqual(broken_ask.gates["spread"], GuardStatus.REJECT)
+        self.assertTrue(any("INVALID_ASK" in r for r in broken_ask.reasons))
+
+        # Crossed market: bid > ask
+        crossed = evaluate_deep_itm(
+            spot=100.0, strike=73.0, dte=400.0, p_exec=27.8, delta=0.80,
+            bid=30.0, ask=28.0, open_interest=500, volume=100, ask_size=10,
+        )
+        self.assertEqual(crossed.status, GuardStatus.REJECT)
+        self.assertEqual(crossed.gates["spread"], GuardStatus.REJECT)
+        self.assertTrue(any("CROSSED_MARKET" in r for r in crossed.reasons))
 
     def test_strategy_one_promoted_delta_and_strike_window(self):
         from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm

@@ -3,6 +3,7 @@ Strategy 1: Deep ITM Stock Replacement / PMCC Base Layer.
 Screens far-dated deep in-the-money call options with low carry drag and 2.5x-4.5x effective leverage.
 Adheres strictly to Defensive Clause 2 (P_exec) and Clause 4 (operates even if IV is None).
 """
+import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 from src.leaps_scanner.core.metrics import YEAR_DAYS, calculate_carry_cost, calculate_effective_leverage
@@ -44,12 +45,12 @@ def evaluate_deep_itm(
     dte: float,
     p_exec: float,
     delta: float,
-    dividend_yield: float = 0.0,
+    dividend_yield: Optional[float] = 0.0,
     iv: Optional[float] = None,
-    bid: float = 0.0,
-    ask: float = 0.0,
-    open_interest: int = 0,
-    volume: int = 0,
+    bid: Optional[float] = None,
+    ask: Optional[float] = None,
+    open_interest: Optional[int] = None,
+    volume: Optional[int] = None,
     bid_size: int = 0,
     ask_size: int = 10,
 ) -> StrategyResult:
@@ -66,6 +67,18 @@ def evaluate_deep_itm(
             gates={"strike": GuardStatus.REJECT},
         )
 
+    # Defensive Clause 9: Cleanse dividend_yield against None, NaN, and negative values
+    if dividend_yield is None or (isinstance(dividend_yield, float) and math.isnan(dividend_yield)):
+        q_clean = 0.0
+    else:
+        try:
+            q_clean = max(0.0, float(dividend_yield))
+        except (TypeError, ValueError):
+            q_clean = 0.0
+
+    if q_clean > 0.50:
+        reasons.append(f"ABNORMAL_DIVIDEND_YIELD_{q_clean:.1%}")
+
     intrinsic = max(0.0, spot - strike)
     intrinsic_ratio = intrinsic / p_exec
 
@@ -74,10 +87,12 @@ def evaluate_deep_itm(
         strike=strike,
         dte=dte,
         p_exec=p_exec,
-        dividend_yield=dividend_yield
+        dividend_yield=q_clean
     )
-    # Strategy-1 drag: annualized time value only. Do not add q (already in the forward).
-    carry = carry_res.annualized_extrinsic_rate
+    # Strategy-1 drag: Foregone dividend yield + annualized time value
+    carry = carry_res.total_annualized_carry
+    if not math.isfinite(carry) or carry < 0.0:
+        carry = 999.0
     leverage = calculate_effective_leverage(delta=delta, spot=spot, p_exec=p_exec)
 
     # 0. Strike window [0.65S, 0.85S]
@@ -116,8 +131,11 @@ def evaluate_deep_itm(
         lev_tier = GuardStatus.REJECT
         reasons.append(f"LEVERAGE_OUT_OF_BOUNDS_{leverage:.2f}")
 
-    # 4. Time-value drag: extrinsic / (P_exec * T)
-    if carry < 0.15:
+    # 4. Carry cost drag: extrinsic / (P_exec * T) + dividend_yield (Defensive Clause 10)
+    if dte <= 0.0 or p_exec <= 0.0:
+        carry_tier = GuardStatus.REJECT
+        reasons.append("INVALID_CARRY_PARAMETERS")
+    elif carry < 0.15:
         carry_tier = GuardStatus.PASS
     elif carry < 0.25:
         carry_tier = GuardStatus.WATCH
@@ -148,7 +166,7 @@ def evaluate_deep_itm(
                 strike=strike,
                 t=t_years,
                 r=_RATE_CURVE.get_rate(t_years),
-                q=max(0.0, dividend_yield),
+                q=q_clean,
                 sigma=max(float(iv), 0.05),
             )
             theta_daily_pct = abs(greeks.theta_daily) / p_exec
@@ -182,20 +200,56 @@ def evaluate_deep_itm(
     if theta_tier is not None:
         gates["theta"] = theta_tier
 
-    # 6. Shared liquidity split into OI / spread / volume for independent toggles.
-    if ask > 0:
+    # 7. Shared liquidity guardrails & Strategy 1 Volume Adaptation
+    # If quote is provided (bid or ask is not None), strictly enforce liquidity guard
+    quote_provided = (bid is not None) or (ask is not None)
+    if quote_provided:
+        effective_bid = bid if bid is not None else 0.0
+        effective_ask = ask if ask is not None else 0.0
+        effective_oi = open_interest if open_interest is not None else 0
+        effective_vol = volume if volume is not None else 0
+
+        # Defensive Clause 8: Unconditionally evaluate liquidity guard when quotes exist
         liq = evaluate_liquidity_guard(
-            bid=bid,
-            ask=ask,
-            open_interest=open_interest,
-            volume=volume,
+            bid=effective_bid,
+            ask=effective_ask,
+            open_interest=effective_oi,
+            volume=effective_vol,
             bid_size=bid_size,
             ask_size=ask_size,
         )
         gates["spread"] = liq.spread_status
         gates["oi"] = liq.oi_status
-        gates["volume"] = liq.volume_status
-        reasons.extend(liq.reasons)
+
+        # Strategy 1 Volume Adaptation & Defensive Clause 7 (Ask Depth Guard):
+        # Daily volume must not act as a one-vote veto when spread is reasonable and OI >= 100
+        if liq.spread_status != GuardStatus.REJECT and effective_oi >= 100:
+            if ask_size <= 0:
+                # Defensive Clause 7: Empty ask order book (phantom quote)
+                vol_tier = GuardStatus.REJECT
+                reasons.append("EMPTY_ASK_BOOK")
+            elif ask_size < 5:
+                # Defensive Clause 7: Thin ask book (< target_contracts 5)
+                vol_tier = GuardStatus.WATCH
+                reasons.append(f"THIN_ASK_DEPTH_{ask_size}")
+            elif effective_oi >= 300 and liq.spread_status == GuardStatus.PASS:
+                # High OI and tight spread with adequate ask depth
+                vol_tier = GuardStatus.PASS
+            else:
+                vol_tier = GuardStatus.WATCH
+                if effective_vol < 50:
+                    reasons.append(f"LOW_VOLUME_LEAPS_{effective_vol}")
+        else:
+            vol_tier = liq.volume_status
+
+        gates["volume"] = vol_tier
+
+        # Defensive Clause 10: Clean reasons list so that non-rejected volume does not keep reject reason
+        if vol_tier != GuardStatus.REJECT:
+            liq_reasons = [r for r in liq.reasons if not r.startswith("INSUFFICIENT_ACTIVITY_")]
+        else:
+            liq_reasons = liq.reasons
+        reasons.extend(liq_reasons)
 
     status = fold_gates(gates)
     gates["liquidity"] = fold_gates({k: gates[k] for k in ("oi", "spread", "volume") if k in gates})

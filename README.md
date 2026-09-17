@@ -8,7 +8,7 @@ Research scanner for **US far-dated call options** (DTE ≥ 250). It ranks contr
 
 | Board | Idea | Notes |
 |---|---|---|
-| **1. Deep ITM** | Stock-replacement / PMCC base | Strike 0.65S–0.85S, Δ 0.70–0.85 PASS, Δ > 0.90 skipped at ingest. Carry = extrinsic / (P_exec × T). Daily θ / P_exec gated. |
+| **1. Deep ITM** | Stock-replacement / PMCC base | Strike 0.65S–0.85S, Δ 0.70–0.85 PASS, Δ > 0.90 skipped at ingest. Carry = extrinsic / (P_exec × T) + dividend yield. Liquidity prioritizes spread & OI; volume is not a one-vote veto (requires ask_size ≥ 5). Daily θ / P_exec gated. |
 | **2. Volatility discount** | Cheap vol, long vega | Real IV percentile after ≥90 stored ATM IV days. Until then Delayed uses HV20 percentile and **caps at WATCH**. |
 | **3. Oversold confluence** | Mean-reversion on core names | RSI / 200DMA / 52w / bounce score. Needs core-universe membership and ≥200 daily bars. |
 
