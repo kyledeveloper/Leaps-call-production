@@ -302,6 +302,20 @@ def evaluate_vol_discount_contract(
     )
     leverage = calculate_effective_leverage(delta=delta, spot=spot, p_exec=p_exec)
 
+    # Leverage gate (same tiers as deep_itm): extreme effective leverage turns
+    # the position into a lottery ticket, inconsistent with a long-vega stance.
+    # NOTE: carry is intentionally NOT gated on this board. It targets ATM /
+    # near-money contracts where extrinsic is structurally high; cheapness is
+    # enforced at the underlying level via the IV-percentile regime instead.
+    if 2.5 <= leverage <= 4.5:
+        lev_tier = GuardStatus.PASS
+    elif 2.0 <= leverage < 2.5 or 4.5 < leverage <= 5.5:
+        lev_tier = GuardStatus.WATCH
+    else:
+        lev_tier = GuardStatus.REJECT
+        reasons.append(f"LEVERAGE_OUT_OF_BOUNDS_{leverage:.2f}")
+    gates["leverage"] = lev_tier
+
     return VolDiscountContractResult(
         symbol=underlying_result.symbol,
         status=fold_gates(gates),

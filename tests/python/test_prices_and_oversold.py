@@ -203,7 +203,9 @@ class TestPriceStoreAndOversoldStrategy(unittest.TestCase):
         self.assertEqual(res_reject.status, GuardStatus.REJECT)
 
         # 6. Contract level evaluation
-        # Contract with passing underlying and passing liquidity
+        # Contract with passing underlying and passing liquidity.
+        # NOTE: 23.2% annualized carry now surfaces as a WATCH-tier carry gate
+        # (same tiers as deep_itm), so the overall status is WATCH, not PASS.
         c_pass = evaluate_oversold_contract(
             underlying_result=res_aapl,
             spot=185.0,
@@ -214,7 +216,9 @@ class TestPriceStoreAndOversoldStrategy(unittest.TestCase):
             liquidity_status=GuardStatus.PASS,
             days_to_earnings=30
         )
-        self.assertEqual(c_pass.status, GuardStatus.PASS)
+        self.assertEqual(c_pass.status, GuardStatus.WATCH)
+        self.assertEqual(c_pass.gates["carry"], GuardStatus.WATCH)
+        self.assertEqual(c_pass.gates["leverage"], GuardStatus.PASS)
 
         # Contract with rejected liquidity
         c_bad_liq = evaluate_oversold_contract(
@@ -242,6 +246,63 @@ class TestPriceStoreAndOversoldStrategy(unittest.TestCase):
             days_to_earnings=5
         )
         self.assertIn("EVENT_WINDOW", c_earnings.reasons)
+
+    def test_oversold_contract_leverage_and_carry_gates(self):
+        from src.leaps_scanner.strategies.oversold import (
+            evaluate_oversold_underlying,
+            evaluate_oversold_contract,
+            OversoldUnderlyingMetrics,
+        )
+
+        metrics_aapl = OversoldUnderlyingMetrics(
+            symbol="AAPL",
+            spot=185.0,
+            rsi_14=26.0,
+            pct_to_200dma=-0.12,
+            drawdown_52w_high=0.18,
+            bounce_52w_low=0.04,
+            hv_20=0.28,
+            bar_count=252,
+            is_valid=True
+        )
+        res_aapl = evaluate_oversold_underlying(metrics_aapl)
+        self.assertEqual(res_aapl.status, GuardStatus.PASS)
+
+        # 1. Lottery-ticket leverage (9.25x) must REJECT even though the
+        #    strike (1.22S) is inside the [0.50S, 1.25S] window.
+        c_lev = evaluate_oversold_contract(
+            underlying_result=res_aapl,
+            spot=185.0,
+            strike=225.0,
+            dte=350.0,
+            p_exec=3.0,
+            delta=0.15,
+            liquidity_status=GuardStatus.PASS,
+            days_to_earnings=30
+        )
+        self.assertEqual(c_lev.status, GuardStatus.REJECT)
+        self.assertTrue(
+            any(r.startswith("LEVERAGE_OUT_OF_BOUNDS") for r in c_lev.reasons)
+        )
+        self.assertEqual(c_lev.gates["leverage"], GuardStatus.REJECT)
+
+        # 2. Healthy leverage (4.07x) but 41.8% annualized carry -> REJECT.
+        c_carry = evaluate_oversold_contract(
+            underlying_result=res_aapl,
+            spot=185.0,
+            strike=170.0,
+            dte=350.0,
+            p_exec=25.0,
+            delta=0.55,
+            liquidity_status=GuardStatus.PASS,
+            days_to_earnings=30
+        )
+        self.assertEqual(c_carry.status, GuardStatus.REJECT)
+        self.assertTrue(
+            any(r.startswith("HIGH_CARRY_DRAG") for r in c_carry.reasons)
+        )
+        self.assertEqual(c_carry.gates["carry"], GuardStatus.REJECT)
+        self.assertEqual(c_carry.gates["leverage"], GuardStatus.PASS)
 
 
 if __name__ == "__main__":

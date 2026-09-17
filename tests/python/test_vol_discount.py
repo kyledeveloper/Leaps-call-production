@@ -206,6 +206,73 @@ class TestVolDiscountAndIVStore(unittest.TestCase):
         self.assertEqual(c_earnings.status, GuardStatus.WATCH)
         self.assertIn("EVENT_WINDOW", c_earnings.reasons)
 
+    def test_vol_discount_contract_leverage_gate(self):
+        from src.leaps_scanner.strategies.vol_discount import (
+            evaluate_vol_discount_underlying,
+            evaluate_vol_discount_contract,
+            VolDiscountUnderlyingMetrics
+        )
+
+        metrics = VolDiscountUnderlyingMetrics(
+            symbol="AAPL",
+            spot=220.0,
+            pct_change_20d=-0.04,
+            drawdown_52w_high=0.08,
+            current_atm_iv=0.21,
+            hv_252=0.26,
+            iv_percentile=0.15,
+            iv_rank=0.14,
+            iv_z_score=-1.2,
+            valid_history_days=220,
+            is_degraded=False
+        )
+        underlying_res = evaluate_vol_discount_underlying(metrics)
+        self.assertEqual(underlying_res.status, GuardStatus.PASS)
+
+        # 1. Lottery-ticket leverage (7.5x) must REJECT even though the
+        #    underlying regime passes and 1.20S is inside the strike window.
+        c_lottery = evaluate_vol_discount_contract(
+            underlying_result=underlying_res,
+            spot=100.0,
+            strike=120.0,
+            dte=400.0,
+            p_exec=2.0,
+            delta=0.15,
+            liquidity_status=GuardStatus.PASS
+        )
+        self.assertEqual(c_lottery.status, GuardStatus.REJECT)
+        self.assertTrue(
+            any(r.startswith("LEVERAGE_OUT_OF_BOUNDS") for r in c_lottery.reasons)
+        )
+        self.assertEqual(c_lottery.gates["leverage"], GuardStatus.REJECT)
+
+        # 2. Elevated leverage (5.0x) downgrades to WATCH, not REJECT.
+        c_watch = evaluate_vol_discount_contract(
+            underlying_result=underlying_res,
+            spot=100.0,
+            strike=112.0,
+            dte=400.0,
+            p_exec=6.0,
+            delta=0.30,
+            liquidity_status=GuardStatus.PASS
+        )
+        self.assertEqual(c_watch.status, GuardStatus.WATCH)
+        self.assertEqual(c_watch.gates["leverage"], GuardStatus.WATCH)
+
+        # 3. Healthy leverage (3.46x) still passes.
+        c_ok = evaluate_vol_discount_contract(
+            underlying_result=underlying_res,
+            spot=220.0,
+            strike=200.0,
+            dte=350.0,
+            p_exec=35.0,
+            delta=0.65,
+            liquidity_status=GuardStatus.PASS,
+            days_to_earnings=45
+        )
+        self.assertEqual(c_ok.status, GuardStatus.PASS)
+        self.assertEqual(c_ok.gates["leverage"], GuardStatus.PASS)
+
     def test_realized_vol_proxy_caps_at_watch(self):
         from src.leaps_scanner.strategies.vol_discount import (
             evaluate_vol_discount_underlying,

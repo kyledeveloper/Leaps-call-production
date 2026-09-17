@@ -4,6 +4,7 @@ Combines multiple medium-term technical indicators (RSI, 200DMA, 52w High/Low) o
 Adheres strictly to Core Universe Hard Constraint, Defensive Clause 6 (min 200 daily bars),
 and Defensive Clause 2 (P_exec & liquidity guards).
 """
+import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 from src.leaps_scanner.core.metrics import calculate_carry_cost, calculate_effective_leverage
@@ -190,7 +191,37 @@ def evaluate_oversold_contract(
     )
     leverage = calculate_effective_leverage(delta=delta, spot=spot, p_exec=p_exec)
 
-    hard = {k: gates[k] for k in ("universe", "bars", "confluence", "strike", "dte", "liquidity") if k in gates}
+    # Leverage gate (same tiers as deep_itm): extreme effective leverage turns
+    # the position into a lottery ticket, inconsistent with a bounce-capture stance.
+    if 2.5 <= leverage <= 4.5:
+        lev_tier = GuardStatus.PASS
+    elif 2.0 <= leverage < 2.5 or 4.5 < leverage <= 5.5:
+        lev_tier = GuardStatus.WATCH
+    else:
+        lev_tier = GuardStatus.REJECT
+        reasons.append(f"LEVERAGE_OUT_OF_BOUNDS_{leverage:.2f}")
+    gates["leverage"] = lev_tier
+
+    # Carry gate (same tiers as deep_itm): annualized time-value drag as a
+    # fraction of deployed capital, plus dividend yield. Unlike the vol
+    # discount board, this is a directional bounce play, so carry drag
+    # directly erodes the expected move and must be screened.
+    carry = carry_res.total_annualized_carry
+    if not math.isfinite(carry) or carry < 0.0:
+        carry = 999.0
+    if carry < 0.15:
+        carry_tier = GuardStatus.PASS
+    elif carry < 0.25:
+        carry_tier = GuardStatus.WATCH
+    elif carry < 0.35:
+        carry_tier = GuardStatus.WATCH
+        reasons.append(f"HIGH_CARRY_ELEVATED_{carry:.1%}")
+    else:
+        carry_tier = GuardStatus.REJECT
+        reasons.append(f"HIGH_CARRY_DRAG_{carry:.1%}")
+    gates["carry"] = carry_tier
+
+    hard = {k: gates[k] for k in ("universe", "bars", "confluence", "strike", "dte", "liquidity", "leverage", "carry") if k in gates}
     return OversoldContractResult(
         symbol=underlying_result.symbol,
         status=fold_gates(hard),
