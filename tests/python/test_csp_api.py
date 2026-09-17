@@ -173,6 +173,68 @@ class TestCSPApi(unittest.TestCase):
         self.assertEqual(puts[0]["strike"], 210.0)
         self.assertEqual(puts[0]["bid"], 3.50)
 
+    def test_parse_nasdaq_csp_chain_english_expiry_and_compact_occ(self):
+        """Nasdaq rows often use 'October 16, 2026' and compact OCC URLs without --."""
+        from src.leaps_scanner.data.public_delayed import parse_nasdaq_csp_chain
+        asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
+        payload = {
+            "data": {
+                "table": {
+                    "rows": [
+                        {
+                            "p_Bid": "3.50",
+                            "p_Ask": "3.80",
+                            "p_Volume": "100",
+                            "p_Openinterest": "1200",
+                            "strike": "210.00",
+                            "expiryDate": "October 16, 2026",
+                        },
+                        {
+                            "p_Bid": "4.10",
+                            "p_Ask": "4.40",
+                            "p_Volume": "80",
+                            "p_Openinterest": "900",
+                            "strike": "205.00",
+                            "drillDownURL": "/market-activity/stocks/aapl/option-chain/call-put-options/aapl261016c00205000",
+                        },
+                        {
+                            "p_Bid": "0.40",
+                            "p_Ask": "0.50",
+                            "p_Volume": "10",
+                            "p_Openinterest": "5",
+                            "strike": "200.00",
+                            "expiryDate": "September 18, 2026",
+                        },
+                    ]
+                }
+            }
+        }
+        puts = parse_nasdaq_csp_chain(payload, min_dte=7.0, max_dte=45.0, asof=asof)
+        strikes = sorted(p["strike"] for p in puts)
+        self.assertEqual(strikes, [205.0, 210.0])
+
+    def test_request_scan_clears_csp_book_when_switching_universe(self):
+        """Switching scan universe must drop the previous family's displayed book immediately."""
+        state = AppState(offline_mode=True)
+        state.run_scan(symbols=["AAPL"], family="csp")
+        self.assertGreater(len(state.csp_candidates), 0)
+        old_syms = {c.underlying for c in state.csp_candidates}
+        self.assertIn("AAPL", old_syms)
+
+        state.source = "delayed"
+
+        def fake_worker(symbols, seq=None):
+            self.assertEqual(state.csp_candidates, [])
+            self.assertIsNone(state.csp_snapshot)
+            state.scan_status = "done"
+
+        state._scan_csp_worker = fake_worker  # type: ignore[method-assign]
+        code, payload = state.request_scan(symbols=["SPY"], tier="etfs", family="csp")
+        self.assertEqual(code, 202)
+        if state._scan_thread is not None:
+            state._scan_thread.join(timeout=2.0)
+        self.assertEqual(payload.get("csp_candidate_count"), 0)
+
     def test_delayed_mode_switch_scans_csp_family(self):
         """Clicking Delayed on the CSP tab must start a CSP scan, not LEAPS."""
         state = AppState(offline_mode=True)

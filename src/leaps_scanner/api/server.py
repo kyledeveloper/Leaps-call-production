@@ -195,6 +195,12 @@ class AppState:
             self.scan_status = "running"
             self.scan_progress = {"done": 0, "total": len(syms), "symbol": None}
             self._scan_cancel = False
+            if family == "csp":
+                self.csp_candidates = []
+                self.csp_snapshot = None
+            else:
+                self.candidates = []
+                self.ranker = None
             async_scan = self.source in ("delayed", "webull")
 
         worker_fn = self._scan_csp_worker if family == "csp" else self._scan_worker

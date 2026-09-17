@@ -42,6 +42,7 @@ from src.leaps_scanner.scoring.csp_ranker import CSPCandidate, EarningsStatus
 logger = logging.getLogger(__name__)
 
 _OCC_RE = re.compile(r"([A-Za-z.]+)-{2,3}(\d{6})([cCpP])(\d{8})")
+_OCC_RE_COMPACT = re.compile(r"/([A-Za-z][A-Za-z0-9.]{0,5})(\d{6})([cCpP])(\d{8})")
 _LAST_TRADE_RE = re.compile(r"\$([0-9,]+\.?[0-9]*)")
 _ETF_SET = {s.upper() for s in CORE_ETFS}
 _SSL = ssl.create_default_context()
@@ -129,7 +130,7 @@ def parse_occ_from_nasdaq_url(url: str) -> Optional[Tuple[str, str, str, float]]
     """Parse OCC from Nasdaq drillDownURL. Returns (underlying, YYYY-MM-DD, C/P, strike)."""
     if not url:
         return None
-    match = _OCC_RE.search(url)
+    match = _OCC_RE.search(url) or _OCC_RE_COMPACT.search(url)
     if not match:
         return None
     und, yymmdd, cp, strike_raw = match.groups()
@@ -139,6 +140,21 @@ def parse_occ_from_nasdaq_url(url: str) -> Optional[Tuple[str, str, str, float]]
     expiry = f"{year:04d}-{month:02d}-{day:02d}"
     strike = int(strike_raw) / 1000.0
     return und.upper(), expiry, cp.upper(), strike
+
+
+def parse_expiry_date(raw: Any) -> Optional[str]:
+    """Normalize Nasdaq expiry strings to YYYY-MM-DD."""
+    if raw is None:
+        return None
+    text = str(raw).strip().replace("  ", " ")
+    if not text or text in ("--", "N/A", "na", "None"):
+        return None
+    for fmt in ("%Y-%m-%d", "%b %d, %Y", "%B %d, %Y", "%m/%d/%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(text, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return None
 
 
 def occ_symbol(underlying: str, expiry: str, strike: float, cp: str = "C") -> str:
@@ -221,23 +237,26 @@ def parse_nasdaq_csp_chain(
     for row in rows:
         if not isinstance(row, dict):
             continue
-        bid = _parse_num(row.get("p_Bid"))
+        bid = _parse_num(row.get("p_Bid")) or _parse_num(row.get("p_Last"))
         ask = _parse_num(row.get("p_Ask"))
         if bid is None or ask is None or bid <= 0 or ask <= 0 or bid > ask:
             continue
         oi = int(_parse_num(row.get("p_Openinterest")) or 0)
         vol = int(_parse_num(row.get("p_Volume")) or 0)
         strike = _parse_num(row.get("strike"))
-        if strike is None or strike <= 0:
-            continue
         parsed = parse_occ_from_nasdaq_url(row.get("drillDownURL") or "")
+        und = ""
+        expiry = None
         if parsed:
             und, expiry, _, parsed_strike = parsed
-            if strike is None:
+            if strike is None or strike <= 0:
                 strike = parsed_strike
-        else:
-            und = ""
-            expiry = row.get("putExpiryDate") or row.get("expiryDate") or ""
+        if strike is None or strike <= 0:
+            continue
+        if not expiry:
+            expiry = parse_expiry_date(
+                row.get("putExpiryDate") or row.get("expiryDate") or row.get("expirationDate")
+            )
         if not expiry:
             continue
         try:
@@ -317,6 +336,20 @@ def _select_contracts(rows: List[dict], spot: float, max_n: int = 48) -> List[di
     if leftover > 0:
         chosen.extend(sorted(rest, key=rank_key(0.90))[:leftover])
     return chosen
+
+
+def _select_csp_contracts(rows: List[dict], spot: float, max_n: int = 40) -> List[dict]:
+    """Keep near-OTM puts (0.70S-1.02S) for 7-45 DTE CSP scans."""
+    if spot <= 0:
+        return []
+
+    def moneyness(row: dict) -> float:
+        return row["strike"] / spot
+
+    preferred = [r for r in rows if 0.70 <= moneyness(r) <= 1.02]
+    pool = preferred or [r for r in rows if 0.60 <= moneyness(r) <= 1.05]
+    pool.sort(key=lambda r: (abs(moneyness(r) - 0.92), -r.get("open_interest", 0)))
+    return pool[:max_n]
 
 
 class PublicDelayedClient:
@@ -671,35 +704,41 @@ class PublicDelayedClient:
         if should_stop and should_stop():
             return [], None
         ticker = urllib.parse.quote(symbol)
-        start = (asof + timedelta(days=7)).date().isoformat()
-        end = (asof + timedelta(days=45)).date().isoformat()
+        start = asof.date().isoformat()
+        end = (asof + timedelta(days=60)).date().isoformat()
         last = None
         rows: List[dict] = []
         asset_classes = ["etf", "stocks"] if symbol.upper() in _ETF_SET else ["stocks", "etf"]
+        query_suffixes = (
+            f"&fromdate={start}&todate={end}&money=ntm&callput=put",
+            f"&fromdate={start}&todate={end}&money=all",
+            "&money=ntm&callput=put",
+        )
         for asset in asset_classes:
-            if should_stop and should_stop():
-                return [], None
-            url = (
-                "https://api.nasdaq.com/api/quote/"
-                f"{ticker}/option-chain?assetclass={asset}&limit=0"
-                f"&fromdate={start}&todate={end}"
-            )
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept": "application/json",
-                "Referer": f"https://www.nasdaq.com/market-activity/stocks/{symbol.lower()}/option-chain",
-                "Origin": "https://www.nasdaq.com",
-            }
-            try:
-                payload = self._get_json(url, headers, should_stop=should_stop)
-            except InterruptedError:
-                return [], None
-            except Exception:
-                continue
-            last = parse_nasdaq_last_trade((payload.get("data") or {}).get("lastTrade")) or last
-            rows = parse_nasdaq_csp_chain(payload, min_dte=7.0, max_dte=45.0, asof=asof)
-            if rows:
-                break
+            for suffix in query_suffixes:
+                if should_stop and should_stop():
+                    return [], None
+                url = (
+                    "https://api.nasdaq.com/api/quote/"
+                    f"{ticker}/option-chain?assetclass={asset}&limit=0"
+                    f"{suffix}"
+                )
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Accept": "application/json",
+                    "Referer": f"https://www.nasdaq.com/market-activity/stocks/{symbol.lower()}/option-chain",
+                    "Origin": "https://www.nasdaq.com",
+                }
+                try:
+                    payload = self._get_json(url, headers, should_stop=should_stop)
+                except InterruptedError:
+                    return [], None
+                except Exception:
+                    continue
+                last = parse_nasdaq_last_trade((payload.get("data") or {}).get("lastTrade")) or last
+                rows = parse_nasdaq_csp_chain(payload, min_dte=7.0, max_dte=45.0, asof=asof)
+                if rows:
+                    return rows, last
         return rows, last
 
     def _scan_csp_symbol(
@@ -738,6 +777,7 @@ class PublicDelayedClient:
             spot = float(bars[-1].close)
         if spot <= 0:
             return sym, []
+        rows = _select_csp_contracts(rows, spot)
         metrics = store.get_metrics(sym, spot_override=spot) if bars else None
         is_etf = sym.upper() in _ETF_SET
         hv = metrics.hv_252 if metrics and metrics.hv_252 > 0 else 0.25

@@ -1711,7 +1711,15 @@
 
     async function setScanTier(tier) {
       const activeCount = (currentFamily === 'csp') ? (lastCfg ? lastCfg.csp_candidate_count : 0) : (lastCfg ? lastCfg.candidate_count : 0);
-      paintScanTier(tier, { scan_tier: tier, scan_status: 'running', scan_progress: { done: 0, total: 0 }, candidate_count: activeCount, csp_candidate_count: activeCount, universe: {} });
+      paintScanTier(tier, {
+        scan_tier: tier,
+        scan_family: currentFamily,
+        scan_status: 'running',
+        scan_progress: { done: 0, total: 0 },
+        candidate_count: currentFamily === 'csp' ? 0 : activeCount,
+        csp_candidate_count: currentFamily === 'csp' ? 0 : (lastCfg ? lastCfg.csp_candidate_count : 0),
+        universe: {}
+      });
       try {
         const res = await fetch('/api/v1/scan', {
           method: 'POST',
