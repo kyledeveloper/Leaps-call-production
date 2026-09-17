@@ -285,7 +285,13 @@ def parse_nasdaq_csp_chain(
     for row in rows:
         if not isinstance(row, dict):
             continue
-        bid = _parse_num(row.get("p_Bid")) or _parse_num(row.get("p_Last"))
+        # DC-CSP-6: Explicit None check is required here because `_parse_num` can
+        # legitimately return 0.0 (true zero bid = un-executable for a seller).
+        # Using `or` would be falsy on 0.0 and silently swap to a stale p_Last price,
+        # bypassing the `bid <= 0` rejection gate below.
+        bid = _parse_num(row.get("p_Bid"))
+        if bid is None:
+            bid = _parse_num(row.get("p_Last"))
         ask = _parse_num(row.get("p_Ask"))
         if bid is None or ask is None or bid <= 0 or ask <= 0 or bid > ask:
             continue
@@ -936,7 +942,9 @@ class PublicDelayedClient:
             iv = iv_res.iv if iv_res.iv is not None else (hv if hv > 0 else 0.25)
             try:
                 greeks = calculate_american_put_greeks(spot, strike, t_years, r, div_yield, iv)
-                delta = greeks.delta if greeks.delta <= 0.0 else -abs(greeks.delta)
+                # greeks.delta is already clamped to [-1.0, 0.0] by the engine (DC-CSP-3);
+                # no need for a second flip here.
+                delta = greeks.delta
             except Exception:
                 delta = calculate_put_fallback_delta(spot, strike)
             if delta >= 0.0 or delta < -1.0:

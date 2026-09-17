@@ -132,8 +132,12 @@ def calculate_american_put_greeks(
     # 3. Vega (Volatility sensitivity per 1% change in sigma)
     dvol = 0.005
     p_vol_up = bjerksund_stensland_put(spot, strike, t, r, q, sigma + dvol)
-    p_vol_down = bjerksund_stensland_put(spot, strike, t, r, q, max(1e-4, sigma - dvol))
-    vega = max(0.0, (p_vol_up - p_vol_down) / (2.0 * dvol * 100.0))
+    # When sigma is very low, the downward shock is clamped; use the actual shift
+    # magnitude in the denominator so Vega is not understated in low-IV regimes.
+    vol_down = max(1e-4, sigma - dvol)
+    p_vol_down = bjerksund_stensland_put(spot, strike, t, r, q, vol_down)
+    actual_dvol = (sigma + dvol) - vol_down  # equals 2*dvol unless clamped
+    vega = max(0.0, (p_vol_up - p_vol_down) / (actual_dvol * 100.0))
 
     # 4. Rho (Interest rate sensitivity per 1% change in r)
     dr = 0.001

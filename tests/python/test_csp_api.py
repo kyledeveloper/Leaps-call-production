@@ -432,5 +432,105 @@ class TestCSPApi(unittest.TestCase):
         self.assertEqual(captured.get("queries", {}).get("option_type"), "PUT")
 
 
+class TestCSPBugRegressions(unittest.TestCase):
+    """Regression tests for bugs found in the CSP code audit."""
+
+    def test_zero_bid_must_not_be_masked_by_p_last_fallback(self):
+        """
+        DC-CSP-6 regression: A genuine zero bid (p_Bid=0.0) must NOT be silently
+        replaced by a stale p_Last price via Python's falsy `or` operator.
+        The contract must be hard-rejected by the zero-bid gate.
+        Bug: `bid = _parse_num(p_Bid) or _parse_num(p_Last)` -- when p_Bid parses
+        to 0.0 (falsy), p_Last is used instead, bypassing the `bid <= 0` gate.
+        """
+        from datetime import datetime, timezone
+        from src.leaps_scanner.data.public_delayed import parse_nasdaq_csp_chain
+
+        # A contract with genuine zero market bid but a stale last trade of $2.50
+        payload = {
+            "data": {
+                "table": {
+                    "rows": [
+                        {
+                            "p_Bid": "0.00",        # True zero bid: no buyer in market
+                            "p_Ask": "3.50",
+                            "p_Last": "2.50",       # Stale last trade: MUST NOT substitute bid
+                            "p_Volume": "10",
+                            "p_Openinterest": "500",
+                            "strike": "195.00",
+                            "drillDownURL": "/market-activity/stocks/aapl/option-chain/call-put-options/aapl--261016p00195000",
+                        }
+                    ]
+                }
+            }
+        }
+        asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
+        # Must be rejected: zero-bid contract is un-executable for a seller
+        puts = parse_nasdaq_csp_chain(payload, min_dte=7.0, max_dte=45.0, asof=asof)
+        self.assertEqual(len(puts), 0, (
+            "A contract with zero bid (p_Bid=0.00) must be rejected by the DC-CSP-6 "
+            "zero-bid gate, not masked by p_Last fallback."
+        ))
+
+    def test_valid_nonzero_bid_with_p_last_still_accepted(self):
+        """Sanity check: a valid positive bid is still parsed and accepted."""
+        from datetime import datetime, timezone
+        from src.leaps_scanner.data.public_delayed import parse_nasdaq_csp_chain
+
+        payload = {
+            "data": {
+                "table": {
+                    "rows": [
+                        {
+                            "p_Bid": "3.50",
+                            "p_Ask": "3.80",
+                            "p_Last": "3.60",
+                            "p_Volume": "100",
+                            "p_Openinterest": "1200",
+                            "strike": "210.00",
+                            "drillDownURL": "/market-activity/stocks/aapl/option-chain/call-put-options/aapl--261016p00210000",
+                        }
+                    ]
+                }
+            }
+        }
+        asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
+        puts = parse_nasdaq_csp_chain(payload, min_dte=7.0, max_dte=45.0, asof=asof)
+        self.assertEqual(len(puts), 1)
+        self.assertEqual(puts[0]["bid"], 3.50)
+
+    def test_none_bid_falls_back_to_p_last_when_p_bid_missing(self):
+        """
+        Acceptable fallback: if p_Bid field is entirely absent (None), falling
+        back to p_Last is correct behaviour (last trade as proxy).
+        """
+        from datetime import datetime, timezone
+        from src.leaps_scanner.data.public_delayed import parse_nasdaq_csp_chain
+
+        payload = {
+            "data": {
+                "table": {
+                    "rows": [
+                        {
+                            # p_Bid key entirely absent: legitimate fallback to p_Last
+                            "p_Ask": "3.80",
+                            "p_Last": "3.50",
+                            "p_Volume": "100",
+                            "p_Openinterest": "1200",
+                            "strike": "210.00",
+                            "drillDownURL": "/market-activity/stocks/aapl/option-chain/call-put-options/aapl--261016p00210000",
+                        }
+                    ]
+                }
+            }
+        }
+        asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
+        puts = parse_nasdaq_csp_chain(payload, min_dte=7.0, max_dte=45.0, asof=asof)
+        # p_Last=3.50 should substitute and pass the gate
+        self.assertEqual(len(puts), 1)
+        self.assertAlmostEqual(puts[0]["bid"], 3.50)
+
+
 if __name__ == "__main__":
     unittest.main()
+
