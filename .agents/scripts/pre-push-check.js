@@ -68,7 +68,9 @@ const IGNORE_PATTERNS = [
   /DUMMY_KEY/i,
   /test-sum-calc/i,
   /<.*api.*key.*>/i,
-  /<.*token.*>/i
+  /<.*token.*>/i,
+  /data:(?:font|image|application|audio|video|text)\/[a-zA-Z0-9\-\+\.]+;base64,/i,
+  /\burl\(\s*['"]?data:[^'"]+['"]?\s*\)/i
 ];
 
 /**
