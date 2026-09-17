@@ -496,6 +496,13 @@
     .toggle button.on-sandbox { background: rgba(251, 191, 36, 0.2); color: var(--accent-amber); }
     .toggle button.on-delayed { background: rgba(56, 189, 248, 0.2); color: var(--accent-blue); }
     .toggle button.on-live { background: rgba(52, 211, 153, 0.2); color: var(--accent-green); }
+    .toggle button:disabled, .toggle button.disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      pointer-events: none;
+      background: transparent !important;
+      color: var(--text-muted) !important;
+    }
     .tier-toggle {
       display: flex;
       flex-wrap: wrap;
@@ -597,12 +604,12 @@
     <div class="source-row">
       <div>
         <strong data-i18n="marketDataSource">Market data source</strong>
-        <div class="hint" id="sourceHint" data-i18n="sourceHintDefault">Sandbox fixtures by default. Delayed public uses Yahoo daily bars + Nasdaq OPRA delayed chains — no keys. Webull still needs OpenAPI keys.</div>
+        <div class="hint" id="sourceHint" data-i18n="sourceHintDefault">Delayed public uses Yahoo daily bars + Nasdaq OPRA delayed chains — no keys required (Sandbox and Live Webull disabled).</div>
       </div>
       <div class="toggle" role="group" aria-label="Data source">
-        <button type="button" id="btnSandbox" class="on-sandbox" onclick="switchSource('sandbox')" data-i18n="btnSandbox">Sandbox</button>
-        <button type="button" id="btnDelayed" onclick="switchSource('delayed')" data-i18n="btnDelayed">Delayed public</button>
-        <button type="button" id="btnLive" onclick="switchSource('webull')" data-i18n="btnLive">Live Webull</button>
+        <button type="button" id="btnSandbox" class="disabled" disabled title="Sandbox mode disabled" data-i18n="btnSandbox">Sandbox</button>
+        <button type="button" id="btnDelayed" class="on-delayed" onclick="switchSource('delayed')" data-i18n="btnDelayed">Delayed public</button>
+        <button type="button" id="btnLive" class="disabled" disabled title="Live Webull disabled" data-i18n="btnLive">Live Webull</button>
       </div>
     </div>
     <form id="credForm" class="cred-grid" style="display:none;" onsubmit="connectLive(event)">
@@ -808,7 +815,7 @@
         syncing: 'Syncing...',
         refreshScan: '🔄 Refresh Scan',
         marketDataSource: 'Market data source',
-        sourceHintDefault: 'Sandbox fixtures by default. Delayed public uses Yahoo daily bars + Nasdaq OPRA delayed chains — no keys. Webull still needs OpenAPI keys.',
+        sourceHintDefault: 'Delayed public uses Yahoo daily bars + Nasdaq OPRA delayed chains — no keys required (Sandbox and Live Webull disabled).',
         btnSandbox: 'Sandbox',
         btnDelayed: 'Delayed public',
         btnLive: 'Live Webull',
@@ -934,7 +941,7 @@
         syncing: '同步中…',
         refreshScan: '🔄 重新扫描',
         marketDataSource: '行情数据源',
-        sourceHintDefault: '默认使用沙盒样本。公开延迟走 Yahoo 日线 + Nasdaq OPRA 延迟期权链，无需密钥。Webull 仍需 OpenAPI 密钥。',
+        sourceHintDefault: '当前仅启用公开延迟行情（走 Yahoo 日线 + Nasdaq OPRA 延迟期权链，无需密钥）。沙盒与 Webull 实盘已停用。',
         btnSandbox: '沙盒',
         btnDelayed: '公开延迟',
         btnLive: 'Webull 实盘',
@@ -1544,11 +1551,18 @@
       const delayedBtn = document.getElementById('btnDelayed');
       const liveBtn = document.getElementById('btnLive');
       const form = document.getElementById('credForm');
-      const source = cfg.source || (cfg.offline_mode ? 'sandbox' : 'webull');
-      sandboxBtn.className = source === 'sandbox' ? 'on-sandbox' : '';
-      delayedBtn.className = source === 'delayed' ? 'on-delayed' : '';
-      liveBtn.className = source === 'webull' && !cfg.offline_mode ? 'on-live' : '';
-      form.style.display = source === 'webull' && (cfg.error === 'missing_credentials' || cfg.last_error === 'missing_credentials' || cfg.error === 'auth_failed') ? 'grid' : 'none';
+      if (sandboxBtn) {
+        sandboxBtn.className = 'disabled';
+        sandboxBtn.disabled = true;
+      }
+      if (liveBtn) {
+        liveBtn.className = 'disabled';
+        liveBtn.disabled = true;
+      }
+      if (delayedBtn) {
+        delayedBtn.className = 'on-delayed';
+      }
+      if (form) form.style.display = 'none';
       paintSourceStatus(cfg);
       paintScanTier(cfg.scan_tier, cfg);
       if (cfg.scan_status === 'running' && scanMatchesFamily(cfg)) startScanPoll();
@@ -1567,29 +1581,17 @@
     }
 
     async function switchSource(source) {
+      if (source === 'sandbox' || source === 'webull') return;
       const hint = document.getElementById('sourceHint');
       const form = document.getElementById('credForm');
-      if (source === 'webull') {
-        form.style.display = 'grid';
-        const key = document.getElementById('appKey').value.trim();
-        const secret = document.getElementById('appSecret').value.trim();
-        if (!key && !secret) {
-          hint.className = 'hint';
-          hint.innerText = t('pasteKeys');
-          return;
-        }
-        return connectLive();
-      }
-      form.style.display = 'none';
+      if (form) form.style.display = 'none';
       hint.className = 'hint';
-      hint.innerText = source === 'delayed'
-        ? t(currentFamily === 'csp' ? 'fetchingDelayedCsp' : 'fetchingDelayed')
-        : t('loadingSandbox');
+      hint.innerText = t(currentFamily === 'csp' ? 'fetchingDelayedCsp' : 'fetchingDelayed');
       try {
         const res = await fetch('/api/v1/mode', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ source, family: currentFamily })
+          body: JSON.stringify({ source: 'delayed', family: currentFamily })
         });
         const cfg = await res.json();
         await applyConfig(cfg);
