@@ -100,7 +100,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     alpha = max(0.0, min(1.0, args.alpha))
 
     state = AppState(offline_mode=args.offline)
-    state.run_scan(symbols=symbols)
+    state.run_scan(symbols=symbols, family=args.family)
     if args.family == "csp":
         from src.leaps_scanner.scoring.csp_ranker import CSPFilterConfig
         cfg = CSPFilterConfig(

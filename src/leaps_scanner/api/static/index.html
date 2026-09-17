@@ -1413,17 +1413,18 @@
       const prog = (cfg && cfg.scan_progress) || {};
       const status = cfg && cfg.scan_status;
       const tierLabel = t(targetMeta.labelKey);
+      const cCount = (currentFamily === 'csp') ? ((cfg && cfg.csp_candidate_count != null) ? cfg.csp_candidate_count : 0) : ((cfg && cfg.candidate_count != null) ? cfg.candidate_count : 0);
       if (status === 'running') {
         hint.innerText = t('scanning', { tier: tierLabel, done: prog.done || 0, total: prog.total || n })
           + (prog.symbol ? ` · ${prog.symbol}` : '')
-          + t('contractsSoFar', { n: cfg.candidate_count || 0 });
+          + t('contractsSoFar', { n: cCount });
       } else if (status === 'error') {
         hint.innerText = t('scanError', { error: (cfg && (cfg.last_error || cfg.error)) || 'unknown' });
       } else {
         hint.innerText = t('scanSummary', {
           tier: tierLabel,
           names: cfg && cfg.scan_symbol_count ? cfg.scan_symbol_count : n,
-          n: cfg && cfg.candidate_count != null ? cfg.candidate_count : 0
+          n: cCount
         });
       }
     }
@@ -1620,7 +1621,7 @@
         const res = await fetch('/api/v1/scan', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({})
+          body: JSON.stringify({ family: currentFamily })
         });
         const cfg = await res.json();
         await applyConfig(cfg);
@@ -1632,12 +1633,13 @@
     }
 
     async function setScanTier(tier) {
-      paintScanTier(tier, { scan_tier: tier, scan_status: 'running', scan_progress: { done: 0, total: 0 }, candidate_count: 0, universe: {} });
+      const activeCount = (currentFamily === 'csp') ? (lastCfg ? lastCfg.csp_candidate_count : 0) : (lastCfg ? lastCfg.candidate_count : 0);
+      paintScanTier(tier, { scan_tier: tier, scan_status: 'running', scan_progress: { done: 0, total: 0 }, candidate_count: activeCount, csp_candidate_count: activeCount, universe: {} });
       try {
         const res = await fetch('/api/v1/scan', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ tier })
+          body: JSON.stringify({ tier, family: currentFamily })
         });
         const cfg = await res.json();
         if (res.status === 409) {

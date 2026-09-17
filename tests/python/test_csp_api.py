@@ -7,6 +7,7 @@ Tests:
 """
 import json
 import unittest
+from datetime import datetime, timezone
 
 from src.leaps_scanner.api.server import AppState, create_api_handler_class
 from src.leaps_scanner.scoring.csp_ranker import CSPCandidate, EarningsStatus
@@ -99,6 +100,73 @@ class TestCSPApi(unittest.TestCase):
         self.assertEqual(code_wf, 200)
         self.assertIn("text/html", headers_wf["Content-Type"])
         self.assertIn(b"CSP", body_wf)
+
+    def test_pipeline_isolation_leaps_vs_csp(self):
+        """Verify complete isolation: CSP scan does not pull LEAPS, and LEAPS scan does not pull CSP."""
+        # 1. Scanning CSP only
+        state_csp = AppState(offline_mode=True)
+        count_csp = state_csp.run_scan(symbols=["AAPL", "SPY"], family="csp")
+        self.assertGreater(count_csp, 0)
+        self.assertEqual(len(state_csp.csp_candidates), count_csp)
+        self.assertEqual(len(state_csp.candidates), 0, "CSP scan must NEVER pull LEAPS candidates")
+        self.assertIsNone(state_csp.ranker, "LEAPS ranker must NOT be initialized during CSP scan")
+
+        # 2. Scanning LEAPS only
+        state_leaps = AppState(offline_mode=True)
+        count_leaps = state_leaps.run_scan(symbols=["AAPL", "SPY"], family="leaps")
+        self.assertGreater(count_leaps, 0)
+        self.assertEqual(len(state_leaps.candidates), count_leaps)
+        self.assertEqual(len(state_leaps.csp_candidates), 0, "LEAPS scan must NEVER pull CSP candidates")
+        self.assertIsNone(state_leaps.csp_snapshot, "CSP snapshot must NOT be initialized during LEAPS scan")
+
+    def test_post_scan_with_family_routing(self):
+        """Verify POST /api/v1/scan with family='csp' routes strictly to CSP worker."""
+        state = AppState(offline_mode=True)
+        handler_cls = create_api_handler_class(state)
+        req = {"family": "csp", "symbols": ["AAPL", "NVDA"]}
+        code, headers, body = handler_cls.dispatch("POST", "/api/v1/scan", json.dumps(req).encode("utf-8"))
+        self.assertEqual(code, 200)
+        self.assertGreater(len(state.csp_candidates), 0)
+        self.assertEqual(len(state.candidates), 0, "LEAPS candidate store must remain empty")
+
+        cfg = json.loads(body.decode("utf-8"))
+        self.assertEqual(cfg.get("scan_family"), "csp")
+        self.assertEqual(cfg.get("csp_candidate_count"), len(state.csp_candidates))
+
+    def test_parse_nasdaq_csp_chain_and_concurrency(self):
+        """Test parse_nasdaq_csp_chain filters put contracts within 7~45 DTE."""
+        from src.leaps_scanner.data.public_delayed import parse_nasdaq_csp_chain
+        mock_payload = {
+            "data": {
+                "table": {
+                    "rows": [
+                        {
+                            "p_Bid": "3.50",
+                            "p_Ask": "3.80",
+                            "p_Volume": "100",
+                            "p_Openinterest": "1200",
+                            "strike": "210.00",
+                            "drillDownURL": "/market-activity/stocks/aapl/option-chain/call-put-options/aapl--261016p00210000",
+                        },
+                        {
+                            "p_Bid": "0.50",
+                            "p_Ask": "0.60",
+                            "p_Volume": "5",
+                            "p_Openinterest": "10",
+                            "strike": "180.00",
+                            "drillDownURL": "/market-activity/stocks/aapl/option-chain/call-put-options/aapl--270115p00180000",  # DTE > 45, rejected
+                        }
+                    ]
+                }
+            }
+        }
+        asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
+        # 261016 is 2026-10-16, exactly 30 days away (7 <= 30 <= 45) -> passes!
+        # 270115 is 2027-01-15, > 45 days away -> rejected!
+        puts = parse_nasdaq_csp_chain(mock_payload, min_dte=7.0, max_dte=45.0, asof=asof)
+        self.assertEqual(len(puts), 1)
+        self.assertEqual(puts[0]["strike"], 210.0)
+        self.assertEqual(puts[0]["bid"], 3.50)
 
 
 if __name__ == "__main__":

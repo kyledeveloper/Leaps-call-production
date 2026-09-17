@@ -33,6 +33,7 @@ from src.leaps_scanner.data.store.daily_bars import DailyBarCache
 from src.leaps_scanner.data.universe import CORE_ETFS, SymbologyNormalizer
 from src.leaps_scanner.data.funnel import keep_scan_delta
 from src.leaps_scanner.scoring.ranker import StrategyCandidate
+from src.leaps_scanner.scoring.csp_ranker import CSPCandidate, EarningsStatus
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +199,60 @@ def parse_nasdaq_chain(payload: dict, min_dte: float = 250.0, asof: Optional[dat
             "open_interest": oi,
             "volume": vol,
             "symbol": occ_symbol(und, expiry, strike, "C"),
+        })
+    return out
+
+
+def parse_nasdaq_csp_chain(
+    payload: dict,
+    min_dte: float = 7.0,
+    max_dte: float = 45.0,
+    asof: Optional[datetime] = None,
+) -> List[dict]:
+    """Flatten Nasdaq option-chain JSON into Put rows within 7~45 DTE."""
+    asof = asof or datetime.now(timezone.utc)
+    data = payload.get("data") or {}
+    rows = ((data.get("table") or {}).get("rows")) or []
+    out: List[dict] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        bid = _parse_num(row.get("p_Bid"))
+        ask = _parse_num(row.get("p_Ask"))
+        if bid is None or ask is None or bid <= 0 or ask <= 0 or bid > ask:
+            continue
+        oi = int(_parse_num(row.get("p_Openinterest")) or 0)
+        vol = int(_parse_num(row.get("p_Volume")) or 0)
+        strike = _parse_num(row.get("strike"))
+        if strike is None or strike <= 0:
+            continue
+        parsed = parse_occ_from_nasdaq_url(row.get("drillDownURL") or "")
+        if parsed:
+            und, expiry, _, parsed_strike = parsed
+            if strike is None:
+                strike = parsed_strike
+        else:
+            und = ""
+            expiry = row.get("putExpiryDate") or row.get("expiryDate") or ""
+        if not expiry:
+            continue
+        try:
+            exp_dt = datetime.strptime(expiry, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        dte = (exp_dt - asof).total_seconds() / 86400.0
+        if dte < min_dte or dte > max_dte:
+            continue
+        out.append({
+            "underlying": und,
+            "expiry": expiry,
+            "strike": strike,
+            "dte": dte,
+            "bid": bid,
+            "ask": ask,
+            "open_interest": oi,
+            "volume": vol,
+            "symbol": occ_symbol(und, expiry, strike, "P") if und else f"PUT_{strike}_{expiry}",
         })
     return out
 
@@ -601,4 +656,194 @@ class PublicDelayedClient:
                     self.bar_cache.flush()
                 except Exception as exc:
                     logger.warning("Failed to flush bar_cache: %s", exc)
+        return out
+
+    def _nasdaq_csp_chain(
+        self,
+        symbol: str,
+        asof: datetime,
+        should_stop: Optional[StopFn] = None,
+    ) -> Tuple[List[dict], Optional[float]]:
+        if should_stop and should_stop():
+            return [], None
+        ticker = urllib.parse.quote(symbol)
+        start = (asof + timedelta(days=7)).date().isoformat()
+        end = (asof + timedelta(days=45)).date().isoformat()
+        last = None
+        rows: List[dict] = []
+        asset_classes = ["etf", "stocks"] if symbol.upper() in _ETF_SET else ["stocks", "etf"]
+        for asset in asset_classes:
+            if should_stop and should_stop():
+                return [], None
+            url = (
+                "https://api.nasdaq.com/api/quote/"
+                f"{ticker}/option-chain?assetclass={asset}&limit=0"
+                f"&fromdate={start}&todate={end}"
+            )
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "application/json",
+                "Referer": f"https://www.nasdaq.com/market-activity/stocks/{symbol.lower()}/option-chain",
+                "Origin": "https://www.nasdaq.com",
+            }
+            try:
+                payload = self._get_json(url, headers, should_stop=should_stop)
+            except InterruptedError:
+                return [], None
+            except Exception:
+                continue
+            last = parse_nasdaq_last_trade((payload.get("data") or {}).get("lastTrade")) or last
+            rows = parse_nasdaq_csp_chain(payload, min_dte=7.0, max_dte=45.0, asof=asof)
+            if rows:
+                break
+        return rows, last
+
+    def _scan_csp_symbol(
+        self,
+        raw: str,
+        asof: datetime,
+        should_stop: Optional[StopFn] = None,
+    ) -> Tuple[str, List[CSPCandidate]]:
+        sym = SymbologyNormalizer.to_canonical(raw)
+        if should_stop and should_stop():
+            return sym, []
+        try:
+            spot, bars, div_yield = self._yahoo_chart(sym, should_stop=should_stop)
+        except InterruptedError:
+            return sym, []
+        except Exception as exc:
+            logger.warning("Yahoo chart failed for %s: %s", sym, exc)
+            spot, bars, div_yield = 0.0, [], 0.0
+        if should_stop and should_stop():
+            return sym, []
+        store = PriceStore()
+        if bars:
+            store.add_bars(sym, bars)
+        try:
+            rows, nasdaq_spot = self._nasdaq_csp_chain(sym, asof, should_stop=should_stop)
+        except InterruptedError:
+            return sym, []
+        except Exception as exc:
+            logger.warning("Nasdaq CSP chain failed for %s: %s", sym, exc)
+            return sym, []
+        if should_stop and should_stop():
+            return sym, []
+        if nasdaq_spot and nasdaq_spot > 0:
+            spot = nasdaq_spot
+        elif spot <= 0 and bars:
+            spot = float(bars[-1].close)
+        if spot <= 0:
+            return sym, []
+        metrics = store.get_metrics(sym, spot_override=spot) if bars else None
+        is_etf = sym.upper() in _ETF_SET
+        hv = metrics.hv_252 if metrics and metrics.hv_252 > 0 else 0.25
+        rsi = metrics.rsi_14 if metrics else 50.0
+        dma = metrics.pct_to_200dma if metrics else 0.0
+
+        symbol_rows: List[CSPCandidate] = []
+        for row in rows:
+            if should_stop and should_stop():
+                return sym, []
+            strike = row["strike"]
+            if strike > 1.02 * spot or strike < 0.60 * spot:
+                continue
+            t_years = row["dte"] / 365.25
+            r = self.rates.get_rate(t_years)
+            mid = (row["bid"] + row["ask"]) / 2.0
+            iv_res = solve_implied_volatility(
+                mid, spot, strike, t_years, r, div_yield, initial_guess=max(0.12, hv)
+            )
+            iv = iv_res.iv if iv_res.iv is not None else (hv if hv > 0 else 0.25)
+            try:
+                greeks = calculate_american_greeks(spot, strike, t_years, r, div_yield, iv)
+                delta = greeks.delta if greeks.delta <= 0.0 else -abs(greeks.delta)
+            except Exception:
+                delta = max(-0.95, min(-0.05, -0.5 * (strike / max(spot, 1.0))))
+            if delta >= 0.0:
+                continue
+            symbol_rows.append(CSPCandidate(
+                symbol=row["symbol"],
+                underlying=sym.upper(),
+                spot=spot,
+                strike=strike,
+                dte=row["dte"],
+                bid=row["bid"],
+                ask=row["ask"],
+                delta=delta,
+                open_interest=row["open_interest"],
+                volume=row["volume"],
+                iv=iv,
+                iv_rank=0.50,
+                iv_percentile=0.50,
+                rsi_14=rsi,
+                pct_to_200dma=dma,
+                earnings_status=EarningsStatus.EARNINGS_UNVERIFIED,
+                is_etf=is_etf
+            ))
+        return sym, symbol_rows
+
+    def get_csp_candidates(
+        self,
+        symbols: List[str],
+        progress_cb: Optional[Callable[[int, int, str, List[CSPCandidate]], None]] = None,
+        should_stop: Optional[StopFn] = None,
+    ) -> List[CSPCandidate]:
+        """
+        Concurrently fetch CSP candidates (7~45 DTE Puts) across symbols.
+        Uses ThreadPoolExecutor for multi-threaded parallel scanning.
+        """
+        asof = datetime.now(timezone.utc)
+        names = [SymbologyNormalizer.to_canonical(s) for s in symbols]
+        total = len(names)
+        out: List[CSPCandidate] = []
+        if total == 0:
+            return out
+
+        completed = 0
+        collect_lock = threading.Lock()
+        workers = min(self.max_workers, total)
+
+        def consume(sym: str, batch: List[CSPCandidate]) -> None:
+            nonlocal completed
+            with collect_lock:
+                completed += 1
+                done = completed
+                out.extend(batch)
+            if progress_cb:
+                try:
+                    progress_cb(done, total, sym, batch)
+                except Exception as cb_err:
+                    logger.warning("CSP progress callback error for %s: %s", sym, cb_err)
+
+        if workers <= 1:
+            for raw in names:
+                if should_stop and should_stop():
+                    break
+                sym, batch = self._scan_csp_symbol(raw, asof, should_stop=should_stop)
+                consume(sym, batch)
+        else:
+            pool = ThreadPoolExecutor(max_workers=workers)
+            try:
+                futures = {
+                    pool.submit(self._scan_csp_symbol, raw, asof, should_stop): raw
+                    for raw in names
+                }
+                for fut in as_completed(futures):
+                    if should_stop and should_stop():
+                        for pending in futures:
+                            pending.cancel()
+                        break
+                    try:
+                        sym, batch = fut.result()
+                    except Exception as exc:
+                        raw = futures[fut]
+                        logger.warning("Delayed CSP scan failed for %s: %s", raw, exc)
+                        consume(str(raw), [])
+                        continue
+                    consume(sym, batch)
+            finally:
+                for pending in futures:
+                    pending.cancel()
+                pool.shutdown(wait=True, cancel_futures=True)
+
         return out

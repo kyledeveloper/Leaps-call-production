@@ -18,6 +18,7 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
@@ -884,12 +885,46 @@ class WebullClient:
                     ))
             return candidates
 
-        for raw_sym in symbols:
+        def _fetch_sym_csp(raw_sym: str) -> List[CSPCandidate]:
             sym = SymbologyNormalizer.to_canonical(raw_sym)
+            res: List[CSPCandidate] = []
             try:
                 raw_contracts = self.query_options_contracts(sym)
+                # Parse and filter put contracts
+                for c in raw_contracts:
+                    if str(c.get("direction", "")).lower() != "put":
+                        continue
+                    dte = float(c.get("dte", 0))
+                    if dte < 7 or dte > 45:
+                        continue
+                    delta = float(c.get("delta", -0.20))
+                    if delta >= 0.0:
+                        continue
+                    res.append(CSPCandidate(
+                        symbol=c.get("symbol", f"{sym}_PUT"),
+                        underlying=sym.upper(),
+                        strike=float(c.get("strike", 0)),
+                        spot=float(c.get("spot", 0)),
+                        dte=dte,
+                        bid=float(c.get("bid", 0)),
+                        ask=float(c.get("ask", 0)),
+                        delta=delta,
+                        open_interest=int(c.get("open_interest", 0)),
+                        volume=int(c.get("volume", 0)),
+                        iv=c.get("iv"),
+                        iv_rank=c.get("iv_rank"),
+                        iv_percentile=c.get("iv_percentile"),
+                        earnings_status=EarningsStatus.EARNINGS_UNVERIFIED,
+                        is_etf=sym.upper() in _ETF_SET
+                    ))
             except Exception as e:
                 logger.error("Failed to query live CSP contracts for %s: %s", sym, e)
+            return res
+
+        workers = min(8, max(1, len(symbols)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for batch in pool.map(_fetch_sym_csp, symbols):
+                candidates.extend(batch)
 
         return candidates
 

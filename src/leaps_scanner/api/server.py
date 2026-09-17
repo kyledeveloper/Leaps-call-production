@@ -9,6 +9,7 @@ import logging
 import os
 import threading
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -114,6 +115,7 @@ class AppState:
         self.source: str = "sandbox" if offline_mode else "webull"
         self.connection_status: str = "sandbox" if offline_mode else "live"
         self.scan_tier: str = "etfs"
+        self.scan_family: str = "leaps"
         self.scan_status: str = "idle"
         self.scan_progress: Dict[str, Any] = {"done": 0, "total": 0, "symbol": None}
         self.scanned_symbols: List[str] = []
@@ -141,7 +143,7 @@ class AppState:
         names = [SymbologyNormalizer.to_canonical(s) for s in names]
         return names or list(DEFAULT_SCAN_SYMBOLS)
 
-    def run_scan(self, symbols: Optional[List[str]] = None, tier: Optional[str] = None) -> int:
+    def run_scan(self, symbols: Optional[List[str]] = None, tier: Optional[str] = None, family: str = "leaps") -> int:
         """Synchronous scan used by tests and sandbox mode switches."""
         if tier:
             normalized = normalize_scan_tier(tier)
@@ -150,20 +152,26 @@ class AppState:
             self._scan_seq += 1
             seq = self._scan_seq
             self._scan_cancel = False
+            self.scan_family = family
         syms = [SymbologyNormalizer.to_canonical(s) for s in symbols] if symbols else self.resolve_scan_symbols()
-        self._scan_worker(syms, seq)
-        return len(self.candidates)
+        if family == "csp":
+            self._scan_csp_worker(syms, seq)
+            return len(self.csp_candidates)
+        else:
+            self._scan_worker(syms, seq)
+            return len(self.candidates)
 
     def request_scan(
         self,
         symbols: Optional[List[str]] = None,
         tier: Optional[str] = None,
+        family: str = "leaps",
     ) -> Tuple[int, Dict[str, Any]]:
         """
-        Scan the selected universe tier.
+        Scan the selected universe tier for the requested strategy family ('leaps' or 'csp').
         Sandbox runs inline. Delayed/Webull run in the background.
         Switching tiers cancels the in-flight scan and starts the new one.
-        Repeating the same tier while it is already running returns 409.
+        Repeating the same tier and family while already running returns 409.
         """
         target_tier = None
         if tier:
@@ -174,10 +182,12 @@ class AppState:
 
         with self._lock:
             same_tier = target_tier is None or target_tier == self.scan_tier
-            if self.scan_status == "running" and same_tier:
-                return 409, {**self.public_config(), "error": "scan_in_progress", "message": "A scan is already running."}
+            same_family = getattr(self, "scan_family", "leaps") == family
+            if self.scan_status == "running" and same_tier and same_family:
+                return 409, {**self.public_config(), "error": "scan_in_progress", "message": f"A {family.upper()} scan is already running."}
             self._scan_seq += 1
             seq = self._scan_seq
+            self.scan_family = family
             if target_tier:
                 self.scan_tier = target_tier
             syms = [SymbologyNormalizer.to_canonical(s) for s in symbols] if symbols else self.resolve_scan_symbols()
@@ -187,15 +197,16 @@ class AppState:
             self._scan_cancel = False
             async_scan = self.source in ("delayed", "webull")
 
+        worker_fn = self._scan_csp_worker if family == "csp" else self._scan_worker
         if async_scan:
-            self._scan_thread = threading.Thread(target=self._scan_worker, args=(syms, seq), daemon=True)
+            self._scan_thread = threading.Thread(target=worker_fn, args=(syms, seq), daemon=True)
             self._scan_thread.start()
             payload = self.public_config()
-            payload["message"] = f"Scanning {self.scan_tier} ({len(syms)} names) in the background."
+            payload["message"] = f"Scanning {self.scan_tier} ({len(syms)} names) for {family.upper()} in the background."
             return 202, payload
-        self._scan_worker(syms, seq)
+        worker_fn(syms, seq)
         payload = self.public_config()
-        payload["message"] = f"Scanned {self.scan_tier} ({len(self.scanned_symbols)} names)."
+        payload["message"] = f"Scanned {self.scan_tier} ({len(self.scanned_symbols)} names) for {family.upper()}."
         return 200, payload
 
     def cancel_scan(self) -> None:
@@ -292,6 +303,100 @@ class AppState:
                     logger.warning("IV ingest failed: %s", exc)
             self.scan_status = "done"
 
+    def _scan_csp_worker(self, symbols: List[str], seq: Optional[int] = None) -> None:
+        collected: List[CSPCandidate] = []
+        total = len(symbols)
+
+        def should_stop() -> bool:
+            with self._lock:
+                if seq is not None and seq != self._scan_seq:
+                    return True
+                return bool(self._scan_cancel)
+
+        def on_symbol_done(done: int, total_n: int, sym: str, batch: List[CSPCandidate]) -> None:
+            with self._lock:
+                if seq is not None and seq != self._scan_seq:
+                    return
+                if self._scan_cancel:
+                    self.scan_status = "idle"
+                    return
+                collected.extend(batch)
+                self.csp_candidates = list(collected)
+                self.last_scan_time = datetime.now(timezone.utc).isoformat()
+                self.scan_progress = {"done": done, "total": total_n, "symbol": sym}
+                self.scanned_symbols = list(symbols)
+
+        if self.source == "delayed" and hasattr(self.client, "get_csp_candidates"):
+            scan_err = None
+            try:
+                self.client.get_csp_candidates(
+                    symbols,
+                    progress_cb=on_symbol_done,
+                    should_stop=should_stop,
+                )
+            except Exception as exc:
+                scan_err = exc
+                logger.exception("Delayed CSP scan worker error: %s", exc)
+            with self._lock:
+                if seq is not None and seq != self._scan_seq:
+                    return
+                if self._scan_cancel:
+                    self.scan_status = "idle"
+                    return
+                if scan_err is not None:
+                    self.last_error = f"scan_failed: {scan_err}"
+                    self.scan_status = "error"
+                    return
+                self.scan_status = "done"
+            self.get_csp_boards(alpha=self.current_alpha)
+            return
+
+        # Concurrently query symbols using ThreadPoolExecutor
+        workers = min(8, max(1, total))
+        lock = threading.Lock()
+        completed = 0
+
+        def fetch_sym_csp(sym: str) -> Tuple[str, List[CSPCandidate]]:
+            if should_stop():
+                return sym, []
+            try:
+                cands = self.client.get_csp_candidates([sym]) if hasattr(self.client, "get_csp_candidates") else []
+            except Exception as exc:
+                logger.warning("CSP scan failed for %s: %s", sym, exc)
+                cands = []
+            return sym, cands
+
+        if workers <= 1 or total <= 1:
+            for i, sym in enumerate(symbols):
+                if should_stop():
+                    break
+                s, batch = fetch_sym_csp(sym)
+                on_symbol_done(i + 1, total, s, batch)
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(fetch_sym_csp, s): s for s in symbols}
+                for fut in as_completed(futures):
+                    if should_stop():
+                        for pending in futures:
+                            pending.cancel()
+                        break
+                    try:
+                        sym, batch = fut.result()
+                    except Exception as exc:
+                        sym = futures[fut]
+                        logger.warning("CSP worker exception for %s: %s", sym, exc)
+                        batch = []
+                    with lock:
+                        completed += 1
+                        done_n = completed
+                    on_symbol_done(done_n, total, sym, batch)
+
+        with self._lock:
+            if seq is not None and seq != self._scan_seq:
+                return
+            self.scan_status = "done"
+        self.get_csp_boards(alpha=self.current_alpha)
+
     def get_boards(self, alpha: float = 0.5) -> Dict[str, List[Dict[str, Any]]]:
         with self._lock:
             self.current_alpha = alpha
@@ -386,6 +491,7 @@ class AppState:
             "csp_candidate_count": len(self.csp_candidates),
             "current_alpha": self.current_alpha,
             "scan_tier": self.scan_tier,
+            "scan_family": getattr(self, "scan_family", "leaps"),
             "scan_status": self.scan_status,
             "scan_progress": dict(self.scan_progress),
             "scan_symbol_count": len(self.scanned_symbols),
@@ -598,11 +704,13 @@ def create_api_handler_class(state: AppState):
             if method == "POST" and clean_path == "/api/v1/scan":
                 symbols = None
                 tier = None
+                family = "leaps"
                 if body:
                     try:
                         req_data = json.loads(body.decode("utf-8"))
                         symbols = req_data.get("symbols")
                         tier = req_data.get("tier")
+                        family = req_data.get("family") or "leaps"
                     except Exception:
                         pass
                 if isinstance(tier, str):
@@ -611,7 +719,7 @@ def create_api_handler_class(state: AppState):
                     tier = None
                 if symbols is not None and not isinstance(symbols, list):
                     symbols = None
-                code, payload = state.request_scan(symbols=symbols, tier=tier)
+                code, payload = state.request_scan(symbols=symbols, tier=tier, family=family)
                 return code, headers, json.dumps(payload).encode("utf-8")
 
             # GET /api/v1/boards
