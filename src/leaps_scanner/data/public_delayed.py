@@ -21,7 +21,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.leaps_scanner.core.greeks import (
@@ -155,6 +155,54 @@ def parse_expiry_date(raw: Any) -> Optional[str]:
         except ValueError:
             continue
     return None
+
+
+def third_friday(year: int, month: int) -> date:
+    first = date(year, month, 1)
+    return first + timedelta(days=((4 - first.weekday()) % 7) + 14)
+
+
+def csp_target_expiries(
+    asof: datetime,
+    min_dte: float = 7.0,
+    max_dte: float = 45.0,
+    include_weeklies: bool = False,
+) -> List[str]:
+    """Expiries Nasdaq must be queried one-at-a-time (fromdate=todate=that day)."""
+    start = (asof + timedelta(days=min_dte)).date()
+    end = (asof + timedelta(days=max_dte)).date()
+    out: List[str] = []
+    y, m = start.year, start.month
+    for _ in range(5):
+        day = third_friday(y, m)
+        if start <= day <= end:
+            out.append(day.isoformat())
+        m += 1
+        if m > 12:
+            y += 1
+            m = 1
+        if date(y, m, 1) > end:
+            break
+    if include_weeklies or not out:
+        cursor = start
+        while cursor.weekday() != 4:
+            cursor += timedelta(days=1)
+        while cursor <= end:
+            iso = cursor.isoformat()
+            if iso not in out:
+                out.append(iso)
+            cursor += timedelta(days=7)
+        out.sort()
+    return out
+
+
+def _nasdaq_chain_headers(symbol: str) -> Dict[str, str]:
+    return {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json",
+        "Referer": f"https://www.nasdaq.com/market-activity/stocks/{symbol.lower()}/option-chain",
+        "Origin": "https://www.nasdaq.com",
+    }
 
 
 def occ_symbol(underlying: str, expiry: str, strike: float, cp: str = "C") -> str:
@@ -701,45 +749,69 @@ class PublicDelayedClient:
         asof: datetime,
         should_stop: Optional[StopFn] = None,
     ) -> Tuple[List[dict], Optional[float]]:
+        """Nasdaq returns one expiry per request. Pin fromdate=todate to each monthly Friday."""
         if should_stop and should_stop():
             return [], None
         ticker = urllib.parse.quote(symbol)
-        start = asof.date().isoformat()
-        end = (asof + timedelta(days=60)).date().isoformat()
-        last = None
-        rows: List[dict] = []
+        headers = _nasdaq_chain_headers(symbol)
         asset_classes = ["etf", "stocks"] if symbol.upper() in _ETF_SET else ["stocks", "etf"]
-        query_suffixes = (
-            f"&fromdate={start}&todate={end}&money=ntm&callput=put",
-            f"&fromdate={start}&todate={end}&money=all",
-            "&money=ntm&callput=put",
-        )
+        last = None
+        collected: List[dict] = []
+        seen: set = set()
+        expiries = csp_target_expiries(asof, min_dte=7.0, max_dte=45.0, include_weeklies=False)
+
+        def ingest(payload: dict) -> None:
+            nonlocal last
+            last = parse_nasdaq_last_trade((payload.get("data") or {}).get("lastTrade")) or last
+            for row in parse_nasdaq_csp_chain(payload, min_dte=7.0, max_dte=45.0, asof=asof):
+                key = (row.get("expiry"), row.get("strike"), row.get("symbol"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                collected.append(row)
+
         for asset in asset_classes:
-            for suffix in query_suffixes:
+            if collected:
+                break
+            for expiry in expiries:
                 if should_stop and should_stop():
-                    return [], None
+                    return collected, last
                 url = (
                     "https://api.nasdaq.com/api/quote/"
                     f"{ticker}/option-chain?assetclass={asset}&limit=0"
-                    f"{suffix}"
+                    f"&fromdate={expiry}&todate={expiry}"
                 )
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Accept": "application/json",
-                    "Referer": f"https://www.nasdaq.com/market-activity/stocks/{symbol.lower()}/option-chain",
-                    "Origin": "https://www.nasdaq.com",
-                }
                 try:
                     payload = self._get_json(url, headers, should_stop=should_stop)
                 except InterruptedError:
-                    return [], None
+                    return collected, last
                 except Exception:
                     continue
-                last = parse_nasdaq_last_trade((payload.get("data") or {}).get("lastTrade")) or last
-                rows = parse_nasdaq_csp_chain(payload, min_dte=7.0, max_dte=45.0, asof=asof)
-                if rows:
-                    return rows, last
-        return rows, last
+                ingest(payload)
+
+            if collected:
+                break
+            # Front-week-only responses: walk every Friday in the CSP window.
+            for expiry in csp_target_expiries(asof, min_dte=7.0, max_dte=45.0, include_weeklies=True):
+                if expiry in expiries:
+                    continue
+                if should_stop and should_stop():
+                    return collected, last
+                url = (
+                    "https://api.nasdaq.com/api/quote/"
+                    f"{ticker}/option-chain?assetclass={asset}&limit=0"
+                    f"&fromdate={expiry}&todate={expiry}"
+                )
+                try:
+                    payload = self._get_json(url, headers, should_stop=should_stop)
+                except InterruptedError:
+                    return collected, last
+                except Exception:
+                    continue
+                ingest(payload)
+                if collected:
+                    break
+        return collected, last
 
     def _scan_csp_symbol(
         self,

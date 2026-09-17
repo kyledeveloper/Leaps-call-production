@@ -173,6 +173,57 @@ class TestCSPApi(unittest.TestCase):
         self.assertEqual(puts[0]["strike"], 210.0)
         self.assertEqual(puts[0]["bid"], 3.50)
 
+    def test_csp_target_expiries_skips_this_week_and_keeps_october_monthly(self):
+        from src.leaps_scanner.data.public_delayed import csp_target_expiries, third_friday
+        asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
+        self.assertEqual(third_friday(2026, 9).isoformat(), "2026-09-18")
+        self.assertEqual(third_friday(2026, 10).isoformat(), "2026-10-16")
+        dates = csp_target_expiries(asof)
+        self.assertIn("2026-10-16", dates)
+        self.assertNotIn("2026-09-18", dates)
+
+    def test_nasdaq_csp_chain_queries_pinned_monthly_expiry(self):
+        """Range queries only return the front weekly; pin fromdate=todate to the monthly."""
+        from src.leaps_scanner.data.public_delayed import PublicDelayedClient
+        asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
+        urls = []
+        front = {
+            "data": {
+                "lastTrade": "$220.00",
+                "table": {
+                    "rows": [{
+                        "p_Bid": "0.40", "p_Ask": "0.50", "p_Volume": "10",
+                        "p_Openinterest": "5", "strike": "200.00",
+                        "expiryDate": "September 18, 2026",
+                    }]
+                },
+            }
+        }
+        monthly = {
+            "data": {
+                "lastTrade": "$220.00",
+                "table": {
+                    "rows": [{
+                        "p_Bid": "3.50", "p_Ask": "3.80", "p_Volume": "100",
+                        "p_Openinterest": "1200", "strike": "210.00",
+                        "drillDownURL": "/market-activity/stocks/aapl/option-chain/call-put-options/aapl--261016p00210000",
+                    }]
+                },
+            }
+        }
+
+        def fetch(url, headers):
+            urls.append(url)
+            payload = monthly if "fromdate=2026-10-16" in url else front
+            return 200, json.dumps(payload).encode()
+
+        client = PublicDelayedClient(fetch_fn=fetch)
+        rows, last = client._nasdaq_csp_chain("AAPL", asof)
+        self.assertTrue(any("fromdate=2026-10-16" in u and "todate=2026-10-16" in u for u in urls))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["strike"], 210.0)
+        self.assertEqual(last, 220.0)
+
     def test_parse_nasdaq_csp_chain_english_expiry_and_compact_occ(self):
         """Nasdaq rows often use 'October 16, 2026' and compact OCC URLs without --."""
         from src.leaps_scanner.data.public_delayed import parse_nasdaq_csp_chain
