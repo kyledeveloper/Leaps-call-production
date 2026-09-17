@@ -32,11 +32,11 @@ Research scanner for **US Options Strategies** featuring dual strategy families:
 
 ## Data sources
 
-| Mode | Feed | Keys |
-|---|---|---|
-| **Sandbox** | Local fixtures | None (offline hermetic test fixtures) |
-| **Delayed public** | Yahoo daily bars + Nasdaq OPRA delayed chains | None (~15 min delay, not NBBO) |
-| **Live Webull** | Webull OpenAPI | App Key + Secret, memory-only (never written to disk) |
+| Mode | Feed | Keys | Description |
+|---|---|---|---|
+| **Delayed public (Default)** | Yahoo daily bars + Nasdaq OPRA delayed chains | None (~15 min delay, not NBBO) | Real market quotes (e.g., AVGO spot $339.51) without credentials. Automatically used by default. |
+| **Live Webull** | Webull OpenAPI | App Key + Secret | Memory-only (never written to disk), optional live quotes. |
+| **Sandbox (Test-only)** | Local deterministic fixtures | None | Hermetic offline sandbox used strictly in test suites (`--offline`). Hidden from user UI to prevent mock data leakage. |
 
 Webull keys must not be committed or pasted into chat. `.env` is gitignored.
 
@@ -51,7 +51,9 @@ Requires Python 3.9+.
 ```bash
 cd Leaps-call-production
 pip install -r requirements.txt
-PYTHONPATH=. python -m src.leaps_scanner.cli --offline --serve --port 8000
+
+# Start the Web Scanner (defaults to Delayed public real market data)
+python3 -m leaps_scanner.cli server --port 8000
 ```
 
 Open the dashboard:
@@ -61,13 +63,16 @@ Open the dashboard:
 ### CLI Scans (No UI)
 
 ```bash
-# LEAPS Call scan
-PYTHONPATH=. python -m src.leaps_scanner.cli --offline --family leaps --symbols SPY,QQQ --alpha 0.5
-PYTHONPATH=. python -m src.leaps_scanner.cli --strategy deep_itm --universe etfs
+# LEAPS Call scan (using live delayed market data)
+python3 -m leaps_scanner.cli --family leaps --symbols SPY,QQQ --alpha 0.5
+python3 -m leaps_scanner.cli --strategy deep_itm --universe etfs
 
-# Cash-Secured Put scan
-PYTHONPATH=. python -m src.leaps_scanner.cli --offline --family csp --symbols AAPL,MSFT,NVDA
-PYTHONPATH=. python -m src.leaps_scanner.cli --family csp --strategy csp_harvest --universe core
+# Cash-Secured Put scan (using live delayed market data)
+python3 -m leaps_scanner.cli --family csp --symbols AAPL,MSFT,NVDA,AVGO
+python3 -m leaps_scanner.cli --family csp --strategy csp_harvest --universe core
+
+# (Optional) Forced offline sandbox fixtures for quick local testing
+python3 -m leaps_scanner.cli --offline --family csp --symbols AAPL,SPY
 ```
 
 ### Dashboard Features
@@ -75,12 +80,13 @@ PYTHONPATH=. python -m src.leaps_scanner.cli --family csp --strategy csp_harvest
 - **Dynamic In-Memory Re-ranking**: Adjust α slippage, cash pool, single-ticker exposure, or 6 filter pills (AROC, Buffer, IV Rank, POP, Earnings, Liquidity) instantly without network re-fetching.
 - **Multi-language**: EN / 中文 toggle in the header (persisted in `localStorage`).
 - **Universe Tiers**: **ETFs** (12) · **DJIA** (30) · **SP100** · **NDX** · **Core** (union).
+- **Background Auto-Scan**: Server automatically scans market data in the background upon launch with live progress tracking.
 
 ## Tests
 
 ```bash
-# Run all Python unit and hermetic edge-case tests (165 tests)
-PYTHONPATH=. python -m unittest discover -s tests/python -q
+# Run all Python unit and hermetic edge-case tests (171 tests)
+PYTHONPATH=src python3 -m unittest discover -s tests/python -q
 
 # Run JavaScript toolchain and pre-push gatekeeper tests
 npm test

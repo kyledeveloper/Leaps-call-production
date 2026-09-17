@@ -32,11 +32,11 @@
 
 ## 数据源
 
-| 模式 | 行情源 | 密钥配置 |
-|---|---|---|
-| **沙盒 (Sandbox)** | 本地纯静态离线测试样本 | 无（完全断网隔离执行） |
-| **公开延迟 (Delayed public)** | Yahoo 日线 + Nasdaq OPRA 延迟期权链 | 无（约 15 分钟延迟，非真实 NBBO） |
-| **Webull 实盘** | Webull OpenAPI 直连 | App Key + Secret，纯驻留内存，绝不写盘 |
+| 模式 | 行情源 | 密钥配置 | 说明 |
+|---|---|---|---|
+| **公开延迟 (默认 Default)** | Yahoo 日线 + Nasdaq OPRA 延迟期权链 | 无（约 15 分钟延迟，非真实 NBBO） | 真实市场行情（如 AVGO 现价 $339.51），无需任何 API 密钥。系统开箱默认使用。 |
+| **Webull 实盘** | Webull OpenAPI 直连 | App Key + Secret | 纯驻留内存，绝不写盘，可选的实时行情通道。 |
+| **沙盒 (仅供单测)** | 本地纯静态离线测试样本 | 无 | 严格保留给本地气密单元测试使用（`--offline` 参数触发）。生产与日常运行界面中已彻底屏蔽沙盘假数据。 |
 
 请勿将 Webull 密钥提交至 Git 或贴在聊天记录中，`.env` 已被全局 gitignore。
 
@@ -51,7 +51,9 @@
 ```bash
 cd Leaps-call-production
 pip install -r requirements.txt
-PYTHONPATH=. python -m src.leaps_scanner.cli --offline --serve --port 8000
+
+# 启动 Web 量化看板（默认采用公开延迟真实行情源）
+python3 -m leaps_scanner.cli server --port 8000
 ```
 
 打开浏览器看板：
@@ -61,13 +63,16 @@ PYTHONPATH=. python -m src.leaps_scanner.cli --offline --serve --port 8000
 ### 无界面命令行 (CLI)
 
 ```bash
-# 扫描 LEAPS Call 远月看涨
-PYTHONPATH=. python -m src.leaps_scanner.cli --offline --family leaps --symbols SPY,QQQ --alpha 0.5
-PYTHONPATH=. python -m src.leaps_scanner.cli --strategy deep_itm --universe etfs
+# 扫描 LEAPS Call 远月看涨（使用真实延迟行情）
+python3 -m leaps_scanner.cli --family leaps --symbols SPY,QQQ --alpha 0.5
+python3 -m leaps_scanner.cli --strategy deep_itm --universe etfs
 
-# 扫描 Cash-Secured Put 卖方
-PYTHONPATH=. python -m src.leaps_scanner.cli --offline --family csp --symbols AAPL,MSFT,NVDA
-PYTHONPATH=. python -m src.leaps_scanner.cli --family csp --strategy csp_harvest --universe core
+# 扫描 Cash-Secured Put 卖方（使用真实延迟行情）
+python3 -m leaps_scanner.cli --family csp --symbols AAPL,MSFT,NVDA,AVGO
+python3 -m leaps_scanner.cli --family csp --strategy csp_harvest --universe core
+
+# （可选）强制使用离线沙盒测试桩进行极速本地验证
+python3 -m leaps_scanner.cli --offline --family csp --symbols AAPL,SPY
 ```
 
 ### 看板核心功能
@@ -75,12 +80,13 @@ PYTHONPATH=. python -m src.leaps_scanner.cli --family csp --strategy csp_harvest
 - **纯内存毫秒级重排**：实时拖动 $\alpha$ 滑条、输入可用现金池与单标的敞口上限、点选 6 个过滤药丸胶囊（AROC、安全缓冲、IV Rank、POP、财报、流动性），零网络请求瞬间重排。
 - **中英双语切换**：右上角 **EN / 中文** 随时切换，选择持久化保存在 `localStorage`。
 - **标的分级池**：**ETF**（12 只）· **道指**（30 只）· **标普 100** · **纳指 100** · **核心并集**。
+- **后台自动静默扫描**：服务启动即刻在后台执行真实行情扫描，支持实时进度指示与轮询自动载入。
 
 ## 测试与校验
 
 ```bash
-# 执行全部 Python 单元测试与无网络气密性测试（165 项单测）
-PYTHONPATH=. python -m unittest discover -s tests/python -q
+# 执行全部 Python 单元测试与无网络气密性测试（171 项单测）
+PYTHONPATH=src python3 -m unittest discover -s tests/python -q
 
 # 执行 JS 研发工具链与 Pre-push 安全门禁测试
 npm test
