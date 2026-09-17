@@ -230,6 +230,22 @@ class TestCSPPricingAndMetrics(unittest.TestCase):
         p_damped = bjerksund_stensland_put(spot, strike, t, r, q, sigma, ex_date_t=None, decay_unverified_dividend=True)
         self.assertGreater(p_damped, 0.0)
 
+    def test_otm_put_greeks_delta_range(self):
+        """DC-CSP-3: OTM Put must have small negative Delta (e.g. -0.15 to -0.30), NOT inverted deep-ITM Delta."""
+        spot = 750.0
+        strike = 725.0  # OTM put (~3.3% buffer)
+        t = 30.0 / 365.25
+        r = 0.04
+        q = 0.01
+        iv = 0.15
+
+        g = calculate_american_put_greeks(spot, strike, t, r, q, iv)
+        # OTM Put Delta should be around -0.15 to -0.25, NOT -0.80 or -1.00!
+        self.assertLess(g.delta, 0.0)
+        self.assertGreater(g.delta, -0.40)
+        self.assertLess(g.delta, -0.10)
+
 
 if __name__ == "__main__":
     unittest.main()
+

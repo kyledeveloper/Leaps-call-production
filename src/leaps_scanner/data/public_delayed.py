@@ -24,7 +24,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from src.leaps_scanner.core.greeks import calculate_american_greeks
+from src.leaps_scanner.core.greeks import (
+    calculate_american_greeks,
+    calculate_american_put_greeks,
+    calculate_put_fallback_delta
+)
 from src.leaps_scanner.core.iv_solver import solve_implied_volatility
 from src.leaps_scanner.core.rates import RateCurve
 from src.leaps_scanner.data.store.prices import PriceBar, PriceStore
@@ -755,11 +759,11 @@ class PublicDelayedClient:
             )
             iv = iv_res.iv if iv_res.iv is not None else (hv if hv > 0 else 0.25)
             try:
-                greeks = calculate_american_greeks(spot, strike, t_years, r, div_yield, iv)
+                greeks = calculate_american_put_greeks(spot, strike, t_years, r, div_yield, iv)
                 delta = greeks.delta if greeks.delta <= 0.0 else -abs(greeks.delta)
             except Exception:
-                delta = max(-0.95, min(-0.05, -0.5 * (strike / max(spot, 1.0))))
-            if delta >= 0.0:
+                delta = calculate_put_fallback_delta(spot, strike)
+            if delta >= 0.0 or delta < -1.0:
                 continue
             symbol_rows.append(CSPCandidate(
                 symbol=row["symbol"],
