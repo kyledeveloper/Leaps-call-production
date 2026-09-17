@@ -25,7 +25,7 @@ from src.leaps_scanner.core.metrics import (
 from src.leaps_scanner.strategies.csp_harvest import evaluate_csp_harvest
 from src.leaps_scanner.strategies.csp_wheel import evaluate_csp_wheel
 from src.leaps_scanner.strategies.csp_vol_rank import evaluate_csp_vol_rank
-from src.leaps_scanner.strategies.guards import GuardStatus, evaluate_liquidity_guard
+from src.leaps_scanner.strategies.guards import GuardStatus, evaluate_liquidity_guard, fold_gates
 
 
 class EarningsStatus(str, Enum):
@@ -88,6 +88,7 @@ class RankedCSPItem:
     stress_pnl: float
     score: float
     reasons: List[str] = field(default_factory=list)
+    gates: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -115,10 +116,9 @@ def evaluate_csp_filters(
 ) -> tuple[bool, List[str]]:
     """
     Check candidate against user toggleable filters.
-    Harvest owns AROC / Buffer / POP hard gates. Wheel does not — those
-    thresholds are incompatible with the Wheel delta window.
-    Vol-rank owns the IVR hard gate.
-    Earnings, liquidity, and max-capital apply on every board.
+    Harvest owns AROC / Buffer / POP hard gates.
+    Wheel evaluates buffer & liquidity.
+    Vol-rank owns IVR and earnings gates.
     """
     reasons = []
     key = (board or "harvest").replace("csp_", "")
@@ -127,18 +127,19 @@ def evaluate_csp_filters(
         if capital_info["required_capital_per_contract"] > config.max_capital_per_contract:
             return False, ["EXCEEDS_MAX_CAPITAL_PER_CONTRACT"]
 
-    if config.filter_aroc and key == "harvest":
-        if aroc < config.min_aroc:
+    if config.filter_aroc and key in ("harvest", "vol_rank"):
+        threshold = 0.18 if key == "vol_rank" else config.min_aroc
+        if aroc < threshold:
             return False, [f"AROC_LOW_{aroc*100:.1f}%"]
 
-    if config.filter_buffer and key == "harvest":
+    if config.filter_buffer and key in ("harvest", "wheel"):
         if buffer < config.min_buffer:
             return False, [f"BUFFER_LOW_{buffer*100:.1f}%"]
 
     if config.filter_ivr and key == "vol_rank":
         ivr = candidate.iv_rank if candidate.iv_rank is not None else candidate.iv_percentile
         if ivr is None or ivr < config.min_ivr:
-            return False, [f"IVR_BELOW_MIN"]
+            return False, ["IVR_BELOW_MIN"]
 
     if config.filter_pop and key == "harvest":
         if pop < config.min_pop:
@@ -226,8 +227,29 @@ def rank_csp_boards(
             board_key: str,
             score: float,
         ) -> None:
-            if res.status == GuardStatus.REJECT:
-                return
+            # Build full dictionary of gates for this candidate on this board
+            gates: Dict[str, str] = {
+                k: (v.value if hasattr(v, "value") else str(v))
+                for k, v in getattr(res, "gates", {}).items()
+            }
+            if board_key in ("harvest", "vol_rank"):
+                min_a = 0.25 if board_key == "vol_rank" else 0.15
+                watch_a = 0.18 if board_key == "vol_rank" else 0.12
+                if aroc >= min_a:
+                    gates["aroc"] = GuardStatus.PASS.value
+                elif aroc >= watch_a:
+                    gates["aroc"] = GuardStatus.WATCH.value
+                else:
+                    gates["aroc"] = GuardStatus.REJECT.value
+
+            if board_key == "harvest":
+                if pop >= 0.75:
+                    gates["pop"] = GuardStatus.PASS.value
+                elif pop >= 0.70:
+                    gates["pop"] = GuardStatus.WATCH.value
+                else:
+                    gates["pop"] = GuardStatus.REJECT.value
+
             passes_filters, filter_reasons = evaluate_csp_filters(
                 candidate=c,
                 config=cfg,
@@ -238,10 +260,14 @@ def rank_csp_boards(
                 capital_info=capital_info,
                 board=board_key,
             )
-            status = res.status if passes_filters else GuardStatus.REJECT
+            # Baseline status comes from folding all gates
+            gate_enum_map = {k: GuardStatus(v) for k, v in gates.items() if v in GuardStatus.__members__}
+            base_status = fold_gates(gate_enum_map) if gate_enum_map else res.status
+            status = base_status if passes_filters else GuardStatus.REJECT
             reasons = list(res.reasons)
             if not passes_filters:
                 reasons = list(filter_reasons) + reasons
+
             bucket.append(RankedCSPItem(
                 candidate=c,
                 status=status,
@@ -254,6 +280,7 @@ def rank_csp_boards(
                 stress_pnl=round(stress_pnl, 2),
                 score=round(score, 2),
                 reasons=reasons,
+                gates=gates,
             ))
 
         res_harvest = evaluate_csp_harvest(c)

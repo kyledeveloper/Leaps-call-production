@@ -730,7 +730,10 @@
       oversold: ['universe','bars','rsi','dma','dma_hv','drawdown','bounce','confluence','strike','dte'],
       csp_harvest: ['delta','aroc','dte','buffer','pop','liquidity'],
       csp_wheel: ['delta','oversold','dte','liquidity'],
-      csp_vol_rank: ['iv_rank','delta','aroc','earnings','liquidity']
+      csp_vol_rank: ['ivr','delta','aroc','earnings','liquidity'],
+      harvest: ['delta','aroc','dte','buffer','pop','liquidity'],
+      wheel: ['delta','oversold','dte','liquidity'],
+      vol_rank: ['ivr','delta','aroc','earnings','liquidity']
     };
     const SIGNAL_IDS = ['rsi','dma','dma_hv','drawdown','bounce'];
     const FILTER_STORE = 'leaps_filters_v2';
@@ -1100,6 +1103,23 @@
       };
       const el = document.getElementById(pillMap[key]);
       if (el) el.classList.toggle('active', cspFilters[key]);
+
+      // Sync with enabledFilters on active CSP board
+      const board = currentBoardKey;
+      const ids = FILTER_IDS[board] || [];
+      const set = enabledFilters[board] || new Set(ids);
+      const filterKey = key === 'ivr' ? 'ivr' : key;
+      if (cspFilters[key]) {
+        set.add(filterKey);
+        if (filterKey === 'ivr') set.add('iv_rank');
+      } else {
+        set.delete(filterKey);
+        if (filterKey === 'ivr') set.delete('iv_rank');
+      }
+      enabledFilters[board] = set;
+      persistFilters();
+      paintStrategyHelp(board);
+      renderActiveBoard();
       handleCspParamChange();
     }
 
@@ -1371,20 +1391,44 @@
         `<div class="table-container"><table class="factor-table"><thead><tr><th>${t('helpFilter')}</th><th>PASS</th><th>WATCH</th><th>REJECT</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     }
 
+    function syncCspPillsFromFilters(board) {
+      if (currentFamily !== 'csp') return;
+      const ids = FILTER_IDS[board] || FILTER_IDS[board.replace(/^csp_/, '')] || [];
+      const set = enabledFilters[board] || enabledFilters[board.replace(/^csp_/, '')] || new Set(ids);
+      const pillMap = {
+        aroc: 'pillAroc', buffer: 'pillBuffer', ivr: 'pillIvr',
+        pop: 'pillPop', earnings: 'pillEarnings', liquidity: 'pillLiquidity'
+      };
+      Object.keys(pillMap).forEach(k => {
+        const isPresentOnBoard = ids.includes(k) || (k === 'ivr' && ids.includes('iv_rank'));
+        if (isPresentOnBoard) {
+          const on = k === 'ivr' ? (set.has('ivr') || set.has('iv_rank')) : set.has(k);
+          cspFilters[k] = on;
+          const el = document.getElementById(pillMap[k]);
+          if (el) el.classList.toggle('active', on);
+        }
+      });
+    }
+
     function toggleStrategyFilter(board, id, on) {
       const set = enabledFilters[board] || new Set();
       if (on) set.add(id); else set.delete(id);
       enabledFilters[board] = set;
       persistFilters();
+      syncCspPillsFromFilters(board);
       paintStrategyHelp(board);
       renderActiveBoard();
+      if (currentFamily === 'csp') handleCspParamChange();
     }
 
     function setAllStrategyFilters(board, on) {
-      enabledFilters[board] = on ? new Set(FILTER_IDS[board]) : new Set();
+      const ids = FILTER_IDS[board] || FILTER_IDS[board.replace(/^csp_/, '')] || [];
+      enabledFilters[board] = on ? new Set(ids) : new Set();
       persistFilters();
+      syncCspPillsFromFilters(board);
       paintStrategyHelp(board);
       renderActiveBoard();
+      if (currentFamily === 'csp') handleCspParamChange();
     }
 
     function worstStatus(a, b) {
@@ -1393,17 +1437,24 @@
     }
 
     function effectiveStatus(item) {
-      if (item && item.guard_status) return item.guard_status;
-      if (currentFamily === 'csp') return (item && (item.guard_status || item.status)) || 'PASS';
+      if (item && item.guard_status && currentFamily !== 'csp') return item.guard_status;
       const board = currentBoardKey;
-      const ids = FILTER_IDS[board] || [];
-      const enabled = enabledFilters[board] || new Set(ids);
+      const ids = FILTER_IDS[board] || FILTER_IDS[board.replace(/^csp_/, '')] || [];
+      const enabled = enabledFilters[board] || enabledFilters[board.replace(/^csp_/, '')] || new Set(ids);
       const gates = Object.assign({}, item.gates || {});
+
+      if (!ids.length || !Object.keys(gates).length) {
+        return (item && (item.guard_status || item.status)) || 'PASS';
+      }
+
       // Pre-split payloads only have `liquidity`. Apply it to all three
       // components so "all filters on" matches the old combined gate.
       if (gates.liquidity && gates.oi == null && gates.spread == null && gates.volume == null) {
         gates.oi = gates.spread = gates.volume = gates.liquidity;
       }
+      if (gates.ivr && !gates.iv_rank) gates.iv_rank = gates.ivr;
+      if (gates.iv_rank && !gates.ivr) gates.ivr = gates.iv_rank;
+
       let st = 'PASS';
       if (board === 'oversold' && enabled.has('confluence')) {
         let score = 0;
@@ -1740,6 +1791,7 @@
       currentBoardKey = key;
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      syncCspPillsFromFilters(key);
       paintStrategyHelp(key);
       renderActiveBoard();
     }

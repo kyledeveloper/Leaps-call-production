@@ -8,8 +8,8 @@ Characteristics:
 - Value / Dip preference: RSI <= 50 or pullback near 200 DMA
 """
 from dataclasses import dataclass, field
-from typing import List
-from src.leaps_scanner.strategies.guards import GuardStatus
+from typing import Dict, List
+from src.leaps_scanner.strategies.guards import GuardStatus, fold_gates, evaluate_liquidity_guard
 
 
 @dataclass(frozen=True)
@@ -17,47 +17,92 @@ class CSPWheelResult:
     status: GuardStatus
     reasons: List[str] = field(default_factory=list)
     score: float = 0.0
+    gates: Dict[str, GuardStatus] = field(default_factory=dict)
 
 
 def evaluate_csp_wheel(candidate) -> CSPWheelResult:
     """
     Evaluate candidate for Board 2 (Wheel / Dip-Buying).
+    Returns status and per-filter gates for dynamic UI re-ranking.
     """
     reasons = []
+    gates: Dict[str, GuardStatus] = {}
 
     # 1. DTE Guard (DC-CSP-4)
     if candidate.dte < 7.0:
-        return CSPWheelResult(status=GuardStatus.REJECT, reasons=["DTE_UNDER_7D_PROHIBITED"])
+        dte_status = GuardStatus.REJECT
+        reasons.append("DTE_UNDER_7D_PROHIBITED")
+    elif candidate.dte < 21.0:
+        dte_status = GuardStatus.WATCH
+        reasons.append(f"DTE_SHORT_{int(candidate.dte)}D")
+    else:
+        dte_status = GuardStatus.PASS
+    gates["dte"] = dte_status
 
-    # 2. Zero Bid / Inverted Market Guard (DC-CSP-6)
-    if candidate.bid <= 0.0 or candidate.bid >= candidate.ask:
-        return CSPWheelResult(status=GuardStatus.REJECT, reasons=["INVALID_OR_ZERO_BID"])
-
-    # 3. Delta Gate (DC-CSP-3: Strict negative delta enforcement)
+    # 2. Delta Gate (DC-CSP-3: Strict negative delta enforcement)
     delta = candidate.delta
     if delta >= 0.0:
-        return CSPWheelResult(status=GuardStatus.REJECT, reasons=["POSITIVE_DELTA_PROHIBITED"])
-    abs_delta = abs(delta)
-
-    if 0.30 <= abs_delta <= 0.45:
-        delta_status = GuardStatus.PASS
-    elif 0.25 <= abs_delta < 0.30 or 0.45 < abs_delta <= 0.50:
-        delta_status = GuardStatus.WATCH
-        reasons.append(f"WHEEL_DELTA_WATCH_{delta:.2f}")
+        delta_status = GuardStatus.REJECT
+        reasons.append("POSITIVE_DELTA_PROHIBITED")
     else:
-        return CSPWheelResult(status=GuardStatus.REJECT, reasons=[f"WHEEL_DELTA_OUT_OF_RANGE_{delta:.2f}"])
+        abs_delta = abs(delta)
+        if 0.30 <= abs_delta <= 0.45:
+            delta_status = GuardStatus.PASS
+        elif 0.25 <= abs_delta < 0.30 or 0.45 < abs_delta <= 0.50:
+            delta_status = GuardStatus.WATCH
+            reasons.append(f"WHEEL_DELTA_WATCH_{delta:.2f}")
+        else:
+            delta_status = GuardStatus.REJECT
+            reasons.append(f"WHEEL_DELTA_OUT_OF_RANGE_{delta:.2f}")
+    gates["delta"] = delta_status
 
-    # 4. Dip / valuation: PASS needs RSI<=50 or trade at/below 200DMA.
+    # 3. Oversold / Dip preference
     dip = candidate.rsi_14 <= 50.0 or candidate.pct_to_200dma <= 0.0
-    tech_watch = False
-    if not dip:
-        tech_watch = True
+    if dip:
+        tech_status = GuardStatus.PASS
+    elif candidate.rsi_14 <= 65.0:
+        tech_status = GuardStatus.WATCH
         reasons.append(
             f"NO_DIP_RSI_{candidate.rsi_14:.1f}_DMA_{candidate.pct_to_200dma:.1%}"
         )
-    if candidate.rsi_14 > 65.0:
-        tech_watch = True
+    else:
+        tech_status = GuardStatus.REJECT
         reasons.append(f"RSI_OVERBOUGHT_{candidate.rsi_14:.1f}")
+    gates["oversold"] = tech_status
 
-    final_status = GuardStatus.WATCH if (delta_status == GuardStatus.WATCH or tech_watch) else GuardStatus.PASS
-    return CSPWheelResult(status=final_status, reasons=reasons)
+    # 4. Downside Buffer Gate (Wheel targets -0.30 to -0.45 delta, buffer >= 3% is PASS)
+    buffer = (candidate.spot - candidate.strike) / candidate.spot if candidate.spot > 0 else 0.0
+    if buffer >= 0.03:
+        buffer_status = GuardStatus.PASS
+    elif buffer >= 0.01:
+        buffer_status = GuardStatus.WATCH
+        reasons.append(f"BUFFER_THIN_{buffer*100:.1f}%")
+    else:
+        buffer_status = GuardStatus.REJECT
+        reasons.append(f"BUFFER_TOO_NARROW_{buffer*100:.1f}%")
+    gates["buffer"] = buffer_status
+
+    # 5. Liquidity Guard
+    if candidate.bid <= 0.0 or candidate.bid >= candidate.ask:
+        liq_status = GuardStatus.REJECT
+        reasons.append("INVALID_OR_ZERO_BID")
+    else:
+        l_guard = evaluate_liquidity_guard(
+            bid=candidate.bid,
+            ask=candidate.ask,
+            open_interest=candidate.open_interest,
+            volume=candidate.volume,
+            bid_size=candidate.bid_size,
+            ask_size=candidate.ask_size,
+        )
+        if l_guard.spread_status == GuardStatus.REJECT or l_guard.oi_status == GuardStatus.REJECT:
+            liq_status = GuardStatus.REJECT
+        elif l_guard.spread_status == GuardStatus.WATCH or l_guard.volume_status == GuardStatus.WATCH:
+            liq_status = GuardStatus.WATCH
+        else:
+            liq_status = GuardStatus.PASS
+        reasons.extend(l_guard.reasons)
+    gates["liquidity"] = liq_status
+
+    final_status = fold_gates(gates)
+    return CSPWheelResult(status=final_status, reasons=reasons, gates=gates)

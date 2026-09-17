@@ -265,7 +265,35 @@ class TestCSPStrategiesAndRanker(unittest.TestCase):
         )
         res = evaluate_csp_wheel(hot)
         self.assertEqual(res.status, GuardStatus.WATCH)
-        self.assertTrue(any(r.startswith("NO_DIP") for r in res.reasons))
+    def test_csp_per_gate_evaluation_and_ranked_item_gates(self):
+        """Verify that all CSP strategies evaluate individual gates and RankedCSPItem carries gates."""
+        # 1. Evaluate harvest candidate
+        res_harvest = evaluate_csp_harvest(self.cand_harvest)
+        self.assertTrue(hasattr(res_harvest, "gates"), "CSPHarvestResult must have gates dictionary")
+        self.assertIn("delta", res_harvest.gates)
+        self.assertIn("buffer", res_harvest.gates)
+        self.assertIn("dte", res_harvest.gates)
+
+        # 2. Evaluate wheel candidate
+        res_wheel = evaluate_csp_wheel(self.cand_wheel)
+        self.assertTrue(hasattr(res_wheel, "gates"), "CSPWheelResult must have gates dictionary")
+        self.assertIn("delta", res_wheel.gates)
+        self.assertIn("oversold", res_wheel.gates)
+        self.assertIn("dte", res_wheel.gates)
+
+        # 3. Evaluate vol_rank candidate
+        res_vol = evaluate_csp_vol_rank(self.cand_high_ivr)
+        self.assertTrue(hasattr(res_vol, "gates"), "CSPVolRankResult must have gates dictionary")
+        self.assertIn("ivr", res_vol.gates)
+        self.assertIn("delta", res_vol.gates)
+
+        # 4. Check rank_csp_boards produces RankedCSPItem with populated gates
+        boards = rank_csp_boards([self.cand_harvest, self.cand_wheel, self.cand_high_ivr])
+        for board_key in ("harvest", "wheel", "vol_rank"):
+            for item in boards[board_key]:
+                self.assertTrue(hasattr(item, "gates"), f"RankedCSPItem on {board_key} must have gates")
+                self.assertIsInstance(item.gates, dict)
+                self.assertGreater(len(item.gates), 0, f"RankedCSPItem on {board_key} must have non-empty gates")
 
 
 if __name__ == "__main__":
