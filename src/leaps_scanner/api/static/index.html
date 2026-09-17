@@ -869,13 +869,16 @@
         contractsSoFar: ' · {n} contracts so far',
         scanSummary: '{tier} · {names} names · {n} contracts',
         scanError: 'Scan failed: {error}',
-        liveScan: 'Live Webull scan · {n} contracts · {key}',
+        liveScan: 'Live Webull scan · {n} LEAPS calls · {key}',
+        liveScanCsp: 'Live Webull scan · {n} CSP puts · {key}',
         delayedScan: 'Yahoo history + Nasdaq delayed OPRA · {n} LEAPS calls · ~15 min delay, not NBBO.',
+        delayedScanCsp: 'Yahoo history + Nasdaq delayed OPRA · {n} CSP puts (7–45 DTE) · ~15 min delay, not NBBO.',
+        fetchingDelayed: 'Fetching Yahoo bars + Nasdaq delayed LEAPS chains. This can take a short while…',
+        fetchingDelayedCsp: 'Fetching Yahoo bars + Nasdaq delayed CSP put chains. This can take a short while…',
         missingCreds: 'Live Webull needs App Key and App Secret. Or use Delayed public (no keys).',
         feedFailed: 'Feed failed. Staying on sandbox.',
         sandboxHint: 'Sandbox fixtures (not the tape). Delayed public needs no keys. Do not paste Webull keys into chat.',
         pasteKeys: 'Paste Webull OpenAPI keys, then Connect live. Prefer Delayed public if you do not want to send keys.',
-        fetchingDelayed: 'Fetching Yahoo bars + Nasdaq delayed LEAPS chains. This can take a short while…',
         loadingSandbox: 'Loading sandbox…',
         switchFailed: 'Could not switch data source.',
         contactingWebull: 'Contacting Webull. If the token is PENDING, approve OpenAPI access in the Webull app.',
@@ -993,13 +996,16 @@
         contractsSoFar: ' · 已有 {n} 张合约',
         scanSummary: '{tier} · {names} 只标的 · {n} 张合约',
         scanError: '扫描失败：{error}',
-        liveScan: 'Webull 实盘扫描 · {n} 张合约 · {key}',
+        liveScan: 'Webull 实盘扫描 · {n} 张 LEAPS · {key}',
+        liveScanCsp: 'Webull 实盘扫描 · {n} 张 CSP Put · {key}',
         delayedScan: 'Yahoo 历史 + Nasdaq 延迟 OPRA · {n} 张 LEAPS · 约 15 分钟延迟，非 NBBO。',
+        delayedScanCsp: 'Yahoo 历史 + Nasdaq 延迟 OPRA · {n} 张 CSP Put（7–45 天）· 约 15 分钟延迟，非 NBBO。',
         missingCreds: 'Webull 实盘需要 App Key 和 App Secret。也可改用公开延迟（无需密钥）。',
         feedFailed: '行情接入失败，仍停留在沙盒。',
         sandboxHint: '沙盒样本（不是盘口）。公开延迟无需密钥。请勿把 Webull 密钥贴到聊天里。',
         pasteKeys: '粘贴 Webull OpenAPI 密钥后点连接实盘。不想提交密钥请用公开延迟。',
         fetchingDelayed: '正在拉取 Yahoo 日线 + Nasdaq 延迟 LEAPS 链，稍等片刻…',
+        fetchingDelayedCsp: '正在拉取 Yahoo 日线 + Nasdaq 延迟 CSP Put 链，稍等片刻…',
         loadingSandbox: '正在加载沙盒…',
         switchFailed: '无法切换数据源。',
         contactingWebull: '正在连接 Webull。若 token 为 PENDING，请在 Webull App 里批准 OpenAPI 授权。',
@@ -1070,6 +1076,10 @@
       } catch (e) {}
       applyStaticI18n();
       paintStrategyHelp(currentBoardKey);
+      if (lastCfg) {
+        paintSourceStatus(lastCfg);
+        paintScanTier(lastCfg.scan_tier, lastCfg);
+      }
       const src = lastCfg && lastCfg.source;
       if (src === 'delayed' || src === 'webull') {
         triggerScan();
@@ -1433,6 +1443,48 @@
       return TIER_CONFIG[s] ? s : 'etfs';
     }
 
+    function familyContractCount(cfg) {
+      if (!cfg) return 0;
+      if (currentFamily === 'csp') return cfg.csp_candidate_count || 0;
+      return cfg.candidate_count || 0;
+    }
+
+    function scanMatchesFamily(cfg) {
+      return !cfg || !cfg.scan_family || cfg.scan_family === currentFamily;
+    }
+
+    function paintSourceStatus(cfg) {
+      if (!cfg) return;
+      const statusEl = document.getElementById('engineStatus');
+      const hint = document.getElementById('sourceHint');
+      const n = familyContractCount(cfg);
+      const source = cfg.source || (cfg.offline_mode ? 'sandbox' : 'webull');
+      if (source === 'webull' && !cfg.offline_mode) {
+        statusEl.innerText = t('statusLive');
+        hint.className = 'hint ok';
+        hint.innerText = t(currentFamily === 'csp' ? 'liveScanCsp' : 'liveScan', {
+          n,
+          key: cfg.credential_hint ? t('keyHint', { hint: cfg.credential_hint }) : ''
+        });
+      } else if (source === 'delayed') {
+        statusEl.innerText = t('statusDelayed');
+        hint.className = 'hint ok';
+        hint.innerText = t(currentFamily === 'csp' ? 'delayedScanCsp' : 'delayedScan', { n });
+      } else if (cfg.error === 'missing_credentials' || cfg.last_error === 'missing_credentials') {
+        statusEl.innerText = t('statusSandbox');
+        hint.className = 'hint error';
+        hint.innerText = t('missingCreds');
+      } else if (cfg.error === 'auth_failed' || cfg.last_error === 'auth_failed' || cfg.error === 'delayed_failed') {
+        statusEl.innerText = t('statusSandbox');
+        hint.className = 'hint error';
+        hint.innerText = t('feedFailed');
+      } else {
+        statusEl.innerText = t('statusSandbox');
+        hint.className = 'hint';
+        hint.innerText = t('sandboxHint');
+      }
+    }
+
     function paintScanTier(tier, cfg) {
       const rawTier = tier || (cfg && cfg.scan_tier) || 'etfs';
       const tierName = canonicalizeTier(rawTier);
@@ -1455,17 +1507,18 @@
       const prog = (cfg && cfg.scan_progress) || {};
       const status = cfg && cfg.scan_status;
       const tierLabel = t(targetMeta.labelKey);
-      const cCount = (currentFamily === 'csp') ? ((cfg && cfg.csp_candidate_count != null) ? cfg.csp_candidate_count : 0) : ((cfg && cfg.candidate_count != null) ? cfg.candidate_count : 0);
-      if (status === 'running') {
+      const cCount = familyContractCount(cfg);
+      const mine = scanMatchesFamily(cfg);
+      if (status === 'running' && mine) {
         hint.innerText = t('scanning', { tier: tierLabel, done: prog.done || 0, total: prog.total || n })
           + (prog.symbol ? ` · ${prog.symbol}` : '')
           + t('contractsSoFar', { n: cCount });
-      } else if (status === 'error') {
+      } else if (status === 'error' && mine) {
         hint.innerText = t('scanError', { error: (cfg && (cfg.last_error || cfg.error)) || 'unknown' });
       } else {
         hint.innerText = t('scanSummary', {
           tier: tierLabel,
-          names: cfg && cfg.scan_symbol_count ? cfg.scan_symbol_count : n,
+          names: mine && cfg && cfg.scan_symbol_count ? cfg.scan_symbol_count : n,
           n: cCount
         });
       }
@@ -1479,9 +1532,10 @@
           const res = await fetch('/api/v1/config');
           if (!res.ok) return;
           const cfg = await res.json();
+          paintSourceStatus(cfg);
           paintScanTier(cfg.scan_tier, cfg);
           await loadBoards(currentAlpha, true);
-          if (cfg.scan_status !== 'running') {
+          if (cfg.scan_status !== 'running' || (cfg.scan_family && cfg.scan_family !== currentFamily)) {
             clearInterval(scanPollTimer);
             scanPollTimer = null;
             await applyConfig(cfg);
@@ -1493,8 +1547,6 @@
 
     async function applyConfig(cfg) {
       lastCfg = cfg;
-      const statusEl = document.getElementById('engineStatus');
-      const hint = document.getElementById('sourceHint');
       const sandboxBtn = document.getElementById('btnSandbox');
       const delayedBtn = document.getElementById('btnDelayed');
       const liveBtn = document.getElementById('btnLive');
@@ -1504,30 +1556,9 @@
       delayedBtn.className = source === 'delayed' ? 'on-delayed' : '';
       liveBtn.className = source === 'webull' && !cfg.offline_mode ? 'on-live' : '';
       form.style.display = source === 'webull' && (cfg.error === 'missing_credentials' || cfg.last_error === 'missing_credentials' || cfg.error === 'auth_failed') ? 'grid' : 'none';
-      if (source === 'webull' && !cfg.offline_mode) {
-        statusEl.innerText = t('statusLive');
-        hint.className = 'hint ok';
-        hint.innerText = t('liveScan', { n: cfg.candidate_count || 0, key: cfg.credential_hint ? t('keyHint', { hint: cfg.credential_hint }) : '' });
-      } else if (source === 'delayed') {
-        statusEl.innerText = t('statusDelayed');
-        hint.className = 'hint ok';
-        hint.innerText = t('delayedScan', { n: cfg.candidate_count || 0 });
-      } else if (cfg.error === 'missing_credentials' || cfg.last_error === 'missing_credentials') {
-        statusEl.innerText = t('statusSandbox');
-        hint.className = 'hint error';
-        hint.innerText = t('missingCreds');
-        form.style.display = 'grid';
-      } else if (cfg.error === 'auth_failed' || cfg.last_error === 'auth_failed' || cfg.error === 'delayed_failed') {
-        statusEl.innerText = t('statusSandbox');
-        hint.className = 'hint error';
-        hint.innerText = t('feedFailed');
-      } else {
-        statusEl.innerText = t('statusSandbox');
-        hint.className = 'hint';
-        hint.innerText = t('sandboxHint');
-      }
+      paintSourceStatus(cfg);
       paintScanTier(cfg.scan_tier, cfg);
-      if (cfg.scan_status === 'running') startScanPoll();
+      if (cfg.scan_status === 'running' && scanMatchesFamily(cfg)) startScanPoll();
     }
 
     async function fetchConfig() {
@@ -1558,7 +1589,9 @@
       }
       form.style.display = 'none';
       hint.className = 'hint';
-      hint.innerText = source === 'delayed' ? t('fetchingDelayed') : t('loadingSandbox');
+      hint.innerText = source === 'delayed'
+        ? t(currentFamily === 'csp' ? 'fetchingDelayedCsp' : 'fetchingDelayed')
+        : t('loadingSandbox');
       try {
         const res = await fetch('/api/v1/mode', {
           method: 'POST',
