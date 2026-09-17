@@ -424,10 +424,11 @@ class AppState:
             csp_cands = list(self.csp_candidates)
 
         if not csp_cands:
-            syms = self.resolve_scan_symbols()
-            if hasattr(self.client, "get_csp_candidates"):
+            # Sandbox can hydrate from fixtures. Delayed/Webull wait for the scan worker —
+            # a live GET must not block the dashboard on Nasdaq/Yahoo.
+            if self.source == "sandbox" and hasattr(self.client, "get_csp_candidates"):
                 try:
-                    csp_cands = self.client.get_csp_candidates(syms)
+                    csp_cands = self.client.get_csp_candidates(self.resolve_scan_symbols())
                 except Exception as e:
                     logger.warning("Failed to query CSP candidates: %s", e)
                     csp_cands = []
@@ -519,6 +520,7 @@ class AppState:
         app_key: Optional[str] = None,
         app_secret: Optional[str] = None,
         source: Optional[str] = None,
+        family: Optional[str] = None,
     ) -> Tuple[int, Dict[str, Any]]:
         """
         Switch sandbox / delayed public / live Webull.
@@ -529,6 +531,10 @@ class AppState:
         source = str(source).strip().lower()
         if source not in ("sandbox", "delayed", "webull"):
             return 400, {**self.public_config(), "error": "invalid_source", "message": "source must be sandbox, delayed, or webull"}
+
+        fam = str(family or self.scan_family or "leaps").strip().lower()
+        if fam not in ("leaps", "csp"):
+            fam = "leaps"
 
         with self._lock:
             self._scan_seq += 1
@@ -617,13 +623,13 @@ class AppState:
             return 502, {**self.public_config(), "error": "auth_failed", "message": msg}
 
         if scan_after == "sync":
-            count = self.run_scan()
+            count = self.run_scan(family=fam)
             payload = self.public_config()
             payload["message"] = "Switched to sandbox mock data."
             payload["candidate_count"] = count
             return 200, payload
 
-        code, payload = self.request_scan()
+        code, payload = self.request_scan(family=fam)
         if self.source == "delayed":
             payload["message"] = (
                 "Delayed public: Yahoo history + Nasdaq OPRA delayed chain. "
@@ -687,6 +693,11 @@ def create_api_handler_class(state: AppState):
                     source = source.strip() or None
                 else:
                     source = None
+                family = req_data.get("family")
+                if isinstance(family, str):
+                    family = family.strip() or None
+                else:
+                    family = None
                 offline = bool(req_data.get("offline", True))
                 app_key = req_data.get("app_key")
                 app_secret = req_data.get("app_secret")
@@ -703,6 +714,7 @@ def create_api_handler_class(state: AppState):
                     app_key=app_key,
                     app_secret=app_secret,
                     source=source,
+                    family=family,
                 )
                 return code, headers, json.dumps(payload).encode("utf-8")
 

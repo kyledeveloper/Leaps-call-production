@@ -173,6 +173,40 @@ class TestCSPApi(unittest.TestCase):
         self.assertEqual(puts[0]["strike"], 210.0)
         self.assertEqual(puts[0]["bid"], 3.50)
 
+    def test_delayed_mode_switch_scans_csp_family(self):
+        """Clicking Delayed on the CSP tab must start a CSP scan, not LEAPS."""
+        state = AppState(offline_mode=True)
+        captured = {}
+
+        def fake_request_scan(symbols=None, tier=None, family="leaps"):
+            captured["family"] = family
+            captured["tier"] = tier
+            state.scan_family = family
+            return 202, state.public_config()
+
+        state.request_scan = fake_request_scan  # type: ignore[method-assign]
+        code, payload = state.set_mode(offline=False, source="delayed", family="csp")
+        self.assertEqual(code, 202)
+        self.assertEqual(captured.get("family"), "csp")
+        self.assertEqual(payload.get("scan_family"), "csp")
+
+    def test_get_csp_boards_delayed_empty_does_not_network_fetch(self):
+        """GET /csp/boards must not block on Nasdaq when the CSP scan has not finished."""
+        state = AppState(offline_mode=True)
+        state.source = "delayed"
+        state.csp_candidates = []
+
+        class BoomClient:
+            def get_csp_candidates(self, *args, **kwargs):
+                raise AssertionError("delayed GET /csp/boards must not live-fetch")
+
+        state.client = BoomClient()
+        boards = state.get_csp_boards(alpha=0.5)
+        self.assertEqual(boards["harvest"], [])
+        self.assertEqual(boards["csp_harvest"], [])
+        self.assertEqual(boards["wheel"], [])
+        self.assertEqual(boards["vol_rank"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

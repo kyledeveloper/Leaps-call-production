@@ -1070,7 +1070,12 @@
       } catch (e) {}
       applyStaticI18n();
       paintStrategyHelp(currentBoardKey);
-      loadBoards(currentAlpha);
+      const src = lastCfg && lastCfg.source;
+      if (src === 'delayed' || src === 'webull') {
+        triggerScan();
+      } else {
+        loadBoards(currentAlpha);
+      }
     }
 
     function toggleCspFilter(key) {
@@ -1558,10 +1563,11 @@
         const res = await fetch('/api/v1/mode', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ source })
+          body: JSON.stringify({ source, family: currentFamily })
         });
         const cfg = await res.json();
         await applyConfig(cfg);
+        if (res.status === 202 || (cfg && cfg.scan_status === 'running')) startScanPoll();
         if (res.ok) await loadBoards(currentAlpha);
       } catch (e) {
         hint.className = 'hint error';
@@ -1577,7 +1583,7 @@
       btn.innerText = t('connecting');
       hint.className = 'hint';
       hint.innerText = t('contactingWebull');
-      const payload = { source: 'webull', offline: false };
+      const payload = { source: 'webull', offline: false, family: currentFamily };
       if (!reuseSaved) {
         payload.app_key = document.getElementById('appKey').value.trim();
         payload.app_secret = document.getElementById('appSecret').value.trim();
