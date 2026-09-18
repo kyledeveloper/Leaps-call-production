@@ -277,6 +277,23 @@ class TestAPIServer(unittest.TestCase):
         self.assertEqual(code, 400)
         self.assertEqual(payload.get("error"), "empty_watchlist")
 
+    def test_watchlist_100_cap_enforced(self):
+        """Item 5 (TDD): set truncates at 100; add beyond cap is rejected with 400."""
+        handler_cls = create_api_handler_class(self.state)
+        tickers = [chr(65 + (i // 26) % 26) + chr(65 + i % 26) for i in range(105)]
+        set_payload = json.dumps({"action": "set", "tickers": tickers}).encode("utf-8")
+        code, _, body = handler_cls.dispatch("POST", "/api/v1/watchlist", set_payload)
+        self.assertEqual(code, 200)
+        res = json.loads(body.decode("utf-8"))
+        self.assertEqual(res["count"], 100)
+
+        add_payload = json.dumps({"action": "add", "ticker": "ZZZZZ"}).encode("utf-8")
+        code, _, body = handler_cls.dispatch("POST", "/api/v1/watchlist", add_payload)
+        self.assertEqual(code, 400)
+        res = json.loads(body.decode("utf-8"))
+        self.assertIn("capacity", res.get("message", ""))
+
+
 
 if __name__ == "__main__":
     unittest.main()

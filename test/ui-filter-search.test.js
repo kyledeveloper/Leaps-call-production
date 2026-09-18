@@ -389,6 +389,18 @@ console.log('Running UI Filter & Search TDD Tests (Red-Team Clauses A-F)...');
     assert(lastUrl.includes('ticker=TSLA'), 'DELETE url must contain ticker parameter');
     assert(!elements.watchlistChips.innerHTML.includes('TSLA'), 'Chips must no longer include TSLA');
 
+    // Item 2: backend error message must surface in the alert, not the generic fallback
+    let alerted = null;
+    sandbox.alert = (msg) => { alerted = msg; };
+    sandbox.fetch = async () => ({
+      ok: false,
+      json: async () => ({ status: 'error', message: 'AAPL already in watchlist' }),
+    });
+    elements.watchlistInput.value = 'AAPL';
+    await addWatchlistTicker();
+    assert(alerted && alerted.includes('already in watchlist'),
+      'alert must show the backend message, got: ' + alerted);
+
     console.log('✓ Clause H Passed: Watchlist universe tier configuration, DOM elements, and mock API interactions verified.');
     
     // ==========================================
