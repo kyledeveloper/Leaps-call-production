@@ -792,8 +792,8 @@
     };
     const FILTER_IDS = {
       deep_itm: ['strike','delta','intrinsic','leverage','carry','theta','dte','oi','spread','volume'],
-      vol_discount: ['iv_history','iv_percentile','iv_hv','hv_proxy','regime_b','crash','strike','dte','earnings'],
-      oversold: ['universe','bars','rsi','dma','dma_hv','drawdown','bounce','confluence','strike','dte'],
+      vol_discount: ['iv_history','iv_percentile','iv_hv','hv_proxy','regime_b','crash','strike','dte','earnings','leverage'],
+      oversold: ['universe','bars','rsi','dma','dma_hv','drawdown','bounce','confluence','strike','dte','leverage','carry'],
       csp_harvest: ['delta','aroc','dte','buffer','pop','liquidity'],
       csp_wheel: ['delta','oversold','dte','liquidity'],
       csp_vol_rank: ['ivr','delta','aroc','earnings','liquidity'],
@@ -1294,7 +1294,7 @@
           ["Theta |Θ_day| / P_exec", "< 0.03%/day", "0.03 – 0.10%/day", "≥ 0.10%/day"],
           ["DTE", "≥ 300", "250 – 300", "< 250"],
           ["OI", "≥ 300", "100 – 299", "< 100"],
-          ["Spread", "rel ≤ 6% or half ≤ max($0.75, 2.5%×mid)", "rel ≤ 10% or half ≤ max($1.50, 5%×mid)", "rel > 10% and half too wide; zero bid / crossed"],
+          ["Spread", "rel ≤ 6% or half ≤ max($0.75, 2.5%×mid)", "rel ≤ 10% or half ≤ max($1.50, 5%×mid); wide width is capped at WATCH", "Zero bid / crossed / structural defect (width alone is WATCH)"],
           ["Volume", "vol ≥ 50 or 20d avg ≥ 20 or size ≥ 10", "vol ≥ 10 and OI ≥ 100", "thin tape"]
         ]
       },
@@ -1310,7 +1310,8 @@
           ["Crash definition", "—", "—", "−15% 20d or −20% from 52w high"],
           ["Strike / spot", "0.70S – 1.25S", "—", "Outside window"],
           ["DTE", "≥ 300", "250 – 300", "< 250"],
-          ["Earnings (Regime A)", "—", "Within 10 days → WATCH", "—"]
+          ["Earnings (Regime A)", "—", "Within 10 days → WATCH", "—"],
+          ["Effective leverage", "2.5x – 4.5x", "2.0–2.5x or 4.5–5.5x", "< 2.0x or > 5.5x"]
         ]
       },
       oversold: {
@@ -1326,7 +1327,9 @@
           ["Bounce off 52w low", "≥ 3% (if DD≥10%)", "0 – 3%", "—"],
           ["Confluence score", "≥ 2.0 and ≥1 core", "1.0 – 2.0", "< 1.0"],
           ["Strike / spot", "0.50S – 1.25S", "—", "Outside window"],
-          ["DTE", "≥ 250", "—", "< 250"]
+          ["DTE", "≥ 250", "—", "< 250"],
+          ["Effective leverage", "2.5x – 4.5x", "2.0–2.5x or 4.5–5.5x", "< 2.0x or > 5.5x"],
+          ["Carry  extrinsic/(P×T)", "< 15%/yr", "15 – 35%/yr", "≥ 35%/yr"]
         ]
       },
       csp_harvest: {
@@ -1377,7 +1380,7 @@
           ["Theta |Θ日| / P_exec", "< 0.03%/日", "0.03 – 0.10%/日", "≥ 0.10%/日"],
           ["剩余天数", "≥ 300", "250 – 300", "< 250"],
           ["持仓量 OI", "≥ 300", "100 – 299", "< 100"],
-          ["价差 Spread", "相对 ≤ 6% 或半价差 ≤ max($0.75, 2.5%×中间价)", "相对 ≤ 10% 或半价差 ≤ max($1.50, 5%×中间价)", "相对 > 10% 且半价差过宽；零买 / 交叉盘"],
+          ["价差 Spread", "相对 ≤ 6% 或半价差 ≤ max($0.75, 2.5%×中间价)", "相对 ≤ 10% 或半价差 ≤ max($1.50, 5%×中间价)（单纯过宽仅降级为 WATCH）", "买一为 0 或倒挂等结构缺陷（单纯价差过宽仅降为 WATCH）"],
           ["成交 Volume", "量 ≥ 50 或 20日均 ≥ 20 或盘口 ≥ 10", "量 ≥ 10 且 OI ≥ 100", "盘口过薄"]
         ]
       },
@@ -1393,7 +1396,8 @@
           ["暴跌定义", "—", "—", "20 日 −15% 或距 52 周高 −20%"],
           ["行权价 / 现价", "0.70S – 1.25S", "—", "窗外"],
           ["剩余天数", "≥ 300", "250 – 300", "< 250"],
-          ["财报（Regime A）", "—", "10 天内 → WATCH", "—"]
+          ["财报（Regime A）", "—", "10 天内 → WATCH", "—"],
+          ["有效杠杆 Leverage", "2.5x – 4.5x", "2.0–2.5x 或 4.5–5.5x", "< 2.0x 或 > 5.5x"]
         ]
       },
       oversold: {
@@ -1409,7 +1413,9 @@
           ["距 52 周低反弹", "≥ 3%（若回撤≥10%）", "0 – 3%", "—"],
           ["共振分数", "≥ 2.0 且 ≥1 个核心", "1.0 – 2.0", "< 1.0"],
           ["行权价 / 现价", "0.50S – 1.25S", "—", "窗外"],
-          ["剩余天数", "≥ 250", "—", "< 250"]
+          ["剩余天数", "≥ 250", "—", "< 250"],
+          ["有效杠杆 Leverage", "2.5x – 4.5x", "2.0–2.5x 或 4.5–5.5x", "< 2.0x 或 > 5.5x"],
+          ["时间价值损耗 Carry", "< 15%/年", "15 – 35%/年", "≥ 35%/年"]
         ]
       },
       csp_harvest: {
@@ -1518,14 +1524,13 @@
     }
 
     function effectiveStatus(item) {
-      if (item && item.guard_status && currentFamily !== 'csp') return item.guard_status;
       const board = currentBoardKey;
       const ids = FILTER_IDS[board] || FILTER_IDS[board.replace(/^csp_/, '')] || [];
       const enabled = enabledFilters[board] || enabledFilters[board.replace(/^csp_/, '')] || new Set(ids);
       const gates = Object.assign({}, item.gates || {});
 
       if (!ids.length || !Object.keys(gates).length) {
-        return (item && (item.guard_status || item.status)) || 'PASS';
+        return (item && item.status) || 'PASS';
       }
 
       // Pre-split payloads only have `liquidity`. Apply it to all three
@@ -1896,7 +1901,7 @@
       clearTimeout(tickerSearchTimer);
       tickerSearchTimer = setTimeout(() => {
         const input = document.getElementById('tickerSearchInput');
-        tickerQuery = (input.value || '').trim().toUpperCase();
+        tickerQuery = (input.value || '').trim().replace(/^\$/, '').toUpperCase();
         document.getElementById('tickerSearchClear').style.display = tickerQuery ? '' : 'none';
         renderActiveBoard();
       }, 150);
@@ -1916,7 +1921,24 @@
         || cachedBoards['csp_' + currentBoardKey]
         || [];
       const searchedItems = tickerQuery
-        ? allItems.filter(it => itemTicker(it) === tickerQuery)
+        ? allItems
+            .filter(it => {
+              const c = it.candidate || it;
+              const und = (c.underlying || it.underlying || '').toUpperCase();
+              const sym = (c.symbol || it.symbol || '').toUpperCase();
+              return und.startsWith(tickerQuery) || sym.startsWith(tickerQuery);
+            })
+            .sort((a, b) => {
+              const ca = a.candidate || a;
+              const cb = b.candidate || b;
+              const aUnd = (ca.underlying || a.underlying || '').toUpperCase();
+              const bUnd = (cb.underlying || b.underlying || '').toUpperCase();
+              const aSym = (ca.symbol || a.symbol || '').toUpperCase();
+              const bSym = (cb.symbol || b.symbol || '').toUpperCase();
+              const aExact = (aUnd === tickerQuery || aSym === tickerQuery) ? 0 : 1;
+              const bExact = (bUnd === tickerQuery || bSym === tickerQuery) ? 0 : 1;
+              return aExact - bExact;
+            })
         : allItems;
       const counts = { PASS: 0, WATCH: 0, REJECT: 0 };
       searchedItems.forEach(it => {
@@ -2000,16 +2022,18 @@
         `;
       }
 
+      const colSpan = (currentFamily === 'csp') ? 13 : (currentBoardKey === 'deep_itm' ? 12 : (currentBoardKey === 'vol_discount' ? 9 : 8));
+
       if (allItems.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('emptyBoard')}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${colSpan}" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('emptyBoard')}</td></tr>`;
         return;
       }
       if (tickerQuery && searchedItems.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('tickerNoMatch', { ticker: esc(tickerQuery) })}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${colSpan}" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('tickerNoMatch', { ticker: esc(tickerQuery) })}</td></tr>`;
         return;
       }
       if (items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('emptyFilter')}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${colSpan}" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('emptyFilter')}</td></tr>`;
         return;
       }
 

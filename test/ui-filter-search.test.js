@@ -1,0 +1,252 @@
+/**
+ * TDD Regression Tests for UI Ticker Search and Strategy Gate Synchronization
+ * Formally ratified under Red-Team Inquest Clauses A-F:
+ * - Clause A: Anti-tautological real DOM assertion on renderActiveBoard()
+ * - Clause B: Exact match visual priority (e.g. 'C' before 'CAT')
+ * - Clause C: Cashtag sanitization ('$AAPL' -> 'AAPL')
+ * - Clause D: Semantic index alignment between STRATEGY_HELP and FILTER_IDS
+ * - Clause E: Dynamic toggle & localStorage backward compatibility
+ * - Clause F: Universal dynamic colSpan across all 3 empty state branches
+ */
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const htmlPath = path.resolve(__dirname, '../src/leaps_scanner/api/static/index.html');
+const htmlContent = fs.readFileSync(htmlPath, 'utf8');
+
+const scriptMatch = htmlContent.match(/<script>([\s\S]*?)<\/script>/);
+if (!scriptMatch) {
+  throw new Error('Could not find <script> tag in index.html');
+}
+const scriptContent = scriptMatch[1];
+
+function createSandbox(initialLocalStorage = {}) {
+  const elements = {
+    countPass: { innerText: '' },
+    countWatch: { innerText: '' },
+    countReject: { innerText: '' },
+    filterMeta: { innerText: '' },
+    tickerSearchMeta: { innerText: '' },
+    tickerSearchClear: { style: { display: 'none' } },
+    tickerSearchInput: { value: '' },
+    tableHeader: { innerHTML: '' },
+    tableBody: { innerHTML: '' },
+    helpTitle: { innerText: '' },
+    helpBody: { innerHTML: '' },
+    alphaDisplay: { innerText: '' },
+    sliderLegendRight: { innerText: '' },
+    engineStatus: { innerText: '' },
+    sourceHint: { innerText: '', className: '' },
+    universeBadge: { innerText: '' },
+    btnSync: { innerText: '' },
+    btnScan: { innerText: '' },
+    famLeaps: { className: '' },
+    famCsp: { className: '' },
+    langEn: { className: '' },
+    langZh: { className: '' },
+    pillAroc: { classList: { toggle: () => {} } },
+    pillBuffer: { classList: { toggle: () => {} } },
+    pillIvr: { classList: { toggle: () => {} } },
+    pillPop: { classList: { toggle: () => {} } },
+    pillEarnings: { classList: { toggle: () => {} } },
+    pillLiquidity: { classList: { toggle: () => {} } }
+  };
+
+  const store = Object.assign({}, initialLocalStorage);
+
+  const sandbox = {
+    console,
+    document: {
+      documentElement: { lang: 'en', dataset: {} },
+      getElementById: (id) => elements[id] || { innerText: '', innerHTML: '', value: '', style: {}, classList: { toggle: () => {} } },
+      querySelectorAll: () => [],
+      querySelector: () => ({ innerText: '' })
+    },
+    localStorage: {
+      getItem: (key) => (store[key] !== undefined ? store[key] : null),
+      setItem: (key, val) => { store[key] = String(val); }
+    },
+    navigator: { language: 'en-US' },
+    window: { location: { search: '', pathname: '/' }, history: { replaceState: () => {} } },
+    URLSearchParams,
+    performance: { now: () => Date.now() },
+    setTimeout: (fn) => fn(),
+    clearTimeout: () => {},
+    fetch: async () => ({ ok: true, json: async () => ({ boards: { deep_itm: [], vol_discount: [], oversold: [], csp_harvest: [], csp_wheel: [], csp_vol_rank: [] } }) }),
+    __elements: elements,
+    __store: store
+  };
+
+  const context = vm.createContext(sandbox);
+  vm.runInContext(scriptContent, context);
+  return { context, sandbox, elements, get: (expr) => vm.runInContext(expr, context) };
+}
+
+console.log('Running UI Filter & Search TDD Tests (Red-Team Clauses A-F)...');
+
+// Clause D & Gate Sync: FILTER_IDS & STRATEGY_HELP semantic alignment
+{
+  console.log('Testing Clause D & Gate Sync: FILTER_IDS & STRATEGY_HELP alignment...');
+  const { get } = createSandbox();
+  const filterIds = get('FILTER_IDS');
+  const strategyHelp = get('STRATEGY_HELP');
+  const strategyHelpZh = get('STRATEGY_HELP_ZH');
+
+  // vol_discount checks
+  assert(filterIds.vol_discount.includes('leverage'), 'FILTER_IDS.vol_discount must include "leverage"');
+  assert.strictEqual(strategyHelp.vol_discount.rows.length, filterIds.vol_discount.length, 'vol_discount EN rows must match filter count');
+  assert.strictEqual(strategyHelpZh.vol_discount.rows.length, filterIds.vol_discount.length, 'vol_discount ZH rows must match filter count');
+  assert.strictEqual(strategyHelp.vol_discount.rows[9][0], 'Effective leverage', 'vol_discount row 9 must be Effective leverage');
+  assert(strategyHelpZh.vol_discount.rows[9][0].includes('有效杠杆'), 'vol_discount ZH row 9 must contain 有效杠杆');
+
+  // oversold checks
+  assert(filterIds.oversold.includes('leverage'), 'FILTER_IDS.oversold must include "leverage"');
+  assert(filterIds.oversold.includes('carry'), 'FILTER_IDS.oversold must include "carry"');
+  assert.strictEqual(strategyHelp.oversold.rows.length, filterIds.oversold.length, 'oversold EN rows must match filter count');
+  assert.strictEqual(strategyHelpZh.oversold.rows.length, filterIds.oversold.length, 'oversold ZH rows must match filter count');
+  assert.strictEqual(strategyHelp.oversold.rows[10][0], 'Effective leverage', 'oversold row 10 must be Effective leverage');
+  assert(strategyHelpZh.oversold.rows[10][0].includes('有效杠杆'), 'oversold ZH row 10 must contain 有效杠杆');
+  assert(strategyHelp.oversold.rows[11][0].startsWith('Carry'), 'oversold row 11 must start with Carry');
+  assert(strategyHelpZh.oversold.rows[11][0].includes('Carry') || strategyHelpZh.oversold.rows[11][0].includes('时间价值损耗'), 'oversold ZH row 11 must mention Carry');
+
+  console.log('✓ Clause D Passed: FILTER_IDS and STRATEGY_HELP semantically aligned.');
+}
+
+// Clause A & Clause B: Anti-Tautological DOM assertion & Exact Match Priority
+{
+  console.log('Testing Clause A & B: Real DOM renderActiveBoard() with exact match priority...');
+  const { context, elements, get } = createSandbox();
+
+  const leapsItems = [
+    { symbol: 'CAT260116C00250000', underlying: 'CAT', strike: 250, spot: 300, dte: 350, bid: 60, ask: 65, p_exec: 62.5, delta: 0.8, effective_leverage: 3.8, intrinsic_per_share: 50, carry_cost: 0.08, status: 'PASS', reasons: [], open_interest: 500, volume: 100 },
+    { symbol: 'C260116C00060000', underlying: 'C', strike: 60, spot: 70, dte: 350, bid: 12, ask: 14, p_exec: 13, delta: 0.78, effective_leverage: 4.2, intrinsic_per_share: 10, carry_cost: 0.09, status: 'PASS', reasons: [], open_interest: 500, volume: 100 },
+    { symbol: 'CRM260116C00280000', underlying: 'CRM', strike: 280, spot: 310, dte: 350, bid: 45, ask: 50, p_exec: 47.5, delta: 0.75, effective_leverage: 4.9, intrinsic_per_share: 30, carry_cost: 0.12, status: 'PASS', reasons: [], open_interest: 500, volume: 100 }
+  ];
+
+  const cspItems = [
+    { candidate: { symbol: 'XLI261016P00110500', underlying: 'XLI', strike: 110, spot: 125, dte: 30, bid: 1.2, ask: 1.3, delta: -0.25 }, status: 'PASS', p_exec: 1.25, aroc: 0.22, roc: 0.02, buffer: 0.12, pop: 0.85, recommended_contracts: 3, capital_required: 33000, max_loss: 32625, stress_pnl: 375 },
+    { candidate: { symbol: 'SPY261016P00500000', underlying: 'SPY', strike: 500, spot: 550, dte: 30, bid: 3.5, ask: 3.7, delta: -0.20 }, status: 'PASS', p_exec: 3.6, aroc: 0.18, roc: 0.015, buffer: 0.09, pop: 0.88, recommended_contracts: 1, capital_required: 50000, max_loss: 49640, stress_pnl: 360 }
+  ];
+
+  vm.runInContext('cachedBoards = { deep_itm: ' + JSON.stringify(leapsItems) + ', csp_harvest: ' + JSON.stringify(cspItems) + ' };', context);
+
+  // 1. LEAPS Search for underlying 'C' with exact match priority over 'CAT' and 'CRM'
+  vm.runInContext("currentFamily = 'leaps'; currentBoardKey = 'deep_itm'; tickerQuery = 'C'; renderActiveBoard();", context);
+  const leapsHtml = elements.tableBody.innerHTML;
+  assert(leapsHtml.includes('C260116C00060000'), 'LEAPS search for "C" must render Citigroup contract');
+  assert(leapsHtml.includes('CAT260116C00250000'), 'LEAPS search for "C" must also render prefix match CAT');
+  // Exact match 'C' must precede prefix match 'CAT' in DOM
+  const idxC = leapsHtml.indexOf('C260116C00060000');
+  const idxCat = leapsHtml.indexOf('CAT260116C00250000');
+  assert(idxC < idxCat, 'Exact match "C" must be rendered before prefix match "CAT" (Clause B)');
+
+  // 2. CSP Search for 'XLI'
+  vm.runInContext("currentFamily = 'csp'; currentBoardKey = 'csp_harvest'; tickerQuery = 'XLI'; renderActiveBoard();", context);
+  const cspHtml = elements.tableBody.innerHTML;
+  assert(cspHtml.includes('XLI261016P00110500'), 'CSP search for "XLI" must render XLI put contract in tableBody');
+  assert(!cspHtml.includes('SPY261016P00500000'), 'CSP search for "XLI" must not render SPY');
+
+  console.log('✓ Clause A & B Passed: Direct DOM assertions and exact-priority sorting verified.');
+}
+
+// Clause C: Cashtag sanitization
+{
+  console.log('Testing Clause C: Cashtag prefix $ stripped in handleTickerSearchInput...');
+  const { context, elements } = createSandbox();
+  elements.tickerSearchInput.value = '$AAPL';
+  vm.runInContext('handleTickerSearchInput();', context);
+  const query = vm.runInContext('tickerQuery;', context);
+  assert.strictEqual(query, 'AAPL', 'Cashtag $AAPL must be sanitized to AAPL');
+  console.log('✓ Clause C Passed: Cashtag sanitization verified.');
+}
+
+// Clause E: Dynamic toggle & LocalStorage backward compatibility
+{
+  console.log('Testing Clause E: Dynamic toggle & LocalStorage backward compatibility...');
+  // 1. Backward compatibility: existing store without 'leverage' or 'carry'
+  const legacyStore = {
+    leaps_filters_v2: JSON.stringify({
+      vol_discount: { strike: true, dte: true },
+      oversold: { universe: true, bars: true }
+    })
+  };
+  const { context } = createSandbox(legacyStore);
+  const enabledVol = vm.runInContext("enabledFilters['vol_discount'];", context);
+  const enabledOver = vm.runInContext("enabledFilters['oversold'];", context);
+  assert(enabledVol.has('leverage'), 'Existing legacy localStorage must default newly introduced leverage gate to ENABLED');
+  assert(enabledOver.has('leverage'), 'Existing legacy localStorage must default newly introduced leverage gate to ENABLED');
+  assert(enabledOver.has('carry'), 'Existing legacy localStorage must default newly introduced carry gate to ENABLED');
+
+  // 2. vol_discount evaluation with leverage REJECT
+  vm.runInContext("currentFamily = 'leaps'; currentBoardKey = 'vol_discount';", context);
+  const volItem = {
+    symbol: 'AAPL260116C00150000',
+    underlying: 'AAPL',
+    status: 'REJECT',
+    gates: {
+      iv_history: 'PASS',
+      iv_percentile: 'PASS',
+      strike: 'PASS',
+      dte: 'PASS',
+      leverage: 'REJECT'
+    }
+  };
+  let st = vm.runInContext(`effectiveStatus(${JSON.stringify(volItem)});`, context);
+  assert.strictEqual(st, 'REJECT', 'vol_discount item with leverage REJECT must evaluate to REJECT');
+
+  // 3. oversold evaluation with carry REJECT
+  vm.runInContext("currentBoardKey = 'oversold';", context);
+  const oversoldItem = {
+    symbol: 'AAPL260116C00150000',
+    underlying: 'AAPL',
+    status: 'REJECT',
+    gates: {
+      universe: 'PASS',
+      bars: 'PASS',
+      confluence: 'PASS',
+      strike: 'PASS',
+      dte: 'PASS',
+      leverage: 'PASS',
+      carry: 'REJECT'
+    },
+    signal_points: { rsi: 1, dma: 1 },
+    signal_core: { rsi: true }
+  };
+  st = vm.runInContext(`effectiveStatus(${JSON.stringify(oversoldItem)});`, context);
+  assert.strictEqual(st, 'REJECT', 'oversold item with carry REJECT must evaluate to REJECT');
+
+  // 4. Dynamic user toggle: unchecking carry filter converts status to PASS
+  vm.runInContext("enabledFilters['oversold'].delete('carry');", context);
+  st = vm.runInContext(`effectiveStatus(${JSON.stringify(oversoldItem)});`, context);
+  assert.strictEqual(st, 'PASS', 'Unchecking carry filter must dynamically restore effectiveStatus to PASS');
+
+  console.log('✓ Clause E Passed: Dynamic toggle and legacy localStorage compatibility verified.');
+}
+
+// Clause F: Dynamic colSpan across all 3 empty state branches
+{
+  console.log('Testing Clause F: Dynamic colSpan on empty state branches...');
+  const { context, elements } = createSandbox();
+
+  // 1. oversold board (8 columns) empty board
+  vm.runInContext("currentFamily = 'leaps'; currentBoardKey = 'oversold'; cachedBoards = { oversold: [] }; tickerQuery = ''; renderActiveBoard();", context);
+  assert(elements.tableBody.innerHTML.includes('colspan="8"'), 'oversold empty board must use colspan="8"');
+
+  // 2. vol_discount board (9 columns) ticker no match
+  vm.runInContext("currentBoardKey = 'vol_discount'; cachedBoards = { vol_discount: [{ symbol: 'AAPL', underlying: 'AAPL' }] }; tickerQuery = 'XYZ'; renderActiveBoard();", context);
+  assert(elements.tableBody.innerHTML.includes('colspan="9"'), 'vol_discount no ticker match must use colspan="9"');
+
+  // 3. deep_itm board (12 columns) status filter no match
+  vm.runInContext("currentBoardKey = 'deep_itm'; cachedBoards = { deep_itm: [{ symbol: 'AAPL', underlying: 'AAPL', status: 'REJECT', gates: {} }] }; visibleStatuses.clear(); visibleStatuses.add('PASS'); tickerQuery = ''; renderActiveBoard();", context);
+  assert(elements.tableBody.innerHTML.includes('colspan="12"'), 'deep_itm no visible status must use colspan="12"');
+
+  // 4. csp board (13 columns) empty board
+  vm.runInContext("currentFamily = 'csp'; currentBoardKey = 'csp_harvest'; cachedBoards = { csp_harvest: [] }; tickerQuery = ''; renderActiveBoard();", context);
+  assert(elements.tableBody.innerHTML.includes('colspan="13"'), 'CSP empty board must use colspan="13"');
+
+  console.log('✓ Clause F Passed: Dynamic colSpan correctly applied to all boards.');
+}
+
+console.log('All Red-Team clauses A-F verified successfully! 🎉');
