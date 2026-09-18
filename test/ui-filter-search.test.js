@@ -62,7 +62,7 @@ function createSandbox(initialLocalStorage = {}) {
     scanHint: { innerText: '' },
     btnViewGrouped: { classList: { _c: new Set(['on']), add: function(c){this._c.add(c);}, remove: function(c){this._c.delete(c);}, contains: function(c){return this._c.has(c);}, toggle: function(c){return this._c.has(c)?(this._c.delete(c),false):(this._c.add(c),true);} } },
     btnViewFlat: { classList: { _c: new Set(), add: function(c){this._c.add(c);}, remove: function(c){this._c.delete(c);}, contains: function(c){return this._c.has(c);}, toggle: function(c){return this._c.has(c)?(this._c.delete(c),false):(this._c.add(c),true);} } },
-    btnToggleAll: { innerText: '', style: { display: 'inline-flex' } }
+    btnToggleAll: { innerText: '', disabled: false, title: '', classList: { _c: new Set(), add: function(c){this._c.add(c);}, remove: function(c){this._c.delete(c);}, contains: function(c){return this._c.has(c);}, toggle: function(c){return this._c.has(c)?(this._c.delete(c),false):(this._c.add(c),true);} } }
   };
 
   const store = Object.assign({}, initialLocalStorage);
@@ -511,12 +511,16 @@ console.log('Running UI Filter & Search TDD Tests (Red-Team Clauses A-F)...');
     assert.strictEqual(sandbox.localStorage.getItem('leaps_view_mode'), 'flat', 'localStorage leaps_view_mode should be flat');
     assert(elements.btnViewFlat.classList.contains('on'), 'Flat button should have .on class');
     assert(!elements.btnViewGrouped.classList.contains('on'), 'Grouped button should NOT have .on class');
+    assert.strictEqual(elements.btnToggleAll.disabled, true, 'btnToggleAll must be disabled in flat mode');
+    assert(elements.btnToggleAll.classList.contains('disabled'), 'btnToggleAll must have .disabled class in flat mode');
 
     setViewMode('grouped');
     assert.strictEqual(get('viewMode'), 'grouped', 'viewMode should now be grouped');
     assert.strictEqual(sandbox.localStorage.getItem('leaps_view_mode'), 'grouped', 'localStorage leaps_view_mode should be grouped');
     assert(elements.btnViewGrouped.classList.contains('on'), 'Grouped button should have .on class');
     assert(!elements.btnViewFlat.classList.contains('on'), 'Flat button should NOT have .on class');
+    assert.strictEqual(elements.btnToggleAll.disabled, false, 'btnToggleAll must be enabled in grouped mode');
+    assert(!elements.btnToggleAll.classList.contains('disabled'), 'btnToggleAll must NOT have .disabled class in grouped mode');
 
     // 4. Accordion Toggle & Batch Operations
     const toggleTickerExpand = get('toggleTickerExpand');

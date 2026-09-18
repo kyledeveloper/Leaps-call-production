@@ -210,6 +210,9 @@
       color: var(--accent-blue);
     }
     .view-action-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       background: transparent;
       border: 1px solid var(--border);
       color: var(--text-muted);
@@ -223,6 +226,15 @@
     .view-action-btn:hover {
       color: var(--text-main);
       border-color: var(--text-muted);
+    }
+    .view-action-btn:disabled, .view-action-btn.disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      border-color: transparent !important;
+    }
+    .view-action-btn:disabled:hover, .view-action-btn.disabled:hover {
+      color: var(--text-muted) !important;
+      border-color: transparent !important;
     }
     .strategy-help {
       background: var(--bg-card);
@@ -1025,7 +1037,7 @@
         <button type="button" id="btnViewGrouped" class="view-chip on" onclick="setViewMode('grouped')" data-i18n="viewGrouped">⊞ Grouped</button>
         <button type="button" id="btnViewFlat" class="view-chip" onclick="setViewMode('flat')" data-i18n="viewFlat">≡ Flat</button>
       </div>
-      <button type="button" id="btnToggleAll" class="view-action-btn" onclick="toggleAllAccordions()" data-i18n="expandAll" style="display: inline-flex;">Expand All</button>
+      <button type="button" id="btnToggleAll" class="view-action-btn" onclick="toggleAllAccordions()" data-i18n="expandAll">Expand All</button>
     </div>
 
     <div class="filter-divider"></div>
@@ -1223,6 +1235,7 @@
         viewFlat: '≡ Flat',
         expandAll: 'Expand All',
         collapseAll: 'Collapse All',
+        toggleAllDisabledHint: 'Only available in Grouped mode',
         contracts: 'contracts',
         topPick: 'Top Pick',
         optionChainTitle: 'Option Chain ({count} contracts)',
@@ -1370,6 +1383,7 @@
         viewFlat: '≡ 列表平铺',
         expandAll: '全部展开',
         collapseAll: '全部折叠',
+        toggleAllDisabledHint: '仅在标的聚合模式下可用',
         contracts: '张合约',
         topPick: '首选',
         optionChainTitle: '期权链（共 {count} 张合约）',
@@ -2400,7 +2414,15 @@
         else btnFlat.classList.remove('on');
       }
       if (btnToggleAll) {
-        btnToggleAll.style.display = viewMode === 'grouped' ? 'inline-flex' : 'none';
+        if (viewMode === 'flat') {
+          btnToggleAll.disabled = true;
+          if (btnToggleAll.classList) btnToggleAll.classList.add('disabled');
+          btnToggleAll.title = t('toggleAllDisabledHint');
+        } else {
+          btnToggleAll.disabled = false;
+          if (btnToggleAll.classList) btnToggleAll.classList.remove('disabled');
+          btnToggleAll.title = '';
+        }
       }
     }
 
@@ -2445,6 +2467,7 @@
     }
 
     function toggleAllAccordions() {
+      if (viewMode === 'flat') return;
       const underlyings = getVisibleUnderlyings();
       if (underlyings.size === 0) return;
       let allOpen = true;
@@ -2964,16 +2987,26 @@
 
       // Update Expand/Collapse All button state
       const btnToggleAll = document.getElementById('btnToggleAll');
-      if (btnToggleAll && viewMode === 'grouped') {
-        const underlyings = getVisibleUnderlyings();
-        let allOpen = underlyings.size > 0;
-        for (const t of underlyings) {
-          if (!expandedTickers.has(t)) {
-            allOpen = false;
-            break;
+      if (btnToggleAll) {
+        if (viewMode === 'flat') {
+          btnToggleAll.disabled = true;
+          if (btnToggleAll.classList) btnToggleAll.classList.add('disabled');
+          btnToggleAll.innerText = t('expandAll');
+          btnToggleAll.title = t('toggleAllDisabledHint');
+        } else {
+          btnToggleAll.disabled = false;
+          if (btnToggleAll.classList) btnToggleAll.classList.remove('disabled');
+          btnToggleAll.title = '';
+          const underlyings = getVisibleUnderlyings();
+          let allOpen = underlyings.size > 0;
+          for (const t of underlyings) {
+            if (!expandedTickers.has(t)) {
+              allOpen = false;
+              break;
+            }
           }
+          btnToggleAll.innerText = allOpen ? t('collapseAll') : t('expandAll');
         }
-        btnToggleAll.innerText = allOpen ? t('collapseAll') : t('expandAll');
       }
     }
 
