@@ -8,6 +8,7 @@
  * - Clause 5: Deep-link state preservation & prefix normalization
  * - Clause 6: Expiry-grouped accordion safeguards
  * - Clause 7: Covered Call (CC) blueprint protocol
+ * - Clause 8: Ticker badge HTML-escaping (reflected XSS via ?ticker= deep link)
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -124,7 +125,7 @@ function createSandbox(initialUrl = 'http://localhost:8000/chain?ticker=AAPL&fam
   };
 }
 
-console.log('Running Option Chain Page TDD Tests (Clauses 1-7)...');
+console.log('Running Option Chain Page TDD Tests (Clauses 1-8)...');
 
 // Test 1: I18N Key Synchronization & Parity
 console.log('Testing Clause I18N: 100% Key Parity between English and Chinese...');
@@ -277,6 +278,31 @@ console.log('Testing Clause 7: Covered Call blueprint rendering...');
   assert(container.innerHTML.includes('downside_buffer'), 'downside_buffer spec must be shown');
   assert(container.innerHTML.includes('delta_window'), 'delta_window spec must be shown');
   console.log('✓ Clause 7 Passed: Covered call quantitative model blueprint verified.');
+}
+
+// Test 8: Clause 8 - Ticker badge HTML-escaping (reflected XSS via ?ticker=)
+console.log('Testing Clause 8: Ticker badge HTML-escaping against reflected XSS...');
+{
+  const { get, eval: evalCode, documentMock } = createSandbox();
+
+  // 8a: esc() escapes the five critical characters
+  const esc = get('esc');
+  assert.strictEqual(
+    esc('<img src=x onerror=alert(1)>&"\''),
+    '&lt;img src=x onerror=alert(1)&gt;&amp;&quot;&#39;',
+    'esc() must escape <, >, &, ", \''
+  );
+  assert.strictEqual(esc('AAPL'), 'AAPL', 'esc() must leave plain tickers untouched');
+  assert.strictEqual(esc(null), '', 'esc() must coerce null to empty string');
+  assert.strictEqual(esc(undefined), '', 'esc() must coerce undefined to empty string');
+
+  // 8b: renderData() must not inject a raw attacker-controlled ticker into the badge
+  evalCode('state.rawData = ({ ticker: \'<svg onload=alert(1)>\', spot: 1, asof: \'\', contracts: [] });');
+  evalCode('renderData();');
+  const badgeHtml = documentMock.getElementById('tickerBadge').innerHTML;
+  assert(!badgeHtml.includes('<svg'), 'tickerBadge must not contain a live <svg> tag');
+  assert(badgeHtml.includes('&lt;svg'), 'tickerBadge must contain the escaped ticker');
+  console.log('✓ Clause 8 Passed: Ticker badge HTML-escaping verified.');
 }
 
 console.log('All Option Chain Page TDD Tests Passed Successfully! 🎉');

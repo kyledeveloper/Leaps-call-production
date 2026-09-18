@@ -756,6 +756,16 @@
       return (I18N[state.lang] && I18N[state.lang][key]) || I18N.zh[key] || key;
     }
 
+    // Escape HTML special chars before injecting untrusted strings into innerHTML.
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     // Parse URL Params
     function parseParams() {
       const p = new URLSearchParams(window.location.search);
@@ -948,7 +958,7 @@
       if (!data) return;
 
       // Update Hero
-      document.getElementById("tickerBadge").innerHTML = `<span>${data.ticker || state.ticker}</span>`;
+      document.getElementById("tickerBadge").innerHTML = `<span>${esc(data.ticker || state.ticker)}</span>`;
       document.getElementById("spotPrice").textContent = data.spot ? `$${Number(data.spot).toFixed(2)}` : "--";
       document.getElementById("asOfTime").textContent = (data.asof || "").slice(0, 19).replace("T", " ") || "--";
 
