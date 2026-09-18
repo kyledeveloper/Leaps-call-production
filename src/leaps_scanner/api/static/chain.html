@@ -931,6 +931,14 @@
         const res = await fetch(url);
         const data = await res.json();
 
+        // CONCERN 3: the API deliberately returns 400/429 (invalid input,
+        // global refresh quota). Never render those payloads as a chain —
+        // surface the backend message instead of a silent empty page.
+        if (!res.ok) {
+          container.innerHTML = `<div class="empty-state" style="color: var(--accent-rose);">❌ ${esc(data.message || data.error || '加载失败')}</div>`;
+          return;
+        }
+
         if (forceRefresh) {
           startCooldownTimer(15);
         }

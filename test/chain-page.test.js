@@ -305,4 +305,39 @@ console.log('Testing Clause 8: Ticker badge HTML-escaping against reflected XSS.
   console.log('✓ Clause 8 Passed: Ticker badge HTML-escaping verified.');
 }
 
-console.log('All Option Chain Page TDD Tests Passed Successfully! 🎉');
+// CONCERN 3: non-OK API responses (400/429) must surface the backend message,
+// not render a silent empty chain.
+console.log('Testing CONCERN 3: res.ok check surfaces backend error message...');
+(async () => {
+  const { get, sandbox, documentMock } = createSandbox();
+  sandbox.fetch = () => Promise.resolve({
+    ok: false,
+    status: 429,
+    json: () => Promise.resolve({
+      error: 'rate_limited',
+      message: 'Too many chain refreshes; try again in 42s.',
+      retry_after_s: 42,
+    }),
+  });
+  const fetchChainData = get('fetchChainData');
+  await fetchChainData(false);
+  const html = documentMock.getElementById('chainContainer').innerHTML;
+  assert(html.includes('Too many chain refreshes'),
+    'container must show the backend 429 message, got: ' + html);
+  assert(!get('state.rawData'), 'error payload must not be rendered as chain data');
+
+  // 400 with an HTML-bearing message must be escaped, not injected.
+  sandbox.fetch = () => Promise.resolve({
+    ok: false,
+    status: 400,
+    json: () => Promise.resolve({ error: 'x', message: '<img src=x onerror=alert(1)>' }),
+  });
+  await fetchChainData(false);
+  const html2 = documentMock.getElementById('chainContainer').innerHTML;
+  assert(html2.includes('&lt;img'), 'backend message must be HTML-escaped, got: ' + html2);
+  assert(!html2.includes('<img src=x'), 'raw HTML must not reach innerHTML');
+  console.log('✓ CONCERN 3 Passed: 429/400 surfaces escaped backend message.');
+})().then(
+  () => console.log('All Option Chain Page TDD Tests Passed Successfully! 🎉'),
+  (err) => { console.error(err); process.exit(1); }
+);
