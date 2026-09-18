@@ -176,17 +176,19 @@ class TestCSPApi(unittest.TestCase):
         self.assertEqual(puts[0]["strike"], 210.0)
         self.assertEqual(puts[0]["bid"], 3.50)
 
-    def test_csp_target_expiries_skips_this_week_and_keeps_october_monthly(self):
+    def test_csp_target_expiries_includes_near_term_and_keeps_october_monthly(self):
         from src.leaps_scanner.data.public_delayed import csp_target_expiries, third_friday
         asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
         self.assertEqual(third_friday(2026, 9).isoformat(), "2026-09-18")
         self.assertEqual(third_friday(2026, 10).isoformat(), "2026-10-16")
         dates = csp_target_expiries(asof)
         self.assertIn("2026-10-16", dates)
-        self.assertNotIn("2026-09-18", dates)
+        self.assertIn("2026-09-18", dates)
+        dates_min7 = csp_target_expiries(asof, min_dte=7.0)
+        self.assertNotIn("2026-09-18", dates_min7)
 
     def test_nasdaq_csp_chain_queries_pinned_monthly_expiry(self):
-        """Range queries only return the front weekly; pin fromdate=todate to the monthly."""
+        """Range queries return both front and monthly when DTE scanning is full 0-45d."""
         from src.leaps_scanner.data.public_delayed import PublicDelayedClient
         asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
         urls = []
@@ -223,8 +225,10 @@ class TestCSPApi(unittest.TestCase):
         client = PublicDelayedClient(fetch_fn=fetch)
         rows, last = client._nasdaq_csp_chain("AAPL", asof)
         self.assertTrue(any("fromdate=2026-10-16" in u and "todate=2026-10-16" in u for u in urls))
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["strike"], 210.0)
+        self.assertEqual(len(rows), 2)
+        strikes = [r["strike"] for r in rows]
+        self.assertIn(200.0, strikes)
+        self.assertIn(210.0, strikes)
         self.assertEqual(last, 220.0)
 
     def test_parse_nasdaq_csp_chain_english_expiry_and_compact_occ(self):

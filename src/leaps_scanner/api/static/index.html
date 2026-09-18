@@ -1002,6 +1002,10 @@
       <button type="button" class="csp-pill active" id="pillPop" onclick="toggleCspFilter('pop')">🎯 <span data-i18n="filterPop">POP ≥ 70%</span></button>
       <button type="button" class="csp-pill active" id="pillEarnings" onclick="toggleCspFilter('earnings')">📅 <span data-i18n="filterEarnings">Earnings Gate</span></button>
       <button type="button" class="csp-pill active" id="pillLiquidity" onclick="toggleCspFilter('liquidity')">💧 <span data-i18n="filterLiquidity">Liquidity Gate</span></button>
+      <button type="button" class="csp-pill active" id="pillDteUnder7" onclick="toggleCspDteBucket('<7')">⏱️ <span data-i18n="filterDteUnder7">&lt; 7D</span></button>
+      <button type="button" class="csp-pill active" id="pillDte7to14" onclick="toggleCspDteBucket('7-14')">⏱️ <span data-i18n="filterDte7to14">7–14D</span></button>
+      <button type="button" class="csp-pill active" id="pillDte14to28" onclick="toggleCspDteBucket('14-28')">⏱️ <span data-i18n="filterDte14to28">14–28D</span></button>
+      <button type="button" class="csp-pill active" id="pillDte28to45" onclick="toggleCspDteBucket('28-45')">⏱️ <span data-i18n="filterDte28to45">28–45D</span></button>
     </div>
   </div>
 
@@ -1098,7 +1102,13 @@
       ivr: false,
       pop: true,
       earnings: true,
-      liquidity: true
+      liquidity: true,
+      dte_buckets: {
+        '<7': true,
+        '7-14': true,
+        '14-28': true,
+        '28-45': true
+      }
     };
     const FILTER_IDS = {
       deep_itm: ['strike','delta','intrinsic','leverage','carry','theta','dte','oi','spread','volume'],
@@ -1157,7 +1167,7 @@
         appTitleCsp: 'Cash-Secured Put Quant Scanner',
         appTitleCc: 'Covered Call Quant Scanner',
         appSubtitleLeaps: 'Multi-Strategy Quantitative Screening for Far-Dated Call Options (DTE ≥ 250d)',
-        appSubtitleCsp: 'Cash-Secured Put Selling with Systematic Delta & Capital Risk Controls (7-45 DTE)',
+        appSubtitleCsp: 'Cash-Secured Put Selling with Systematic Delta & Capital Risk Controls (≤ 45 DTE)',
         appSubtitleCc: 'Systematic Yield Harvesting & Overwrite Screening for Long Stock Portfolios',
         cashPool: 'Cash Pool ($):',
         maxCap: 'Max Cap / Ticker ($):',
@@ -1167,6 +1177,10 @@
         filterPop: 'POP ≥ 70%',
         filterEarnings: 'Earnings Gate',
         filterLiquidity: 'Liquidity Gate',
+        filterDteUnder7: '< 7D',
+        filterDte7to14: '7–14D',
+        filterDte14to28: '14–28D',
+        filterDte28to45: '28–45D',
         cspTab1Full: '1. Premium Harvesting',
         cspTab1Short: '1. Harvesting',
         cspTab2Full: '2. Wheel / Dip-Buying',
@@ -1307,7 +1321,7 @@
         appTitleCsp: '现金担保卖 Put (CSP) 量化扫描器',
         appTitleCc: '备兑看涨 (Covered Call) 量化扫描器',
         appSubtitleLeaps: '远月看涨期权多策略量化筛选（到期日 ≥ 250 天）',
-        appSubtitleCsp: '现金担保卖方策略量化筛选与仓位敞口风控（7-45 天 DTE）',
+        appSubtitleCsp: '现金担保卖方策略量化筛选与仓位敞口风控（≤ 45 天 DTE）',
         appSubtitleCc: '正股持仓备兑看涨系统化量化筛选与年化增益模型',
         cashPool: '可用现金池 ($):',
         maxCap: '单一标的上限 ($):',
@@ -1317,6 +1331,10 @@
         filterPop: '估算胜率 ≥ 70%',
         filterEarnings: '财报风险规避',
         filterLiquidity: '流动性风控',
+        filterDteUnder7: '< 7天',
+        filterDte7to14: '7–14天',
+        filterDte14to28: '14–28天',
+        filterDte28to45: '28–45天',
         cspTab1Full: '1. 权利金年化收割',
         cspTab1Short: '1. 权利金收割',
         cspTab2Full: '2. 轮动抄底折扣入场',
@@ -1553,6 +1571,22 @@
       handleCspParamChange();
     }
 
+    function toggleCspDteBucket(bucket) {
+      if (!cspFilters.dte_buckets) {
+        cspFilters.dte_buckets = { '<7': true, '7-14': true, '14-28': true, '28-45': true };
+      }
+      cspFilters.dte_buckets[bucket] = !cspFilters.dte_buckets[bucket];
+      const pillMap = {
+        '<7': 'pillDteUnder7',
+        '7-14': 'pillDte7to14',
+        '14-28': 'pillDte14to28',
+        '28-45': 'pillDte28to45'
+      };
+      const el = document.getElementById(pillMap[bucket]);
+      if (el) el.classList.toggle('active', cspFilters.dte_buckets[bucket]);
+      handleCspParamChange();
+    }
+
     function handleCspParamChange() {
       clearTimeout(cspDebounceTimer);
       cspDebounceTimer = setTimeout(() => {
@@ -1569,6 +1603,8 @@
       const cashPool = parseFloat(document.getElementById('cashPoolInput').value) || 50000;
       const maxCapRaw = document.getElementById('maxCapInput').value.trim();
       const maxCap = maxCapRaw ? parseFloat(maxCapRaw) : null;
+      const activeDteBuckets = Object.keys(cspFilters.dte_buckets || {})
+        .filter(k => cspFilters.dte_buckets[k]);
       const payload = {
         alpha: currentAlpha,
         cash_pool: cashPool,
@@ -1584,7 +1620,8 @@
           filter_earnings: cspFilters.earnings,
           strict_earnings: false,
           filter_liquidity: cspFilters.liquidity,
-          max_capital_per_contract: maxCap
+          max_capital_per_contract: maxCap,
+          selected_dte_buckets: activeDteBuckets
         }
       };
       try {
@@ -1684,11 +1721,11 @@
       },
       csp_harvest: {
         title: "1. Cash-Secured Put — Premium Harvesting",
-        blurb: "Systematic premium collection on high-quality underlying assets with low delta (-0.30 to -0.15) and moderate DTE (7-45 days). Strict DC-CSP-4 prevents short DTE distortion.",
+        blurb: "Systematic premium collection on high-quality underlying assets with low delta (-0.30 to -0.15) and flexible DTE (≤ 45 days). User-customizable 4-bucket range filters (<7, 7-14, 14-28, 28-45).",
         rows: [
           ["Delta", "−0.30 to −0.15", "−0.35 to −0.30", "> −0.15 or < −0.35"],
           ["AROC (Ann.)", "≥ 20%", "15% – 20%", "< 15%"],
-          ["DTE", "14 – 45 days", "7 – 14 days", "< 7 days (Hard Reject)"],
+          ["DTE", "0 < DTE ≤ 45d", "User 4-bucket selection", "—"],
           ["Downside Buffer", "≥ 5%", "3% – 5%", "< 3%"],
           ["POP (Win-Rate)", "≥ 75%", "70% – 75%", "< 70%"],
           ["Liquidity", "Bid > 0, rel spread ≤ 8%", "rel spread 8% – 12%", "Bid = 0, crossed, spread > 12%"]
@@ -1700,7 +1737,7 @@
         rows: [
           ["Delta", "−0.45 to −0.30", "−0.50 to −0.45 or −0.30 to −0.25", "> −0.25 or < −0.50"],
           ["Dip / 200DMA", "RSI ≤ 50 or ≤ 200DMA", "No dip (WATCH)", "—"],
-          ["DTE", "21 – 45 days", "7 – 21 days", "< 7 days (Hard Reject)"],
+          ["DTE", "0 < DTE ≤ 45d", "User 4-bucket selection", "—"],
           ["Liquidity", "OI ≥ 300, spread OK", "Thin volume with OI", "OI < 100 or dead spread"]
         ]
       },
@@ -1770,11 +1807,11 @@
       },
       csp_harvest: {
         title: "1. 现金担保卖 Put — 权利金年化收割",
-        blurb: "在高质量标的上系统性收割权利金，选取低 Delta（-0.30 至 -0.15）与适中期限（7-45 天）。DC-CSP-4 严格防范极短 DTE 年化失真。",
+        blurb: "在高质量标的上系统性收割权利金，选取低 Delta（-0.30 至 -0.15）与灵活期限（≤ 45 天）。支持用户4档自主区间筛选（<7天、7-14天、14-28天、28-45天）。",
         rows: [
           ["Delta", "−0.30 至 −0.15", "−0.35 至 −0.30", "> −0.15 或 < −0.35"],
           ["年化 AROC", "≥ 20%", "15% – 20%", "< 15%"],
-          ["剩余天数 DTE", "14 – 45 天", "7 – 14 天", "< 7 天（强制拒绝）"],
+          ["剩余天数 DTE", "0 < DTE ≤ 45天", "4档区间自由筛选", "—"],
           ["安全缓冲 Buffer", "≥ 5%", "3% – 5%", "< 3%"],
           ["胜率 POP", "≥ 75%", "70% – 75%", "< 70%"],
           ["流动性风控", "买一价 > 0 且价差 ≤ 8%", "相对价差 8% – 12%", "买一为 0、倒挂或价差 > 12%"]
@@ -1786,7 +1823,7 @@
         rows: [
           ["Delta", "−0.45 至 −0.30", "−0.50 至 −0.45 或 −0.30 至 −0.25", "> −0.25 或 < −0.50"],
           ["超跌 / 200DMA", "RSI ≤ 50 或 ≤ 200DMA", "无超跌（WATCH）", "—"],
-          ["剩余天数 DTE", "21 – 45 天", "7 – 21 天", "< 7 天（强制拒绝）"],
+          ["剩余天数 DTE", "0 < DTE ≤ 45天", "4档区间自由筛选", "—"],
           ["流动性风控", "OI ≥ 300 且价差正常", "有仓无量", "OI < 100 或价差坏死"]
         ]
       },
@@ -2247,7 +2284,10 @@
           const cashPool = parseFloat(document.getElementById('cashPoolInput').value) || 50000;
           const maxCapRaw = document.getElementById('maxCapInput').value.trim();
           const maxCap = maxCapRaw ? parseFloat(maxCapRaw) : '';
-          url = `/api/v1/csp/boards?alpha=${alpha}&cash_pool=${cashPool}&filter_aroc=${cspFilters.aroc}&filter_buffer=${cspFilters.buffer}&filter_ivr=${cspFilters.ivr}&filter_pop=${cspFilters.pop}&filter_earnings=${cspFilters.earnings}&filter_liquidity=${cspFilters.liquidity}&max_capital=${maxCap}`;
+          const activeDteBuckets = Object.keys(cspFilters.dte_buckets || {})
+            .filter(k => cspFilters.dte_buckets[k]);
+          const dteParam = activeDteBuckets.length > 0 ? activeDteBuckets.join(',') : 'empty';
+          url = `/api/v1/csp/boards?alpha=${alpha}&cash_pool=${cashPool}&filter_aroc=${cspFilters.aroc}&filter_buffer=${cspFilters.buffer}&filter_ivr=${cspFilters.ivr}&filter_pop=${cspFilters.pop}&filter_earnings=${cspFilters.earnings}&filter_liquidity=${cspFilters.liquidity}&max_capital=${maxCap}&dte_buckets=${encodeURIComponent(dteParam)}`;
         }
         const res = await fetch(url);
         if (res.ok) {

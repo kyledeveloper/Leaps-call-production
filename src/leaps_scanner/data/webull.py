@@ -71,7 +71,7 @@ def _synthetic_offline_csp_spec(symbol: str) -> dict:
     seed = int(digest[:8], 16)
     spot = float(60 + (seed % 440))
     is_etf = symbol.upper() in _ETF_SET
-    dte = 30.0 + (seed % 15)  # 30 to 44 DTE
+    dtes = [3.0 + (seed % 4), 10.0 + (seed % 4), 21.0 + (seed % 6), 35.0 + (seed % 10)]
     strikes = [round(spot * m, 2) for m in (0.85, 0.90, 0.95, 1.00)]
     options = []
     for i, strike in enumerate(strikes):
@@ -80,6 +80,7 @@ def _synthetic_offline_csp_spec(symbol: str) -> dict:
         bid = round(max(0.40, intrinsic + extra), 2)
         ask = round(bid + 0.35, 2)
         delta = round(-0.15 - i * 0.08, 2)
+        dte = dtes[i % len(dtes)]
         occ = f"{symbol.upper().replace('.', '')}261016P{int(strike * 1000):08d}"
         options.append((occ, strike, dte, bid, ask, delta, 1200 + i * 400, 80 + i * 30))
     return {
@@ -898,7 +899,7 @@ class WebullClient:
                     if str(c.get("direction", "")).lower() != "put":
                         continue
                     dte = float(c.get("dte", 0))
-                    if dte < 7 or dte > 45:
+                    if dte < 0.05 or dte > 45.05:
                         continue
                     delta = float(c.get("delta", -0.20))
                     if delta >= 0.0:

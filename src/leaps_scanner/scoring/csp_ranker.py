@@ -73,6 +73,29 @@ class CSPFilterConfig:
     filter_liquidity: bool = True
     max_capital_per_contract: Optional[float] = None
     max_underlying_exposure_pct: float = 0.25  # DC-CSP-7
+    selected_dte_buckets: Optional[List[str]] = None  # DC-CSP-16: ["<7", "7-14", "14-28", "28-45"]
+
+
+def get_dte_bucket(dte: float) -> Optional[str]:
+    """
+    DC-CSP-12: Accurate floating-point bucket categorization with boundary tolerance.
+    Buckets:
+    - '<7': 0.0 <= dte < 7.0
+    - '7-14': 7.0 <= dte < 14.0
+    - '14-28': 14.0 <= dte < 28.0
+    - '28-45': 28.0 <= dte <= 45.05
+    """
+    if dte < 0.0:
+        return None
+    if dte < 7.0:
+        return "<7"
+    if dte < 14.0:
+        return "7-14"
+    if dte < 28.0:
+        return "14-28"
+    if dte <= 45.05:
+        return "28-45"
+    return None
 
 
 @dataclass
@@ -169,6 +192,14 @@ def evaluate_csp_filters(
         if l_guard.volume_status == GuardStatus.REJECT:
             reasons.append("VOLUME_THIN")
 
+    # DC-CSP-16: DTE bucket filtering with explicit empty set differentiation
+    if config.selected_dte_buckets is not None:
+        if len(config.selected_dte_buckets) == 0:
+            return False, ["DTE_NO_BUCKET_SELECTED"]
+        bucket = get_dte_bucket(candidate.dte)
+        if bucket is None or bucket not in config.selected_dte_buckets:
+            return False, ["DTE_BUCKET_EXCLUDED"]
+
     return True, reasons
 
 
@@ -180,7 +211,7 @@ def rank_csp_boards(
 ) -> Dict[str, List[RankedCSPItem]]:
     """
     Rank CSP candidates into 3 independent boards with in-memory execution.
-    Adheres to DC-CSP-4, DC-CSP-6, DC-CSP-7, DC-CSP-8, DC-CSP-9.
+    Adheres to DC-CSP-4, DC-CSP-6, DC-CSP-7, DC-CSP-8, DC-CSP-9, DC-CSP-10 ~ DC-CSP-16.
     """
     cfg = config or CSPFilterConfig()
 
@@ -191,8 +222,8 @@ def rank_csp_boards(
     for c in candidates:
         # DC-CSP-3: Positive delta hard rejection
         # DC-CSP-6: Zero bid or crossed market hard reject
-        # DC-CSP-4: DTE < 7 hard rejection
-        if c.delta >= 0.0 or c.bid <= 0.0 or c.bid >= c.ask or c.dte < 7.0:
+        # DC-CSP-10: DTE bounds (0.05 <= DTE <= 45.05)
+        if c.delta >= 0.0 or c.bid <= 0.0 or c.bid >= c.ask or c.dte < 0.05 or c.dte > 45.05:
             continue
 
         try:
@@ -284,7 +315,13 @@ def rank_csp_boards(
             ))
 
         res_harvest = evaluate_csp_harvest(c)
-        gamma_factor = 0.85 if c.dte < 21.0 else 1.0
+        # DC-CSP-15: Gamma & Pin-risk damping for short DTE to prevent AROC mirage ranking explosion
+        if c.dte < 7.0:
+            gamma_factor = max(0.50, c.dte / 14.0)
+        elif c.dte < 21.0:
+            gamma_factor = 0.85
+        else:
+            gamma_factor = 1.0
         emit(board_harvest, res_harvest, "harvest", aroc * 100.0 * gamma_factor)
 
         res_wheel = evaluate_csp_wheel(c)

@@ -153,10 +153,10 @@ class TestCSPPricingAndMetrics(unittest.TestCase):
         aroc = calculate_aroc(pexec=2.0, strike=100.0, dte=30.0)
         self.assertAlmostEqual(aroc, 0.02 * (365.0 / 30.0), places=4)
 
-        # DTE < 7 must reject or floor to prevent astronomical distortion
-        aroc_short = calculate_aroc(pexec=0.5, strike=100.0, dte=2.0)
-        # Should be floored at dte=7.0
-        self.assertAlmostEqual(aroc_short, (0.5 / 100.0) * (365.0 / 7.0), places=4)
+        # DC-CSP-15: DTE < 1 must floor to 1.0 to prevent division by zero
+        aroc_short = calculate_aroc(pexec=0.5, strike=100.0, dte=0.5)
+        # Should be floored at dte=1.0
+        self.assertAlmostEqual(aroc_short, (0.5 / 100.0) * (365.0 / 1.0), places=4)
 
     def test_downside_buffer(self):
         """Verify downside buffer calculation."""

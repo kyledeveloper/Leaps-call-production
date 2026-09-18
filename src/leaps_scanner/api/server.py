@@ -1281,6 +1281,13 @@ def create_api_handler_class(state: AppState):
                 cash_pool = float(query_params.get("cash_pool", [50000.0])[0])
                 max_cap = query_params.get("max_capital", [None])[0]
                 max_capital = float(max_cap) if max_cap else None
+                dte_buckets_raw = query_params.get("dte_buckets", [None])[0]
+                selected_dte_buckets = None
+                if dte_buckets_raw is not None:
+                    if dte_buckets_raw.strip().lower() in ("", "empty", "none"):
+                        selected_dte_buckets = []
+                    else:
+                        selected_dte_buckets = [b.strip() for b in dte_buckets_raw.split(",") if b.strip()]
 
                 cfg = CSPFilterConfig(
                     filter_aroc=query_params.get("filter_aroc", ["true"])[0].lower() == "true",
@@ -1295,6 +1302,7 @@ def create_api_handler_class(state: AppState):
                     strict_earnings=query_params.get("strict_earnings", ["false"])[0].lower() == "true",
                     filter_liquidity=query_params.get("filter_liquidity", ["true"])[0].lower() == "true",
                     max_capital_per_contract=max_capital,
+                    selected_dte_buckets=selected_dte_buckets,
                 )
                 boards = state.get_csp_boards(alpha=alpha, config=cfg, cash_pool=cash_pool)
                 data = {
@@ -1318,6 +1326,9 @@ def create_api_handler_class(state: AppState):
                         cash_pool = float(req_data.get("cash_pool", cash_pool))
                         c_dict = req_data.get("config", {})
                         if isinstance(c_dict, dict):
+                            sel_dte = c_dict.get("selected_dte_buckets")
+                            if sel_dte is None and "dte_buckets" in c_dict:
+                                sel_dte = c_dict.get("dte_buckets")
                             cfg = CSPFilterConfig(
                                 filter_aroc=c_dict.get("filter_aroc", cfg.filter_aroc),
                                 min_aroc=float(c_dict.get("min_aroc", cfg.min_aroc)),
@@ -1331,6 +1342,7 @@ def create_api_handler_class(state: AppState):
                                 strict_earnings=c_dict.get("strict_earnings", cfg.strict_earnings),
                                 filter_liquidity=c_dict.get("filter_liquidity", cfg.filter_liquidity),
                                 max_capital_per_contract=c_dict.get("max_capital_per_contract"),
+                                selected_dte_buckets=sel_dte,
                             )
                     except Exception:
                         pass

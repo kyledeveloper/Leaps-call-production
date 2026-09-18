@@ -59,6 +59,14 @@ class RateLimiter:
         self.min_interval_s = max(0.0, float(min_interval_s))
         self._lock = threading.Lock()
         self._next = 0.0
+        self._pause_until = 0.0
+
+    def pause_all(self, duration_s: float = 2.0) -> None:
+        """DC-CSP-13: Global backoff to prevent thundering-herd 429 storm across worker threads."""
+        with self._lock:
+            now = time.monotonic()
+            self._pause_until = max(self._pause_until, now + duration_s)
+            self._next = max(self._next, self._pause_until + self.min_interval_s)
 
     def wait(self, should_stop: Optional[StopFn] = None) -> None:
         if self.min_interval_s <= 0:
@@ -69,7 +77,7 @@ class RateLimiter:
             if should_stop and should_stop():
                 return
             now = time.monotonic()
-            start = max(self._next, now)
+            start = max(self._next, self._pause_until, now)
             self._next = start + self.min_interval_s
             delay = start - now
         if delay > 0:
@@ -162,37 +170,58 @@ def third_friday(year: int, month: int) -> date:
     return first + timedelta(days=((4 - first.weekday()) % 7) + 14)
 
 
+def _nyse_friday_holiday(d: date) -> bool:
+    """DC-CSP-11: Detect known US exchange Friday closures."""
+    if (d.month == 12 and d.day == 25) or (d.month == 1 and d.day == 1):
+        return True
+    if d.month == 7 and d.day in (3, 4):
+        return True
+    good_fridays = {
+        (2024, 3, 29), (2025, 4, 18), (2026, 4, 3), (2027, 3, 26), (2028, 4, 14)
+    }
+    return (d.year, d.month, d.day) in good_fridays
+
+
 def csp_target_expiries(
     asof: datetime,
-    min_dte: float = 7.0,
-    max_dte: float = 45.0,
-    include_weeklies: bool = False,
+    min_dte: float = 0.0,
+    max_dte: float = 45.05,
+    include_weeklies: bool = True,
 ) -> List[str]:
-    """Expiries Nasdaq must be queried one-at-a-time (fromdate=todate=that day)."""
-    start = (asof + timedelta(days=min_dte)).date()
+    """
+    DC-CSP-10 & DC-CSP-11: Expiries Nasdaq must be queried one-at-a-time (fromdate=todate=that day).
+    Covers all Friday and holiday-shifted Thursday expiries between min_dte and max_dte.
+    """
+    start = asof.date() if min_dte <= 0.0 else (asof + timedelta(days=min_dte)).date()
     end = (asof + timedelta(days=max_dte)).date()
     out: List[str] = []
+
+    cursor = start
+    while cursor.weekday() != 4:
+        cursor += timedelta(days=1)
+
+    while cursor <= end + timedelta(days=3):
+        exp_date = cursor - timedelta(days=1) if _nyse_friday_holiday(cursor) else cursor
+        if start <= exp_date <= end:
+            iso = exp_date.isoformat()
+            if iso not in out:
+                out.append(iso)
+        cursor += timedelta(days=7)
+
     y, m = start.year, start.month
-    for _ in range(5):
-        day = third_friday(y, m)
-        if start <= day <= end:
-            out.append(day.isoformat())
+    for _ in range(4):
+        tf = third_friday(y, m)
+        exp_tf = tf - timedelta(days=1) if _nyse_friday_holiday(tf) else tf
+        if start <= exp_tf <= end:
+            iso = exp_tf.isoformat()
+            if iso not in out:
+                out.append(iso)
         m += 1
         if m > 12:
             y += 1
             m = 1
-        if date(y, m, 1) > end:
-            break
-    if include_weeklies or not out:
-        cursor = start
-        while cursor.weekday() != 4:
-            cursor += timedelta(days=1)
-        while cursor <= end:
-            iso = cursor.isoformat()
-            if iso not in out:
-                out.append(iso)
-            cursor += timedelta(days=7)
-        out.sort()
+
+    out.sort()
     return out
 
 
@@ -273,11 +302,11 @@ def parse_nasdaq_chain(payload: dict, min_dte: float = 250.0, asof: Optional[dat
 
 def parse_nasdaq_csp_chain(
     payload: dict,
-    min_dte: float = 7.0,
-    max_dte: float = 45.0,
+    min_dte: float = 0.0,
+    max_dte: float = 45.05,
     asof: Optional[datetime] = None,
 ) -> List[dict]:
-    """Flatten Nasdaq option-chain JSON into Put rows within 7~45 DTE."""
+    """Flatten Nasdaq option-chain JSON into Put rows within 0~45.05 DTE."""
     asof = asof or datetime.now(timezone.utc)
     data = payload.get("data") or {}
     rows = ((data.get("table") or {}).get("rows")) or []
@@ -314,10 +343,15 @@ def parse_nasdaq_csp_chain(
         if not expiry:
             continue
         try:
-            exp_dt = datetime.strptime(expiry, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            # DC-CSP-10: Expiry occurs at market close (20:00 UTC / 16:00 ET).
+            exp_dt = datetime.strptime(expiry, "%Y-%m-%d").replace(
+                hour=20, minute=0, second=0, tzinfo=timezone.utc
+            )
         except ValueError:
             continue
-        dte = (exp_dt - asof).total_seconds() / 86400.0
+        raw_dte = (exp_dt - asof).total_seconds() / 86400.0
+        # If expiry is today during trading hours, ensure minimum floor of 0.05d (1.2h)
+        dte = max(0.05, raw_dte) if raw_dte > -0.16 else raw_dte
         if dte < min_dte or dte > max_dte:
             continue
         out.append({
@@ -489,6 +523,7 @@ class PublicDelayedClient:
             if should_stop and should_stop():
                 raise InterruptedError("fetch cancelled")
             if status == 429:
+                self.rate_limiter.pause_all(duration_s=1.5 * (attempt + 1))
                 backoff = 0.8 * (attempt + 1)
                 step = 0.05
                 remaining = backoff
@@ -804,17 +839,12 @@ class PublicDelayedClient:
         last = None
         collected: List[dict] = []
         seen: set = set()
-        monthlies = csp_target_expiries(asof, min_dte=7.0, max_dte=45.0, include_weeklies=False)
-        weeklies = [
-            d for d in csp_target_expiries(asof, min_dte=7.0, max_dte=21.0, include_weeklies=True)
-            if d not in monthlies
-        ]
-        expiries = monthlies + weeklies
+        expiries = csp_target_expiries(asof, min_dte=0.0, max_dte=45.05, include_weeklies=True)
 
         def ingest(payload: dict) -> None:
             nonlocal last
             last = parse_nasdaq_last_trade((payload.get("data") or {}).get("lastTrade")) or last
-            for row in parse_nasdaq_csp_chain(payload, min_dte=7.0, max_dte=45.0, asof=asof):
+            for row in parse_nasdaq_csp_chain(payload, min_dte=0.0, max_dte=45.05, asof=asof):
                 key = (row.get("expiry"), row.get("strike"), row.get("symbol"))
                 if key in seen:
                     continue
@@ -837,7 +867,7 @@ class PublicDelayedClient:
             def one(url: str) -> dict:
                 return self._get_json(url, headers, should_stop=should_stop)
 
-            workers = min(4, len(urls))
+            workers = min(2, len(urls))  # DC-CSP-13: Max 2 inner workers per symbol
             if workers <= 1:
                 try:
                     ingest(one(urls[0]))
@@ -876,7 +906,7 @@ class PublicDelayedClient:
             if collected:
                 break
             extra = [
-                d for d in csp_target_expiries(asof, min_dte=7.0, max_dte=45.0, include_weeklies=True)
+                d for d in csp_target_expiries(asof, min_dte=0.0, max_dte=45.05, include_weeklies=True)
                 if d not in expiries
             ]
             if fetch_dates(asset, extra):

@@ -194,12 +194,12 @@ def calculate_roc(pexec: float, strike: float) -> float:
 
 def calculate_aroc(pexec: float, strike: float, dte: float) -> float:
     """
-    DC-CSP-4: Annualized Return on Capital (AROC) = ROC * (365 / dte_safe).
-    Floors DTE at 7.0 to eliminate short-DTE division-by-zero or astronomical distortion.
+    DC-CSP-15: Annualized Return on Capital (AROC) = ROC * (365 / dte_safe).
+    Floors DTE at 1.0 to eliminate division-by-zero while allowing full short-DTE expressiveness.
     """
     if strike <= 0.0:
         return 0.0
-    dte_safe = max(float(dte), 7.0)
+    dte_safe = max(float(dte), 1.0)
     roc = calculate_roc(pexec, strike)
     return roc * (365.0 / dte_safe)
 
@@ -221,15 +221,20 @@ def calculate_pop(
     sigma: float = 0.25
 ) -> float:
     """
-    DC-CSP-5: Probability of Profit for a short put.
-    Prefer the lognormal probability that spot expires above break-even.
-    Fall back to 1-|Delta| (approx. OTM probability) when BE inputs are missing.
+    DC-CSP-5 & DC-CSP-14: Probability of Profit for a short put.
+    Prefer lognormal probability that spot expires above break-even.
+    When t < 0.01 (DTE < 3.65d) or BE inputs are missing, smoothly fallback to 1-|Delta|
+    to eliminate division-by-zero singularity and 0/1 step collapse.
     """
     if (
         spot is not None and breakeven is not None and dte is not None
         and spot > 0.0 and breakeven > 0.0 and dte > 0.0 and sigma > 0.0
     ):
         t = dte / 365.25
+        if t < 0.01:
+            if delta is not None:
+                return max(0.0, min(1.0, 1.0 - abs(float(delta))))
+            return 0.50
         d2 = (math.log(spot / breakeven) + (r - q - 0.5 * sigma * sigma) * t) / (sigma * math.sqrt(t))
         from src.leaps_scanner.core.american_pricing import _cnd
         return max(0.0, min(1.0, _cnd(d2)))

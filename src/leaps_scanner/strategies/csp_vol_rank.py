@@ -28,16 +28,8 @@ def evaluate_csp_vol_rank(candidate) -> CSPVolRankResult:
     reasons = []
     gates: Dict[str, GuardStatus] = {}
 
-    # 1. DTE Guard (DC-CSP-4)
-    if candidate.dte < 7.0:
-        dte_status = GuardStatus.REJECT
-        reasons.append("DTE_UNDER_7D_PROHIBITED")
-    elif candidate.dte < 14.0:
-        dte_status = GuardStatus.WATCH
-        reasons.append(f"DTE_SHORT_{int(candidate.dte)}D")
-    else:
-        dte_status = GuardStatus.PASS
-    gates["dte"] = dte_status
+    # 1. DTE Gate: Neutral PASS (DC-CSP-10: Filtering delegated to user-selected buckets)
+    gates["dte"] = GuardStatus.PASS
 
     # 2. IV Rank / Percentile Gate
     ivr = candidate.iv_rank if candidate.iv_rank is not None else candidate.iv_percentile
