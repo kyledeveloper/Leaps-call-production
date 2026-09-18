@@ -770,6 +770,11 @@
     const visibleStatuses = new Set(['PASS', 'WATCH']);
     let tickerQuery = '';
     let tickerSearchTimer = null;
+    function itemTicker(it) {
+      if (!it) return '';
+      const c = it.candidate || it;
+      return ((c.symbol || it.symbol) || '').toUpperCase();
+    }
     let scanPollTimer = null;
     let lastCfg = null;
     let cspDebounceTimer = null;
@@ -1908,7 +1913,7 @@
         || cachedBoards['csp_' + currentBoardKey]
         || [];
       const searchedItems = tickerQuery
-        ? allItems.filter(it => (it.symbol || '').toUpperCase() === tickerQuery)
+        ? allItems.filter(it => itemTicker(it) === tickerQuery)
         : allItems;
       const counts = { PASS: 0, WATCH: 0, REJECT: 0 };
       searchedItems.forEach(it => {
