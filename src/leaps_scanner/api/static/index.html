@@ -2339,12 +2339,12 @@
         });
         const cfg = await res.json();
         if (res.status === 400 && cfg.error === 'empty_watchlist') {
+          await applyConfig({ ...cfg, scan_tier: 'watchlist', scan_status: 'idle' });
           const hint = document.getElementById('scanHint');
           if (hint) hint.innerText = t('watchlistEmpty');
           return;
         }
         if (res.status === 409) {
-          await applyConfig(cfg);
           startScanPoll();
           return;
         }

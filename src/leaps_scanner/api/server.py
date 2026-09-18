@@ -232,8 +232,18 @@ class AppState:
         eff_tier = target_tier or self.scan_tier or "etfs"
         syms = [SymbologyNormalizer.to_canonical(s) for s in symbols] if symbols else self.resolve_scan_symbols(eff_tier)
 
-        # Clause 5: Empty Watchlist Guard - reject scan if watchlist is empty
+        # Clause 5: Empty Watchlist Guard - reject scan if watchlist is empty.
+        # Still commit the tier (and cancel any in-flight job) so the UI stays
+        # on the watchlist panel instead of snapping back to the previous universe.
         if eff_tier == "watchlist" and not syms:
+            with self._lock:
+                if target_tier:
+                    self.scan_tier = target_tier
+                if self.scan_status == "running":
+                    self._scan_seq += 1
+                    self._scan_cancel = True
+                    self.scan_status = "idle"
+                    self.scan_progress = {"done": 0, "total": 0, "symbol": None}
             return 400, {
                 **self.public_config(),
                 "error": "empty_watchlist",

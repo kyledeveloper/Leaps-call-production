@@ -272,10 +272,16 @@ class TestAPIServer(unittest.TestCase):
         resolved = self.state.resolve_scan_symbols(tier="watchlist")
         self.assertEqual(resolved, [])  # Must NOT fallback to DEFAULT_SCAN_SYMBOLS
 
-        # Empty scan request must return HTTP 400
+        # Empty scan request must return HTTP 400, but still land on the watchlist tier
+        # so the UI does not snap back to the previous universe.
+        self.state.scan_tier = "etfs"
+        self.state.scan_status = "running"
         code, payload = self.state.request_scan(tier="watchlist")
         self.assertEqual(code, 400)
         self.assertEqual(payload.get("error"), "empty_watchlist")
+        self.assertEqual(self.state.scan_tier, "watchlist")
+        self.assertEqual(payload.get("scan_tier"), "watchlist")
+        self.assertNotEqual(self.state.scan_status, "running")
 
     def test_watchlist_100_cap_enforced(self):
         """Item 5 (TDD): set truncates at 100; add beyond cap is rejected with 400."""
