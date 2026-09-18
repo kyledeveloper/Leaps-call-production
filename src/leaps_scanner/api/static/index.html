@@ -173,6 +173,57 @@
     .status-chip.on[data-status="PASS"] { background: var(--badge-pass-bg); color: var(--badge-pass-text); border-color: rgba(52, 211, 153, 0.4); }
     .status-chip.on[data-status="WATCH"] { background: var(--badge-watch-bg); color: var(--badge-watch-text); border-color: rgba(251, 191, 36, 0.4); }
     .status-chip.on[data-status="REJECT"] { background: var(--badge-reject-bg); color: var(--badge-reject-text); border-color: rgba(244, 63, 94, 0.4); }
+    .view-mode-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .view-mode-toolbar .filter-label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-right: 4px;
+    }
+    .view-toggle-group {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 9999px;
+      padding: 2px;
+      background: #0f172a;
+    }
+    .view-chip {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      border-radius: 9999px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .view-chip.on {
+      background: rgba(56, 189, 248, 0.2);
+      color: var(--accent-blue);
+    }
+    .view-action-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 9999px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .view-action-btn:hover {
+      color: var(--text-main);
+      border-color: var(--text-muted);
+    }
     .strategy-help {
       background: var(--bg-card);
       border: 1px solid var(--border);
@@ -502,6 +553,113 @@
     }
     th:first-child { z-index: 3; background: rgba(15, 23, 42, 0.95); }
     tr:hover td:first-child { background: var(--bg-hover); }
+
+    /* Master-Detail Accordion Styling */
+    .master-row {
+      cursor: pointer;
+      user-select: none;
+      background: var(--bg-card);
+      transition: background 0.15s ease;
+    }
+    .master-row:hover {
+      background: var(--bg-hover) !important;
+    }
+    .master-row.expanded {
+      background: rgba(30, 41, 59, 0.7) !important;
+    }
+    .master-ticker-col {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .accordion-icon {
+      display: inline-block;
+      width: 14px;
+      font-size: 11px;
+      color: var(--text-muted);
+      transition: transform 0.15s ease;
+      font-weight: bold;
+    }
+    .master-row.expanded .accordion-icon {
+      color: var(--accent-blue);
+    }
+    .badge-contracts {
+      background: rgba(148, 163, 184, 0.15);
+      color: var(--text-main);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    /* Red-Team Clause 4: CSS Sticky Override & Nested Sub-table Isolation */
+    tr.detail-row {
+      background: rgba(15, 23, 42, 0.5) !important;
+    }
+    tr.detail-row > td {
+      position: static !important;
+      padding: 0 !important;
+      background: transparent !important;
+    }
+    tr.detail-row:hover, tr.detail-row:hover > td {
+      background: transparent !important;
+    }
+    .nested-chain-container {
+      margin: 8px 16px 16px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0b1120;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    }
+    .nested-chain-toolbar {
+      padding: 8px 14px;
+      background: #111c33;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .nested-chain-title {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .nested-chain-title strong {
+      color: var(--accent-blue);
+    }
+    .nested-table-scroll {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .nested-chain-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .nested-chain-table th {
+      background: #0f172a;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      position: static !important;
+    }
+    .nested-chain-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+      position: static !important;
+      background: transparent !important;
+    }
+    .nested-chain-table tr:hover td {
+      background: rgba(30, 41, 59, 0.5) !important;
+    }
+    .nested-chain-table tr:last-child td {
+      border-bottom: none;
+    }
 
     .num { font-variant-numeric: tabular-nums; }
     .sub-info { font-size: 11px; color: var(--text-muted); display: block; margin-top: 2px; }
@@ -869,6 +1027,17 @@
       </div>
       <span class="hint" id="tickerSearchMeta"></span>
     </div>
+
+    <div class="filter-divider"></div>
+
+    <div class="view-mode-toolbar" role="group" aria-label="View mode selection">
+      <span class="filter-label" data-i18n="viewModeLabel">View</span>
+      <div class="view-toggle-group">
+        <button type="button" id="btnViewGrouped" class="view-chip on" onclick="setViewMode('grouped')" data-i18n="viewGrouped">⊞ Grouped</button>
+        <button type="button" id="btnViewFlat" class="view-chip" onclick="setViewMode('flat')" data-i18n="viewFlat">≡ Flat</button>
+      </div>
+      <button type="button" id="btnToggleAll" class="view-action-btn" onclick="toggleAllAccordions()" data-i18n="expandAll" style="display: inline-flex;">Expand All</button>
+    </div>
   </div>
 
   <!-- Main Table Container -->
@@ -889,6 +1058,16 @@
     const visibleStatuses = new Set(['PASS', 'WATCH']);
     let tickerQuery = '';
     let tickerSearchTimer = null;
+    let viewMode = 'grouped'; // 'grouped' | 'flat'
+    try {
+      const savedMode = localStorage.getItem('leaps_view_mode');
+      if (savedMode === 'grouped' || savedMode === 'flat') {
+        viewMode = savedMode;
+      }
+    } catch (e) {}
+    let expandedTickers = new Set();
+    let leapsDebounceTimer = null;
+    let leapsAbortController = null;
     function itemTicker(it) {
       // Search key is the UNDERLYING ticker (标的代码), not the OCC option
       // contract symbol: LEAPS items carry underlying at top level, CSP items
@@ -1039,6 +1218,14 @@
         tab3Full: '3. Blue-Chip Oversold Confluence',
         tab3Short: '3. Oversold',
         statusLabel: 'Status',
+        viewModeLabel: 'View',
+        viewGrouped: '⊞ Grouped',
+        viewFlat: '≡ Flat',
+        expandAll: 'Expand All',
+        collapseAll: 'Collapse All',
+        contracts: 'contracts',
+        topPick: 'Top Pick',
+        optionChainTitle: 'Option Chain ({count} contracts)',
         tickerSearchLabel: 'Ticker',
         tickerSearchPlaceholder: 'Search ticker, e.g. AAPL',
         tickerSearchClear: 'Clear ticker search',
@@ -1178,6 +1365,14 @@
         tab3Full: '3. 蓝筹超跌共振',
         tab3Short: '3. 超跌',
         statusLabel: '状态',
+        viewModeLabel: '视图',
+        viewGrouped: '⊞ 标的聚合',
+        viewFlat: '≡ 列表平铺',
+        expandAll: '全部展开',
+        collapseAll: '全部折叠',
+        contracts: '张合约',
+        topPick: '首选',
+        optionChainTitle: '期权链（共 {count} 张合约）',
         tickerSearchLabel: '标的',
         tickerSearchPlaceholder: '输入标的代码，如 AAPL',
         tickerSearchClear: '清除标的搜索',
@@ -1261,6 +1456,7 @@
       if (zhBtn) zhBtn.className = lang === 'zh' ? 'on-lang' : '';
       paintAlphaDisplay();
       renderTabs();
+      updateViewToggleUI();
     }
 
     function renderTabs() {
@@ -2048,7 +2244,7 @@
       }
     }
 
-    async function handleAlphaChange(val) {
+    function handleAlphaChange(val) {
       currentAlpha = parseFloat(val);
       paintAlphaDisplay();
 
@@ -2057,12 +2253,24 @@
         return;
       }
 
+      clearTimeout(leapsDebounceTimer);
+      leapsDebounceTimer = setTimeout(() => {
+        rerankLeaps();
+      }, 200);
+    }
+
+    async function rerankLeaps() {
+      if (leapsAbortController) {
+        leapsAbortController.abort();
+      }
+      leapsAbortController = new AbortController();
       const t0 = performance.now();
       try {
         const res = await fetch('/api/v1/rerank', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ alpha: currentAlpha })
+          body: JSON.stringify({ alpha: currentAlpha }),
+          signal: leapsAbortController.signal
         });
         if (res.ok) {
           const data = await res.json();
@@ -2072,7 +2280,9 @@
           renderActiveBoard();
         }
       } catch (e) {
-        console.warn('Rerank API error:', e);
+        if (e.name !== 'AbortError') {
+          console.warn('Rerank API error:', e);
+        }
       }
     }
 
@@ -2165,6 +2375,456 @@
       input.value = '';
       document.getElementById('tickerSearchClear').style.display = 'none';
       renderActiveBoard();
+    }
+
+    function setViewMode(mode) {
+      if (mode !== 'grouped' && mode !== 'flat') return;
+      viewMode = mode;
+      try {
+        localStorage.setItem('leaps_view_mode', mode);
+      } catch (e) {}
+      updateViewToggleUI();
+      renderActiveBoard();
+    }
+
+    function updateViewToggleUI() {
+      const btnGrouped = document.getElementById('btnViewGrouped');
+      const btnFlat = document.getElementById('btnViewFlat');
+      const btnToggleAll = document.getElementById('btnToggleAll');
+      if (btnGrouped && btnGrouped.classList) {
+        if (viewMode === 'grouped') btnGrouped.classList.add('on');
+        else btnGrouped.classList.remove('on');
+      }
+      if (btnFlat && btnFlat.classList) {
+        if (viewMode === 'flat') btnFlat.classList.add('on');
+        else btnFlat.classList.remove('on');
+      }
+      if (btnToggleAll) {
+        btnToggleAll.style.display = viewMode === 'grouped' ? 'inline-flex' : 'none';
+      }
+    }
+
+    function toggleTickerExpand(ticker) {
+      if (!ticker) return;
+      if (expandedTickers.has(ticker)) {
+        expandedTickers.delete(ticker);
+      } else {
+        expandedTickers.add(ticker);
+      }
+      renderActiveBoard();
+    }
+
+    function getVisibleUnderlyings() {
+      const allItems = cachedBoards[currentBoardKey]
+        || cachedBoards[currentBoardKey.replace(/^csp_/, '')]
+        || cachedBoards['csp_' + currentBoardKey]
+        || [];
+      const searchedItems = tickerQuery
+        ? allItems.filter(it => {
+            const c = it.candidate || it;
+            const und = (c.underlying || it.underlying || '').toUpperCase();
+            const sym = (c.symbol || it.symbol || '').toUpperCase();
+            return und.startsWith(tickerQuery) || sym.startsWith(tickerQuery);
+          })
+        : allItems;
+      const items = searchedItems.filter(it => visibleStatuses.has(effectiveStatus(it)));
+      return new Set(items.map(itemTicker).filter(Boolean));
+    }
+
+    function expandAllTickers() {
+      const underlyings = getVisibleUnderlyings();
+      for (const t of underlyings) {
+        expandedTickers.add(t);
+      }
+      renderActiveBoard();
+    }
+
+    function collapseAllTickers() {
+      expandedTickers.clear();
+      renderActiveBoard();
+    }
+
+    function toggleAllAccordions() {
+      const underlyings = getVisibleUnderlyings();
+      if (underlyings.size === 0) return;
+      let allOpen = true;
+      for (const t of underlyings) {
+        if (!expandedTickers.has(t)) {
+          allOpen = false;
+          break;
+        }
+      }
+      if (allOpen) {
+        collapseAllTickers();
+      } else {
+        expandAllTickers();
+      }
+    }
+
+    function handleMasterRowClick(event, ticker) {
+      if (event && event.target && event.target.closest('button, a, input, select, .no-toggle')) {
+        return;
+      }
+      const selection = window.getSelection ? window.getSelection().toString() : '';
+      if (selection && selection.length > 0) return;
+      toggleTickerExpand(ticker);
+    }
+
+    function groupItemsByUnderlying(items, boardKey, family) {
+      if (!items || !items.length) return [];
+      const groupsMap = new Map();
+      for (const it of items) {
+        const ticker = itemTicker(it);
+        if (!ticker) continue;
+        let g = groupsMap.get(ticker);
+        if (!g) {
+          const c = it.candidate || it;
+          const spot = typeof c.spot === 'number' ? c.spot : (typeof it.spot === 'number' ? it.spot : 0);
+          g = {
+            ticker,
+            spot,
+            items: [],
+            passCount: 0,
+            watchCount: 0,
+            rejectCount: 0,
+            minStrike: Infinity,
+            maxStrike: -Infinity,
+            minDte: Infinity,
+            maxDte: -Infinity,
+            minCarry: Infinity,
+            maxCarry: -Infinity,
+            minLeverage: Infinity,
+            maxLeverage: -Infinity,
+            minAroc: Infinity,
+            maxAroc: -Infinity,
+            minBuffer: Infinity,
+            maxBuffer: -Infinity,
+            minPop: Infinity,
+            maxPop: -Infinity,
+            bestItem: it
+          };
+          groupsMap.set(ticker, g);
+        }
+        g.items.push(it);
+
+        const st = effectiveStatus(it);
+        if (st === 'PASS') g.passCount++;
+        else if (st === 'WATCH') g.watchCount++;
+        else if (st === 'REJECT') g.rejectCount++;
+
+        const c = it.candidate || it;
+        const strike = typeof c.strike === 'number' ? c.strike : (typeof it.strike === 'number' ? it.strike : null);
+        if (strike !== null) {
+          if (strike < g.minStrike) g.minStrike = strike;
+          if (strike > g.maxStrike) g.maxStrike = strike;
+        }
+        const dte = typeof c.dte === 'number' ? c.dte : (typeof it.dte === 'number' ? it.dte : null);
+        if (dte !== null) {
+          if (dte < g.minDte) g.minDte = dte;
+          if (dte > g.maxDte) g.maxDte = dte;
+        }
+        const carry = typeof it.carry_cost === 'number' ? it.carry_cost : null;
+        if (carry !== null) {
+          if (carry < g.minCarry) g.minCarry = carry;
+          if (carry > g.maxCarry) g.maxCarry = carry;
+        }
+        const lev = typeof it.effective_leverage === 'number' ? it.effective_leverage : null;
+        if (lev !== null) {
+          if (lev < g.minLeverage) g.minLeverage = lev;
+          if (lev > g.maxLeverage) g.maxLeverage = lev;
+        }
+        const aroc = typeof it.aroc === 'number' ? it.aroc : null;
+        if (aroc !== null) {
+          if (aroc < g.minAroc) g.minAroc = aroc;
+          if (aroc > g.maxAroc) g.maxAroc = aroc;
+        }
+        const buf = typeof it.buffer === 'number' ? it.buffer : (typeof it.downside_buffer === 'number' ? it.downside_buffer : null);
+        if (buf !== null) {
+          if (buf < g.minBuffer) g.minBuffer = buf;
+          if (buf > g.maxBuffer) g.maxBuffer = buf;
+        }
+        const pop = typeof it.pop === 'number' ? it.pop : null;
+        if (pop !== null) {
+          if (pop < g.minPop) g.minPop = pop;
+          if (pop > g.maxPop) g.maxPop = pop;
+        }
+      }
+
+      const result = [];
+      for (const g of groupsMap.values()) {
+        if (g.passCount > 0) g.bestStatus = 'PASS';
+        else if (g.watchCount > 0) g.bestStatus = 'WATCH';
+        else g.bestStatus = 'REJECT';
+
+        if (g.minStrike === Infinity) g.minStrike = 0;
+        if (g.maxStrike === -Infinity) g.maxStrike = 0;
+        if (g.minDte === Infinity) g.minDte = 0;
+        if (g.maxDte === -Infinity) g.maxDte = 0;
+        if (g.minCarry === Infinity) g.minCarry = 0;
+        if (g.maxCarry === -Infinity) g.maxCarry = 0;
+        if (g.minLeverage === Infinity) g.minLeverage = 0;
+        if (g.maxLeverage === -Infinity) g.maxLeverage = 0;
+        if (g.minAroc === Infinity) g.minAroc = 0;
+        if (g.maxAroc === -Infinity) g.maxAroc = 0;
+        if (g.minBuffer === Infinity) g.minBuffer = 0;
+        if (g.maxBuffer === -Infinity) g.maxBuffer = 0;
+        if (g.minPop === Infinity) g.minPop = 0;
+        if (g.maxPop === -Infinity) g.maxPop = 0;
+
+        // Select top pick / best representative item (PASS > WATCH > first)
+        let best = g.items[0];
+        for (const it of g.items) {
+          if (effectiveStatus(it) === 'PASS') {
+            best = it;
+            break;
+          }
+        }
+        if (effectiveStatus(best) !== 'PASS') {
+          for (const it of g.items) {
+            if (effectiveStatus(it) === 'WATCH') {
+              best = it;
+              break;
+            }
+          }
+        }
+        g.bestItem = best;
+        result.push(g);
+      }
+      return result;
+    }
+
+    function renderContractRow(it, isNested) {
+      const st = effectiveStatus(it);
+      const statusBadge = `<span class="badge badge-${st.toLowerCase()}">${st}</span>`;
+      if (currentFamily === 'csp') {
+        const c = it.candidate || it;
+        const cap = it.capital_info || {};
+        const symbol = c.symbol || '';
+        const underlying = c.underlying || '';
+        const strike = typeof c.strike === 'number' ? c.strike : 0;
+        const spot = typeof c.spot === 'number' ? c.spot : 0;
+        const dte = typeof c.dte === 'number' ? c.dte : 0;
+        const bid = typeof c.bid === 'number' ? c.bid : 0;
+        const ask = typeof c.ask === 'number' ? c.ask : 0;
+        const delta = typeof c.delta === 'number' ? c.delta : 0;
+        const pExec = typeof it.p_exec === 'number' ? it.p_exec : 0;
+        const roc = typeof it.roc === 'number' ? it.roc : 0;
+        const aroc = typeof it.aroc === 'number' ? it.aroc : 0;
+        const buffer = typeof it.buffer === 'number' ? it.buffer : (typeof it.downside_buffer === 'number' ? it.downside_buffer : 0);
+        const pop = typeof it.pop === 'number' ? it.pop : 0;
+        const stressPnl = typeof it.stress_pnl === 'number' ? it.stress_pnl : 0;
+        const contracts = cap.recommended_contracts != null ? cap.recommended_contracts : (it.recommended_contracts || 0);
+        const reqCap = cap.required_capital_per_contract != null ? cap.required_capital_per_contract : (it.capital_required || (strike * 100));
+        const maxLoss = cap.total_max_loss != null ? cap.total_max_loss : (it.max_loss || (reqCap - pExec * 100));
+
+        const arocPct = (aroc * 100).toFixed(1);
+        const rocPct = (roc * 100).toFixed(2);
+        const bufPct = (buffer * 100).toFixed(2);
+        const popPct = (pop * 100).toFixed(1);
+        const capFormatted = '$' + Math.round(reqCap).toLocaleString();
+        const lossFormatted = '$' + Math.round(maxLoss).toLocaleString();
+        const stressFormatted = (stressPnl >= 0 ? '+$' : '-$') + Math.round(Math.abs(stressPnl)).toLocaleString();
+
+        let earningsBadge = '';
+        const eStatus = c.earnings_status || '';
+        if (eStatus === 'EARNINGS_UNVERIFIED' || eStatus.includes('UNVERIFIED')) {
+          earningsBadge = `<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); font-size: 10px; margin-left: 4px;" title="Earnings date not confirmed within DTE window">${t('earningsUnverified')}</span>`;
+        } else if (eStatus === 'EARNINGS_IMPACTED' || eStatus.includes('IMPACTED')) {
+          earningsBadge = `<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); font-size: 10px; margin-left: 4px;" title="Earnings date falls within option DTE">${t('earningsImpacted')}</span>`;
+        }
+
+        return `
+          <tr>
+            <td><strong>${symbol}</strong></td>
+            <td>${underlying}${earningsBadge}</td>
+            <td class="num">$${strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${spot.toFixed(1)}</span></td>
+            <td class="num">${Math.round(dte)}d</td>
+            <td class="num">$${bid.toFixed(2)} / $${ask.toFixed(2)}</td>
+            <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${pExec.toFixed(2)}</td>
+            <td class="num">${delta.toFixed(2)}</td>
+            <td class="num" style="color: var(--accent-green); font-weight: 600;">${arocPct}%/yr <span class="sub-info">ROC: ${rocPct}%</span></td>
+            <td class="num">${bufPct}%</td>
+            <td class="num" title="${t('popTooltip')}">${popPct}%</td>
+            <td class="num"><strong>${contracts}</strong> <span class="sub-info">alloc</span></td>
+            <td class="num">${capFormatted} <span class="sub-info">loss: ${lossFormatted} | stress: <span style="color: ${stressPnl < 0 ? 'var(--accent-rose)' : 'inherit'}">${stressFormatted}</span></span></td>
+            <td>${statusBadge}</td>
+          </tr>
+        `;
+      }
+      if (currentBoardKey === 'deep_itm') {
+        return `
+          <tr>
+            <td><strong>${it.symbol}</strong></td>
+            <td>${it.underlying}</td>
+            <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
+            <td class="num">${Math.round(it.dte)}d</td>
+            <td class="num">$${it.bid.toFixed(2)} / $${it.ask.toFixed(2)}</td>
+            <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${it.p_exec.toFixed(2)}</td>
+            <td class="num">${it.delta.toFixed(2)}</td>
+            <td class="num">${it.effective_leverage.toFixed(1)}x</td>
+            <td class="num">${((it.intrinsic_per_share / it.p_exec) * 100).toFixed(1)}%</td>
+            <td class="num">${(it.carry_cost * 100).toFixed(2)}%/yr</td>
+            <td class="num">${((it.theta_daily_pct || 0) * 100).toFixed(3)}%/d</td>
+            <td>${statusBadge}</td>
+          </tr>
+        `;
+      } else if (currentBoardKey === 'vol_discount') {
+        return `
+          <tr>
+            <td><strong>${it.symbol}</strong></td>
+            <td>${it.underlying}</td>
+            <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
+            <td class="num">${Math.round(it.dte)}d</td>
+            <td class="num">$${it.p_exec.toFixed(2)}</td>
+            <td class="num">${it.iv_percentile !== null ? (it.iv_percentile * 100).toFixed(1) + '%' : 'N/A'}</td>
+            <td><span class="badge" style="background: rgba(56,189,248,0.15); color: var(--accent-blue);">${it.regime || 'NONE'}</span></td>
+            <td class="num">${(it.carry_cost * 100).toFixed(2)}%/yr</td>
+            <td>${statusBadge}</td>
+          </tr>
+        `;
+      } else if (currentBoardKey === 'oversold') {
+        return `
+          <tr>
+            <td><strong>${it.symbol}</strong></td>
+            <td>${it.underlying}</td>
+            <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
+            <td class="num">${Math.round(it.dte)}d</td>
+            <td class="num">$${it.p_exec.toFixed(2)}</td>
+            <td class="num" style="color: var(--accent-green); font-weight: 600;">${it.confluence_score.toFixed(1)} / 4.0</td>
+            <td class="num">${(it.carry_cost * 100).toFixed(2)}%/yr</td>
+            <td>${statusBadge}</td>
+          </tr>
+        `;
+      }
+      return `
+        <tr>
+          <td><strong>${it.symbol}</strong></td>
+          <td>${it.underlying}</td>
+          <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
+          <td class="num">${Math.round(it.dte)}d</td>
+          <td class="num">$${it.p_exec.toFixed(2)}</td>
+          <td>${statusBadge}</td>
+        </tr>
+      `;
+    }
+
+    function renderMasterRow(g, colSpan, isExpanded, tableHeaderHtml) {
+      const statusBadge = `<span class="badge badge-${g.bestStatus.toLowerCase()}">${g.bestStatus}</span>`;
+      const strikeRange = `$${g.minStrike.toFixed(1)}${g.minStrike !== g.maxStrike ? '–$' + g.maxStrike.toFixed(1) : ''}`;
+      const dteRange = `${Math.round(g.minDte)}d${g.minDte !== g.maxDte ? '–' + Math.round(g.maxDte) + 'd' : ''}`;
+      const contractsSummary = `<span class="badge badge-contracts">${g.items.length} ${t('contracts')}</span><span class="sub-info">${g.passCount} PASS · ${g.watchCount} WATCH</span>`;
+      const tickerCol = `<div class="master-ticker-col"><span class="accordion-icon">${isExpanded ? '▾' : '▸'}</span><strong>${esc(g.ticker)}</strong></div>`;
+
+      let masterCols = '';
+      if (currentFamily === 'csp') {
+        const topItem = g.bestItem;
+        const topCand = topItem.candidate || topItem;
+        const topCap = topItem.capital_info || {};
+        const arocRange = `${(g.minAroc * 100).toFixed(1)}%${g.minAroc !== g.maxAroc ? '–' + (g.maxAroc * 100).toFixed(1) + '%' : ''}/yr`;
+        const bufRange = `${(g.minBuffer * 100).toFixed(1)}%${g.minBuffer !== g.maxBuffer ? '–' + (g.maxBuffer * 100).toFixed(1) + '%' : ''}`;
+        const popRange = `${(g.minPop * 100).toFixed(1)}%${g.minPop !== g.maxPop ? '–' + (g.maxPop * 100).toFixed(1) + '%' : ''}`;
+        const topBid = typeof topCand.bid === 'number' ? topCand.bid.toFixed(2) : '0.00';
+        const topAsk = typeof topCand.ask === 'number' ? topCand.ask.toFixed(2) : '0.00';
+        const topPexec = typeof topItem.p_exec === 'number' ? topItem.p_exec.toFixed(2) : '0.00';
+        const topDelta = typeof topCand.delta === 'number' ? topCand.delta.toFixed(2) : '0.00';
+        const topContracts = topCap.recommended_contracts != null ? topCap.recommended_contracts : (topItem.recommended_contracts || 0);
+        const topReqCap = topCap.required_capital_per_contract != null ? topCap.required_capital_per_contract : (topItem.capital_required || 0);
+
+        masterCols = `
+          <td>${tickerCol}</td>
+          <td>${contractsSummary}</td>
+          <td class="num">${strikeRange} <span class="sub-info">${t('spot')}: $${g.spot.toFixed(1)}</span></td>
+          <td class="num">${dteRange}</td>
+          <td class="num">$${topBid} / $${topAsk}</td>
+          <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${topPexec} <span class="sub-info">${t('topPick')}</span></td>
+          <td class="num">${topDelta}</td>
+          <td class="num" style="color: var(--accent-green); font-weight: 600;">${arocRange}</td>
+          <td class="num">${bufRange}</td>
+          <td class="num" title="${t('popTooltip')}">${popRange}</td>
+          <td class="num"><strong>${topContracts}</strong> <span class="sub-info">${t('topPick')}</span></td>
+          <td class="num">$${Math.round(topReqCap).toLocaleString()} <span class="sub-info">${t('topPick')} req</span></td>
+          <td>${statusBadge}</td>
+        `;
+      } else if (currentBoardKey === 'deep_itm') {
+        const topItem = g.bestItem;
+        const levRange = `${g.minLeverage.toFixed(1)}x${g.minLeverage !== g.maxLeverage ? '–' + g.maxLeverage.toFixed(1) + 'x' : ''}`;
+        const carryRange = `${(g.minCarry * 100).toFixed(2)}%${g.minCarry !== g.maxCarry ? '–' + (g.maxCarry * 100).toFixed(2) + '%' : ''}/yr`;
+        const topBid = typeof topItem.bid === 'number' ? topItem.bid.toFixed(2) : '0.00';
+        const topAsk = typeof topItem.ask === 'number' ? topItem.ask.toFixed(2) : '0.00';
+        const topPexec = typeof topItem.p_exec === 'number' ? topItem.p_exec.toFixed(2) : '0.00';
+        const topDelta = typeof topItem.delta === 'number' ? topItem.delta.toFixed(2) : '0.00';
+        const topIntrinsic = topItem.p_exec > 0 ? ((topItem.intrinsic_per_share / topItem.p_exec) * 100).toFixed(1) + '%' : '0.0%';
+        const topTheta = typeof topItem.theta_daily_pct === 'number' ? (topItem.theta_daily_pct * 100).toFixed(3) + '%/d' : '0.000%/d';
+
+        masterCols = `
+          <td>${tickerCol}</td>
+          <td>${contractsSummary}</td>
+          <td class="num">${strikeRange} <span class="sub-info">${t('spot')}: $${g.spot.toFixed(1)}</span></td>
+          <td class="num">${dteRange}</td>
+          <td class="num">$${topBid} / $${topAsk}</td>
+          <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${topPexec} <span class="sub-info">${t('topPick')}</span></td>
+          <td class="num">${topDelta}</td>
+          <td class="num">${levRange}</td>
+          <td class="num">${topIntrinsic}</td>
+          <td class="num">${carryRange}</td>
+          <td class="num">${topTheta}</td>
+          <td>${statusBadge}</td>
+        `;
+      } else if (currentBoardKey === 'vol_discount') {
+        const topItem = g.bestItem;
+        const carryRange = `${(g.minCarry * 100).toFixed(2)}%${g.minCarry !== g.maxCarry ? '–' + (g.maxCarry * 100).toFixed(2) + '%' : ''}/yr`;
+        const topPexec = typeof topItem.p_exec === 'number' ? topItem.p_exec.toFixed(2) : '0.00';
+        const topIvPct = topItem.iv_percentile !== null && typeof topItem.iv_percentile === 'number' ? (topItem.iv_percentile * 100).toFixed(1) + '%' : 'N/A';
+
+        masterCols = `
+          <td>${tickerCol}</td>
+          <td>${contractsSummary}</td>
+          <td class="num">${strikeRange} <span class="sub-info">${t('spot')}: $${g.spot.toFixed(1)}</span></td>
+          <td class="num">${dteRange}</td>
+          <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${topPexec} <span class="sub-info">${t('topPick')}</span></td>
+          <td class="num">${topIvPct}</td>
+          <td><span class="badge" style="background: rgba(56,189,248,0.15); color: var(--accent-blue);">${topItem.regime || 'NONE'}</span></td>
+          <td class="num">${carryRange}</td>
+          <td>${statusBadge}</td>
+        `;
+      } else if (currentBoardKey === 'oversold') {
+        const topItem = g.bestItem;
+        const carryRange = `${(g.minCarry * 100).toFixed(2)}%${g.minCarry !== g.maxCarry ? '–' + (g.maxCarry * 100).toFixed(2) + '%' : ''}/yr`;
+        const topPexec = typeof topItem.p_exec === 'number' ? topItem.p_exec.toFixed(2) : '0.00';
+        const topConf = typeof topItem.confluence_score === 'number' ? topItem.confluence_score.toFixed(1) + ' / 4.0' : 'N/A';
+
+        masterCols = `
+          <td>${tickerCol}</td>
+          <td>${contractsSummary}</td>
+          <td class="num">${strikeRange} <span class="sub-info">${t('spot')}: $${g.spot.toFixed(1)}</span></td>
+          <td class="num">${dteRange}</td>
+          <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${topPexec} <span class="sub-info">${t('topPick')}</span></td>
+          <td class="num" style="color: var(--accent-green); font-weight: 600;">${topConf}</td>
+          <td class="num">${carryRange}</td>
+          <td>${statusBadge}</td>
+        `;
+      }
+
+      return `
+        <tr class="master-row ${isExpanded ? 'expanded' : ''}" onclick="handleMasterRowClick(event, '${esc(g.ticker)}')">
+          ${masterCols}
+        </tr>
+        <tr class="detail-row ${isExpanded ? 'open' : ''}" id="detail-${esc(g.ticker)}" style="${isExpanded ? '' : 'display: none;'}">
+          <td colspan="${colSpan}">
+            <div class="nested-chain-container">
+              <div class="nested-chain-toolbar">
+                <span class="nested-chain-title"><strong>${esc(g.ticker)}</strong> ${t('optionChainTitle', { count: g.items.length })}</span>
+              </div>
+              <div class="nested-table-scroll">
+                <table class="nested-chain-table">
+                  <thead><tr>${tableHeaderHtml}</tr></thead>
+                  <tbody>${g.items.map(it => renderContractRow(it, true)).join('')}</tbody>
+                </table>
+              </div>
+            </div>
+          </td>
+        </tr>
+      `;
     }
 
     function renderActiveBoard() {
@@ -2289,120 +2949,32 @@
         return;
       }
 
-      tbody.innerHTML = items.map(it => {
-        const st = effectiveStatus(it);
-        const statusBadge = `<span class="badge badge-${st.toLowerCase()}">${st}</span>`;
-        if (currentFamily === 'csp') {
-          const c = it.candidate || it;
-          const cap = it.capital_info || {};
-          const symbol = c.symbol || '';
-          const underlying = c.underlying || '';
-          const strike = typeof c.strike === 'number' ? c.strike : 0;
-          const spot = typeof c.spot === 'number' ? c.spot : 0;
-          const dte = typeof c.dte === 'number' ? c.dte : 0;
-          const bid = typeof c.bid === 'number' ? c.bid : 0;
-          const ask = typeof c.ask === 'number' ? c.ask : 0;
-          const delta = typeof c.delta === 'number' ? c.delta : 0;
-          const pExec = typeof it.p_exec === 'number' ? it.p_exec : 0;
-          const roc = typeof it.roc === 'number' ? it.roc : 0;
-          const aroc = typeof it.aroc === 'number' ? it.aroc : 0;
-          const buffer = typeof it.buffer === 'number' ? it.buffer : (typeof it.downside_buffer === 'number' ? it.downside_buffer : 0);
-          const pop = typeof it.pop === 'number' ? it.pop : 0;
-          const stressPnl = typeof it.stress_pnl === 'number' ? it.stress_pnl : 0;
-          const contracts = cap.recommended_contracts != null ? cap.recommended_contracts : (it.recommended_contracts || 0);
-          const reqCap = cap.required_capital_per_contract != null ? cap.required_capital_per_contract : (it.capital_required || (strike * 100));
-          const maxLoss = cap.total_max_loss != null ? cap.total_max_loss : (it.max_loss || (reqCap - pExec * 100));
+      if (viewMode === 'flat') {
+        tbody.innerHTML = items.map(it => renderContractRow(it, false)).join('');
+      } else {
+        const uniqueUnderlyings = new Set(searchedItems.map(itemTicker).filter(Boolean));
+        const isSingleSearchMatch = Boolean(tickerQuery && tickerQuery.trim()) && (uniqueUnderlyings.size === 1);
+        const groups = groupItemsByUnderlying(items, currentBoardKey, currentFamily);
+        const headerHtml = thead.innerHTML;
+        tbody.innerHTML = groups.map(g => {
+          const isExp = expandedTickers.has(g.ticker) || isSingleSearchMatch;
+          return renderMasterRow(g, colSpan, isExp, headerHtml);
+        }).join('');
+      }
 
-          const arocPct = (aroc * 100).toFixed(1);
-          const rocPct = (roc * 100).toFixed(2);
-          const bufPct = (buffer * 100).toFixed(2);
-          const popPct = (pop * 100).toFixed(1);
-          const capFormatted = '$' + Math.round(reqCap).toLocaleString();
-          const lossFormatted = '$' + Math.round(maxLoss).toLocaleString();
-          const stressFormatted = (stressPnl >= 0 ? '+$' : '-$') + Math.round(Math.abs(stressPnl)).toLocaleString();
-
-          let earningsBadge = '';
-          const eStatus = c.earnings_status || '';
-          if (eStatus === 'EARNINGS_UNVERIFIED' || eStatus.includes('UNVERIFIED')) {
-            earningsBadge = `<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); font-size: 10px; margin-left: 4px;" title="Earnings date not confirmed within DTE window">${t('earningsUnverified')}</span>`;
-          } else if (eStatus === 'EARNINGS_IMPACTED' || eStatus.includes('IMPACTED')) {
-            earningsBadge = `<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); font-size: 10px; margin-left: 4px;" title="Earnings date falls within option DTE">${t('earningsImpacted')}</span>`;
+      // Update Expand/Collapse All button state
+      const btnToggleAll = document.getElementById('btnToggleAll');
+      if (btnToggleAll && viewMode === 'grouped') {
+        const underlyings = getVisibleUnderlyings();
+        let allOpen = underlyings.size > 0;
+        for (const t of underlyings) {
+          if (!expandedTickers.has(t)) {
+            allOpen = false;
+            break;
           }
-
-          return `
-            <tr>
-              <td><strong>${symbol}</strong></td>
-              <td>${underlying}${earningsBadge}</td>
-              <td class="num">$${strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${spot.toFixed(1)}</span></td>
-              <td class="num">${Math.round(dte)}d</td>
-              <td class="num">$${bid.toFixed(2)} / $${ask.toFixed(2)}</td>
-              <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${pExec.toFixed(2)}</td>
-              <td class="num">${delta.toFixed(2)}</td>
-              <td class="num" style="color: var(--accent-green); font-weight: 600;">${arocPct}%/yr <span class="sub-info">ROC: ${rocPct}%</span></td>
-              <td class="num">${bufPct}%</td>
-              <td class="num" title="${t('popTooltip')}">${popPct}%</td>
-              <td class="num"><strong>${contracts}</strong> <span class="sub-info">alloc</span></td>
-              <td class="num">${capFormatted} <span class="sub-info">loss: ${lossFormatted} | stress: <span style="color: ${stressPnl < 0 ? 'var(--accent-rose)' : 'inherit'}">${stressFormatted}</span></span></td>
-              <td>${statusBadge}</td>
-            </tr>
-          `;
         }
-        if (currentBoardKey === 'deep_itm') {
-          return `
-            <tr>
-              <td><strong>${it.symbol}</strong></td>
-              <td>${it.underlying}</td>
-              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
-              <td class="num">${Math.round(it.dte)}d</td>
-              <td class="num">$${it.bid.toFixed(2)} / $${it.ask.toFixed(2)}</td>
-              <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${it.p_exec.toFixed(2)}</td>
-              <td class="num">${it.delta.toFixed(2)}</td>
-              <td class="num">${it.effective_leverage.toFixed(1)}x</td>
-              <td class="num">${( (it.intrinsic_per_share / it.p_exec) * 100 ).toFixed(1)}%</td>
-              <td class="num">${(it.carry_cost * 100).toFixed(2)}%/yr</td>
-              <td class="num">${((it.theta_daily_pct || 0) * 100).toFixed(3)}%/d</td>
-              <td>${statusBadge}</td>
-            </tr>
-          `;
-        } else if (currentBoardKey === 'vol_discount') {
-          return `
-            <tr>
-              <td><strong>${it.symbol}</strong></td>
-              <td>${it.underlying}</td>
-              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
-              <td class="num">${Math.round(it.dte)}d</td>
-              <td class="num">$${it.p_exec.toFixed(2)}</td>
-              <td class="num">${it.iv_percentile !== null ? (it.iv_percentile * 100).toFixed(1) + '%' : 'N/A'}</td>
-              <td><span class="badge" style="background: rgba(56,189,248,0.15); color: var(--accent-blue);">${it.regime || 'NONE'}</span></td>
-              <td class="num">${(it.carry_cost * 100).toFixed(2)}%/yr</td>
-              <td>${statusBadge}</td>
-            </tr>
-          `;
-        } else if (currentBoardKey === 'oversold') {
-          return `
-            <tr>
-              <td><strong>${it.symbol}</strong></td>
-              <td>${it.underlying}</td>
-              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
-              <td class="num">${Math.round(it.dte)}d</td>
-              <td class="num">$${it.p_exec.toFixed(2)}</td>
-              <td class="num" style="color: var(--accent-green); font-weight: 600;">${it.confluence_score.toFixed(1)} / 4.0</td>
-              <td class="num">${(it.carry_cost * 100).toFixed(2)}%/yr</td>
-              <td>${statusBadge}</td>
-            </tr>
-          `;
-        }
-        return `
-            <tr>
-              <td><strong>${it.symbol}</strong></td>
-              <td>${it.underlying}</td>
-              <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
-              <td class="num">${Math.round(it.dte)}d</td>
-              <td class="num">$${it.p_exec.toFixed(2)}</td>
-              <td>${statusBadge}</td>
-            </tr>
-          `;
-      }).join('');
+        btnToggleAll.innerText = allOpen ? t('collapseAll') : t('expandAll');
+      }
     }
 
     async function fetchUniverseStats() {

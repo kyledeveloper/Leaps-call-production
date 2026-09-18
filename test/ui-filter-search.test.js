@@ -59,16 +59,37 @@ function createSandbox(initialLocalStorage = {}) {
     watchlistCount: { innerText: '' },
     watchlistHint: { style: { display: 'none' } },
     watchlistAddBtn: { innerText: '' },
-    scanHint: { innerText: '' }
+    scanHint: { innerText: '' },
+    btnViewGrouped: { classList: { _c: new Set(['on']), add: function(c){this._c.add(c);}, remove: function(c){this._c.delete(c);}, contains: function(c){return this._c.has(c);}, toggle: function(c){return this._c.has(c)?(this._c.delete(c),false):(this._c.add(c),true);} } },
+    btnViewFlat: { classList: { _c: new Set(), add: function(c){this._c.add(c);}, remove: function(c){this._c.delete(c);}, contains: function(c){return this._c.has(c);}, toggle: function(c){return this._c.has(c)?(this._c.delete(c),false):(this._c.add(c),true);} } },
+    btnToggleAll: { innerText: '', style: { display: 'inline-flex' } }
   };
 
   const store = Object.assign({}, initialLocalStorage);
+
+  function makeMockElement(id) {
+    const classSet = new Set();
+    return {
+      id,
+      innerText: '',
+      innerHTML: '',
+      value: '',
+      style: {},
+      classList: {
+        _c: classSet,
+        add: (c) => classSet.add(c),
+        remove: (c) => classSet.delete(c),
+        toggle: (c) => (classSet.has(c) ? (classSet.delete(c), false) : (classSet.add(c), true)),
+        contains: (c) => classSet.has(c)
+      }
+    };
+  }
 
   const sandbox = {
     console,
     document: {
       documentElement: { lang: 'en', dataset: {} },
-      getElementById: (id) => elements[id] || { innerText: '', innerHTML: '', value: '', style: {}, classList: { toggle: () => {} } },
+      getElementById: (id) => elements[id] || (elements[id] = makeMockElement(id)),
       querySelectorAll: () => [],
       querySelector: () => ({ innerText: '' })
     },
@@ -77,7 +98,11 @@ function createSandbox(initialLocalStorage = {}) {
       setItem: (key, val) => { store[key] = String(val); }
     },
     navigator: { language: 'en-US' },
-    window: { location: { search: '', pathname: '/' }, history: { replaceState: () => {} } },
+    window: {
+      location: { search: '', pathname: '/' },
+      history: { replaceState: () => {} },
+      getSelection: () => ({ toString: () => '' })
+    },
     URLSearchParams,
     performance: { now: () => Date.now() },
     setTimeout: (fn) => fn(),
@@ -365,8 +390,192 @@ console.log('Running UI Filter & Search TDD Tests (Red-Team Clauses A-F)...');
     assert(!elements.watchlistChips.innerHTML.includes('TSLA'), 'Chips must no longer include TSLA');
 
     console.log('✓ Clause H Passed: Watchlist universe tier configuration, DOM elements, and mock API interactions verified.');
+    
+    // ==========================================
+    // Clause I: Ticker Grouping & Option Chain Accordion
+    // ==========================================
+    console.log('Testing Clause I: Ticker Grouping & Option Chain Accordion...');
+    
+    // 1. groupItemsByUnderlying with LEAPS & CSP
+    const groupItemsByUnderlying = get('groupItemsByUnderlying');
+    assert(typeof groupItemsByUnderlying === 'function', 'groupItemsByUnderlying must be a defined function');
+
+    const sampleLeaps = [
+      {
+        symbol: 'AAPL260116C00130000',
+        underlying: 'AAPL',
+        strike: 130,
+        spot: 150,
+        dte: 350,
+        bid: 30,
+        ask: 31,
+        p_exec: 30.5,
+        delta: 0.85,
+        effective_leverage: 3.8,
+        intrinsic_per_share: 20,
+        carry_cost: 0.032,
+        theta_daily_pct: -0.0001,
+        status: 'PASS'
+      },
+      {
+        symbol: 'AAPL260116C00140000',
+        underlying: 'AAPL',
+        strike: 140,
+        spot: 150,
+        dte: 400,
+        bid: 22,
+        ask: 23,
+        p_exec: 22.5,
+        delta: 0.80,
+        effective_leverage: 3.2,
+        intrinsic_per_share: 10,
+        carry_cost: 0.045,
+        theta_daily_pct: -0.00012,
+        status: 'WATCH'
+      },
+      {
+        symbol: 'NVDA260116C00100000',
+        underlying: 'NVDA',
+        strike: 100,
+        spot: 120,
+        dte: 500,
+        bid: 35,
+        ask: 36,
+        p_exec: 35.5,
+        delta: 0.88,
+        effective_leverage: 2.8,
+        intrinsic_per_share: 20,
+        carry_cost: 0.05,
+        theta_daily_pct: -0.00015,
+        status: 'WATCH'
+      }
+    ];
+
+    const leapsGroups = groupItemsByUnderlying(sampleLeaps, 'deep_itm', 'leaps');
+    assert.strictEqual(leapsGroups.length, 2, 'Should create 2 ticker groups for AAPL and NVDA');
+
+    const aaplGroup = leapsGroups.find(g => g.ticker === 'AAPL');
+    assert(aaplGroup, 'AAPL group must exist');
+    assert.strictEqual(aaplGroup.items.length, 2, 'AAPL group must have 2 items');
+    assert.strictEqual(aaplGroup.spot, 150, 'AAPL spot must be 150');
+    assert.strictEqual(aaplGroup.minStrike, 130, 'AAPL minStrike must be 130');
+    assert.strictEqual(aaplGroup.maxStrike, 140, 'AAPL maxStrike must be 140');
+    assert.strictEqual(aaplGroup.minDte, 350, 'AAPL minDte must be 350');
+    assert.strictEqual(aaplGroup.maxDte, 400, 'AAPL maxDte must be 400');
+    assert.strictEqual(aaplGroup.minLeverage, 3.2, 'AAPL minLeverage must be 3.2');
+    assert.strictEqual(aaplGroup.maxLeverage, 3.8, 'AAPL maxLeverage must be 3.8');
+    assert.strictEqual(aaplGroup.minCarry, 0.032, 'AAPL minCarry must be 0.032');
+    assert.strictEqual(aaplGroup.maxCarry, 0.045, 'AAPL maxCarry must be 0.045');
+    assert.strictEqual(aaplGroup.bestStatus, 'PASS', 'AAPL bestStatus must be PASS (PASS > WATCH)');
+    assert.strictEqual(aaplGroup.passCount, 1, 'AAPL passCount must be 1');
+    assert.strictEqual(aaplGroup.watchCount, 1, 'AAPL watchCount must be 1');
+    assert.strictEqual(aaplGroup.bestItem.symbol, 'AAPL260116C00130000', 'bestItem should be the PASS contract');
+
+    // 2. CSP Candidate format aggregation
+    const sampleCsp = [
+      {
+        candidate: { symbol: 'MSFT260116P00380000', underlying: 'MSFT', strike: 380, spot: 420, dte: 45, bid: 5, ask: 5.5, delta: -0.22 },
+        p_exec: 5.2,
+        aroc: 0.22,
+        buffer: 0.095,
+        pop: 0.78,
+        capital_info: { recommended_contracts: 2, required_capital_per_contract: 38000 },
+        status: 'PASS'
+      },
+      {
+        candidate: { symbol: 'MSFT260116P00370000', underlying: 'MSFT', strike: 370, spot: 420, dte: 45, bid: 3, ask: 3.5, delta: -0.18 },
+        p_exec: 3.2,
+        aroc: 0.16,
+        buffer: 0.119,
+        pop: 0.83,
+        capital_info: { recommended_contracts: 2, required_capital_per_contract: 37000 },
+        status: 'PASS'
+      }
+    ];
+
+    const cspGroups = groupItemsByUnderlying(sampleCsp, 'csp_harvest', 'csp');
+    assert.strictEqual(cspGroups.length, 1, 'CSP items must aggregate to 1 group for MSFT');
+    assert.strictEqual(cspGroups[0].ticker, 'MSFT');
+    assert.strictEqual(cspGroups[0].items.length, 2);
+    assert.strictEqual(cspGroups[0].minAroc, 0.16);
+    assert.strictEqual(cspGroups[0].maxAroc, 0.22);
+    assert.strictEqual(cspGroups[0].minBuffer, 0.095);
+    assert.strictEqual(cspGroups[0].maxBuffer, 0.119);
+
+    // 3. View Mode switching & LocalStorage
+    const setViewMode = get('setViewMode');
+    assert(typeof setViewMode === 'function', 'setViewMode must be a function');
+    assert.strictEqual(get('viewMode'), 'grouped', 'Default viewMode must be grouped');
+    setViewMode('flat');
+    assert.strictEqual(get('viewMode'), 'flat', 'viewMode should now be flat');
+    assert.strictEqual(sandbox.localStorage.getItem('leaps_view_mode'), 'flat', 'localStorage leaps_view_mode should be flat');
+    assert(elements.btnViewFlat.classList.contains('on'), 'Flat button should have .on class');
+    assert(!elements.btnViewGrouped.classList.contains('on'), 'Grouped button should NOT have .on class');
+
+    setViewMode('grouped');
+    assert.strictEqual(get('viewMode'), 'grouped', 'viewMode should now be grouped');
+    assert.strictEqual(sandbox.localStorage.getItem('leaps_view_mode'), 'grouped', 'localStorage leaps_view_mode should be grouped');
+    assert(elements.btnViewGrouped.classList.contains('on'), 'Grouped button should have .on class');
+    assert(!elements.btnViewFlat.classList.contains('on'), 'Flat button should NOT have .on class');
+
+    // 4. Accordion Toggle & Batch Operations
+    const toggleTickerExpand = get('toggleTickerExpand');
+    const expandAllTickers = get('expandAllTickers');
+    const collapseAllTickers = get('collapseAllTickers');
+    assert(typeof toggleTickerExpand === 'function', 'toggleTickerExpand must be a function');
+    assert(typeof expandAllTickers === 'function', 'expandAllTickers must be a function');
+    assert(typeof collapseAllTickers === 'function', 'collapseAllTickers must be a function');
+
+    toggleTickerExpand('AAPL');
+    assert(get('expandedTickers').has('AAPL'), 'expandedTickers should contain AAPL after toggle');
+    toggleTickerExpand('AAPL');
+    assert(!get('expandedTickers').has('AAPL'), 'expandedTickers should NOT contain AAPL after second toggle');
+
+    // 5. Clause 3: Transient Search Auto-Expansion Invariant
+    // Populate cachedBoards with sample data
+    vm.runInContext("cachedBoards = { deep_itm: " + JSON.stringify(sampleLeaps) + " };", context);
+    vm.runInContext("currentBoardKey = 'deep_itm'; currentFamily = 'leaps';", context);
+    vm.runInContext("visibleStatuses.add('PASS'); visibleStatuses.add('WATCH'); visibleStatuses.add('REJECT');", context);
+    get('renderActiveBoard')();
+
+    // Ensure expandedTickers is empty initially
+    collapseAllTickers();
+    assert.strictEqual(get('expandedTickers').size, 0, 'expandedTickers must be empty initially');
+
+    // Search for NVDA (unique match)
+    vm.runInContext("tickerQuery = 'NVDA';", context);
+    get('renderActiveBoard')();
+    // In grouped mode, NVDA detail row should be rendered and expanded
+    assert(elements.tableBody.innerHTML.includes('detail-NVDA'), 'detail-NVDA row must be present');
+    assert(elements.tableBody.innerHTML.includes('open') || !elements.tableBody.innerHTML.includes('style="display: none;" id="detail-NVDA"'), 'NVDA should be auto-expanded in view');
+    // CRITICAL Clause 3 check: expandedTickers must NOT be polluted
+    assert.strictEqual(get('expandedTickers').size, 0, 'Clause 3: expandedTickers must remain size 0 after transient auto-expand');
+
+    // Clear search
+    get('clearTickerSearch')();
+    assert.strictEqual(get('expandedTickers').size, 0, 'expandedTickers remains 0');
+    // NVDA detail row should now be collapsed (hidden)
+    assert(elements.tableBody.innerHTML.includes('style="display: none;" id="detail-NVDA"') || elements.tableBody.innerHTML.includes('id="detail-NVDA" style="display: none;"'), 'NVDA must revert to collapsed');
+
+    // 6. Clause 4: Dynamic ColSpan Verification
+    const boardsColSpans = [
+      { key: 'csp_harvest', family: 'csp', expected: 13 },
+      { key: 'deep_itm', family: 'leaps', expected: 12 },
+      { key: 'vol_discount', family: 'leaps', expected: 9 },
+      { key: 'oversold', family: 'leaps', expected: 8 }
+    ];
+
+    for (const b of boardsColSpans) {
+      vm.runInContext(`currentBoardKey = '${b.key}'; currentFamily = '${b.family}';`, context);
+      vm.runInContext(`cachedBoards = { '${b.key}': [] };`, context);
+      get('renderActiveBoard')();
+      assert(elements.tableBody.innerHTML.includes(`colspan="${b.expected}"`), `Board ${b.key} must render empty state with colSpan ${b.expected}`);
+    }
+
+    console.log('✓ Clause I Passed: Ticker Grouping and Option Chain Accordion verified successfully.');
+    console.log('All Red-Team clauses A-I verified successfully! 🎉');
   })().then(() => {
-    console.log('All Red-Team clauses A-H verified successfully! 🎉');
+    // Finished successfully
   }).catch((err) => {
     console.error(err);
     process.exit(1);
