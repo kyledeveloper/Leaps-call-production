@@ -771,9 +771,12 @@
     let tickerQuery = '';
     let tickerSearchTimer = null;
     function itemTicker(it) {
+      // Search key is the UNDERLYING ticker (标的代码), not the OCC option
+      // contract symbol: LEAPS items carry underlying at top level, CSP items
+      // nest the contract under it.candidate.
       if (!it) return '';
       const c = it.candidate || it;
-      return ((c.symbol || it.symbol) || '').toUpperCase();
+      return ((c.underlying || it.underlying) || '').toUpperCase();
     }
     let scanPollTimer = null;
     let lastCfg = null;
