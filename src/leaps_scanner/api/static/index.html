@@ -1019,17 +1019,6 @@
 
     <div class="filter-divider"></div>
 
-    <div class="ticker-search" role="search" aria-label="Ticker search">
-      <span class="filter-label" data-i18n="tickerSearchLabel">Ticker</span>
-      <div class="ticker-search-box">
-        <input type="text" id="tickerSearchInput" data-i18n-placeholder="tickerSearchPlaceholder" placeholder="Search ticker, e.g. AAPL" autocomplete="off" autocapitalize="characters" spellcheck="false" oninput="handleTickerSearchInput()" />
-        <button type="button" id="tickerSearchClear" class="ticker-clear" data-i18n-title="tickerSearchClear" title="Clear ticker search" onclick="clearTickerSearch()" style="display: none;">&times;</button>
-      </div>
-      <span class="hint" id="tickerSearchMeta"></span>
-    </div>
-
-    <div class="filter-divider"></div>
-
     <div class="view-mode-toolbar" role="group" aria-label="View mode selection">
       <span class="filter-label" data-i18n="viewModeLabel">View</span>
       <div class="view-toggle-group">
@@ -1037,6 +1026,17 @@
         <button type="button" id="btnViewFlat" class="view-chip" onclick="setViewMode('flat')" data-i18n="viewFlat">≡ Flat</button>
       </div>
       <button type="button" id="btnToggleAll" class="view-action-btn" onclick="toggleAllAccordions()" data-i18n="expandAll" style="display: inline-flex;">Expand All</button>
+    </div>
+
+    <div class="filter-divider"></div>
+
+    <div class="ticker-search" role="search" aria-label="Ticker search">
+      <span class="filter-label" data-i18n="tickerSearchLabel">Ticker</span>
+      <div class="ticker-search-box">
+        <input type="text" id="tickerSearchInput" data-i18n-placeholder="tickerSearchPlaceholder" placeholder="Search ticker, e.g. AAPL" autocomplete="off" autocapitalize="characters" spellcheck="false" oninput="handleTickerSearchInput()" />
+        <button type="button" id="tickerSearchClear" class="ticker-clear" data-i18n-title="tickerSearchClear" title="Clear ticker search" onclick="clearTickerSearch()" style="display: none;">&times;</button>
+      </div>
+      <span class="hint" id="tickerSearchMeta"></span>
     </div>
   </div>
 
