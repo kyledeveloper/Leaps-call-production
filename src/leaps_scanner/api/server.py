@@ -6,15 +6,17 @@ Adheres strictly to Global Invariant 6 (Zero network re-fetch on alpha adjustmen
 """
 import json
 import logging
+import math
 import os
 import threading
 import urllib.parse
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Deque, Dict, List, Optional, Tuple
 from src.leaps_scanner.data.webull import WebullClient
 from src.leaps_scanner.data.public_delayed import PublicDelayedClient
 from src.leaps_scanner.data.store.iv_history import IVHistoryStore, default_iv_history_path
@@ -22,7 +24,7 @@ from src.leaps_scanner.data.store.daily_bars import DailyBarCache, default_daily
 from src.leaps_scanner.scoring.ranker import MemoryRanker, RankedItem, StrategyCandidate
 from src.leaps_scanner.scoring.csp_ranker import CSPCandidate, CSPFilterConfig, rank_csp_boards, CSPBoardSnapshot
 import time
-from src.leaps_scanner.data.rebalancer import get_universe_manager, DynamicUniverseManager
+from src.leaps_scanner.data.rebalancer import get_universe_manager, DynamicUniverseManager, TICKER_REGEX
 from src.leaps_scanner.data.universe import SymbologyNormalizer
 from src.leaps_scanner.core.metrics import calculate_pexec, calculate_carry_cost, calculate_effective_leverage
 from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
@@ -41,6 +43,12 @@ from src.leaps_scanner.strategies.csp_wheel import evaluate_csp_wheel
 from src.leaps_scanner.strategies.csp_vol_rank import evaluate_csp_vol_rank
 
 logger = logging.getLogger(__name__)
+
+# Single-ticker chain diagnostics: refresh admission control.
+_TICKER_REFRESH_COOLDOWN_S = 15.0          # per-ticker cooldown between upstream refreshes
+_FORCE_REFRESH_WINDOW_S = 60.0             # sliding window for the global refresh limiter
+_FORCE_REFRESH_MAX_PER_WINDOW = 30         # max admitted force_refresh attempts per window
+_FORCE_REFRESH_MAX_COOLDOWN_ENTRIES = 512  # hard cap on the per-ticker cooldown map
 
 
 def calculate_execution_price(bid: float, ask: float, alpha: float = 0.5) -> float:
@@ -155,6 +163,12 @@ class AppState:
         self._scan_seq: int = 0
         self._lock = threading.RLock()
         self._ticker_refresh_cooldown: Dict[str, float] = {}
+        # Item 4: global force_refresh admission control (sliding window of admitted attempts).
+        # Tunable per-instance for tests; defaults mirror the module constants above.
+        self._force_refresh_times: Deque[float] = deque()
+        self._force_refresh_window_s: float = _FORCE_REFRESH_WINDOW_S
+        self._force_refresh_max_per_window: int = _FORCE_REFRESH_MAX_PER_WINDOW
+        self._force_refresh_max_cooldown_entries: int = _FORCE_REFRESH_MAX_COOLDOWN_ENTRIES
 
     def resolve_scan_symbols(self, tier: Optional[str] = None) -> List[str]:
         raw = (tier or self.scan_tier or "etfs").strip().lower()
@@ -788,6 +802,11 @@ class AppState:
         norm_ticker = SymbologyNormalizer.to_canonical(ticker)
         if not norm_ticker:
             return 400, {"error": "invalid_ticker", "message": f"Unable to canonicalize ticker '{ticker}'."}
+        # Item 1: strict format gate — same TICKER_REGEX as the watchlist paths.
+        # Blocks CRLF/header-injection probes and reflected-payload tickers before
+        # the value reaches upstream clients or JSON echoes.
+        if not TICKER_REGEX.match(norm_ticker):
+            return 400, {"error": "invalid_ticker", "message": "Ticker format invalid; expected 1-5 letters with optional .XX suffix."}
 
         fam = (family or "leaps").strip().lower()
         if fam in ("cc", "covered_call"):
@@ -805,16 +824,40 @@ class AppState:
                 "message": "Covered Call quantitative screening engine blueprint. Full calculation coming soon."
             }
 
-        # Clause 3: 15-second rate-limit cooldown
+        # Clause 3: 15-second per-ticker rate-limit cooldown.
+        # Item 4: plus a global sliding-window admission limiter (force_refresh
+        # triggers upstream network I/O; the per-ticker cooldown is trivially
+        # bypassed by rotating tickers) and a hard cap on the cooldown map.
         now = time.time()
         cooldown_active = False
         if force_refresh:
-            last_refresh = self._ticker_refresh_cooldown.get(norm_ticker, 0.0)
-            if now - last_refresh < 15.0:
-                cooldown_active = True
-                force_refresh = False
-            else:
-                self._ticker_refresh_cooldown[norm_ticker] = now
+            with self._lock:
+                admitted = self._force_refresh_times
+                cutoff = now - self._force_refresh_window_s
+                while admitted and admitted[0] <= cutoff:
+                    admitted.popleft()
+                if len(admitted) >= self._force_refresh_max_per_window:
+                    retry_in = int(admitted[0] + self._force_refresh_window_s - now) + 1
+                    return 429, {
+                        "error": "rate_limited",
+                        "message": f"Too many chain refreshes; try again in {retry_in}s.",
+                        "retry_after_s": retry_in,
+                    }
+                admitted.append(now)
+                # Bound the cooldown map: drop expired entries first (an entry
+                # older than the cooldown window behaves exactly like a miss),
+                # then hard-cap as a backstop against clock skew / bursts.
+                cd = self._ticker_refresh_cooldown
+                for k in [k for k, ts in cd.items() if now - ts >= _TICKER_REFRESH_COOLDOWN_S]:
+                    del cd[k]
+                last_refresh = cd.get(norm_ticker, 0.0)
+                if now - last_refresh < _TICKER_REFRESH_COOLDOWN_S:
+                    cooldown_active = True
+                    force_refresh = False
+                else:
+                    cd[norm_ticker] = now
+                    while len(cd) > self._force_refresh_max_cooldown_entries:
+                        cd.pop(next(iter(cd)))
 
         # Normalize strategy key (Clause 5: prefix normalization)
         strat = (strategy or "").strip().lower()
@@ -1298,12 +1341,24 @@ def create_api_handler_class(state: AppState):
                     alpha = float(alpha_str) if alpha_str is not None else 0.5
                 except ValueError:
                     alpha = 0.5
+                # Item 3: float("nan")/"inf" parse fine but poison json.dumps (emits
+                # non-standard NaN) and downstream math. Reject non-finite/out-of-range.
+                if not math.isfinite(alpha) or not 0.0 <= alpha <= 1.0:
+                    return 400, headers, json.dumps({
+                        "error": "invalid_alpha",
+                        "message": "Query parameter 'alpha' must be a finite number between 0 and 1.",
+                    }).encode("utf-8")
 
                 cash_str = query_params.get("cash_pool", [None])[0]
                 try:
                     cash_pool = float(cash_str) if cash_str is not None else 50000.0
                 except ValueError:
                     cash_pool = 50000.0
+                if not math.isfinite(cash_pool) or cash_pool <= 0:
+                    return 400, headers, json.dumps({
+                        "error": "invalid_cash_pool",
+                        "message": "Query parameter 'cash_pool' must be a finite number greater than 0.",
+                    }).encode("utf-8")
 
                 code, payload = state.get_ticker_chain_diagnostics(
                     ticker=ticker,
