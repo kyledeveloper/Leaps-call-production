@@ -21,10 +21,35 @@ from src.leaps_scanner.data.store.iv_history import IVHistoryStore, default_iv_h
 from src.leaps_scanner.data.store.daily_bars import DailyBarCache, default_daily_bar_cache_path
 from src.leaps_scanner.scoring.ranker import MemoryRanker, RankedItem, StrategyCandidate
 from src.leaps_scanner.scoring.csp_ranker import CSPCandidate, CSPFilterConfig, rank_csp_boards, CSPBoardSnapshot
+import time
 from src.leaps_scanner.data.rebalancer import get_universe_manager, DynamicUniverseManager
 from src.leaps_scanner.data.universe import SymbologyNormalizer
+from src.leaps_scanner.core.metrics import calculate_pexec, calculate_carry_cost, calculate_effective_leverage
+from src.leaps_scanner.strategies.deep_itm import evaluate_deep_itm
+from src.leaps_scanner.strategies.vol_discount import (
+    VolDiscountUnderlyingMetrics,
+    evaluate_vol_discount_underlying,
+    evaluate_vol_discount_contract,
+)
+from src.leaps_scanner.strategies.oversold import (
+    OversoldUnderlyingMetrics,
+    evaluate_oversold_underlying,
+    evaluate_oversold_contract,
+)
+from src.leaps_scanner.strategies.csp_harvest import evaluate_csp_harvest
+from src.leaps_scanner.strategies.csp_wheel import evaluate_csp_wheel
+from src.leaps_scanner.strategies.csp_vol_rank import evaluate_csp_vol_rank
 
 logger = logging.getLogger(__name__)
+
+
+def calculate_execution_price(bid: float, ask: float, alpha: float = 0.5) -> float:
+    try:
+        if bid >= 0 and ask > 0 and bid <= ask:
+            return calculate_pexec(bid=bid, ask=ask, alpha=alpha).p_exec
+    except Exception:
+        pass
+    return round(bid + alpha * (ask - bid), 2) if (ask >= bid and bid >= 0) else max(ask, 0.0)
 
 
 
@@ -129,6 +154,7 @@ class AppState:
         self._scan_thread: Optional[threading.Thread] = None
         self._scan_seq: int = 0
         self._lock = threading.RLock()
+        self._ticker_refresh_cooldown: Dict[str, float] = {}
 
     def resolve_scan_symbols(self, tier: Optional[str] = None) -> List[str]:
         raw = (tier or self.scan_tier or "etfs").strip().lower()
@@ -504,6 +530,367 @@ class AppState:
             result[f"csp_{clean_name}"] = serialized
         return result
 
+    def _evaluate_single_leaps_diagnostics(self, c: StrategyCandidate, strat: str, alpha: float) -> Dict[str, Any]:
+        p_exec = calculate_execution_price(c.bid, c.ask, alpha)
+        if strat == "deep_itm":
+            active_res = evaluate_deep_itm(
+                spot=c.spot, strike=c.strike, dte=c.dte, p_exec=p_exec, delta=c.delta,
+                dividend_yield=getattr(c, "dividend_yield", 0.0), iv=c.iv, bid=c.bid, ask=c.ask,
+                open_interest=getattr(c, "open_interest", 0), volume=getattr(c, "volume", 0)
+            )
+        elif strat == "vol_discount":
+            use_iv_path = c.iv is not None and getattr(c, "iv_percentile", None) is not None and (
+                getattr(c, "iv_history_days", 0) >= 90 or getattr(c, "valid_history_days", 0) >= 90
+            )
+            vol_metrics = VolDiscountUnderlyingMetrics(
+                symbol=c.underlying,
+                spot=c.spot,
+                pct_change_20d=getattr(c, "pct_change_20d", 0.0),
+                drawdown_52w_high=getattr(c, "drawdown_52w_high", 0.0),
+                current_atm_iv=c.iv if c.iv is not None else 0.0,
+                hv_252=getattr(c, "hv_252", 0.0),
+                iv_percentile=getattr(c, "iv_percentile", 0.0) or 0.0,
+                iv_rank=getattr(c, "iv_rank", 0.5) or 0.5,
+                iv_z_score=getattr(c, "iv_z_score", 0.0) or 0.0,
+                valid_history_days=getattr(c, "iv_history_days", 0) or getattr(c, "valid_history_days", 0),
+                is_degraded=not use_iv_path,
+                hv_20=getattr(c, "hv_20", 0.0),
+                hv_percentile=getattr(c, "hv_percentile", None),
+                hv_z_score=getattr(c, "hv_z_score", 0.0),
+            )
+            vol_u_res = evaluate_vol_discount_underlying(vol_metrics)
+            active_res = evaluate_vol_discount_contract(
+                underlying_result=vol_u_res,
+                spot=c.spot,
+                strike=c.strike,
+                dte=c.dte,
+                p_exec=p_exec,
+                delta=c.delta,
+                liquidity_status=getattr(c, "liquidity_status", "PASS"),
+                dividend_yield=getattr(c, "dividend_yield", 0.0),
+                days_to_earnings=getattr(c, "days_to_earnings", None)
+            )
+        else:  # oversold
+            oversold_u_metrics = OversoldUnderlyingMetrics(
+                symbol=c.underlying,
+                spot=c.spot,
+                rsi_14=getattr(c, "rsi_14", 50.0),
+                pct_to_200dma=getattr(c, "pct_to_200dma", 0.0),
+                drawdown_52w_high=getattr(c, "drawdown_52w_high", 0.0),
+                bounce_52w_low=getattr(c, "bounce_52w_low", 0.0),
+                hv_20=getattr(c, "hv_20", 0.0),
+                bar_count=getattr(c, "valid_history_days", 252),
+                is_valid=getattr(c, "valid_history_days", 252) >= 200
+            )
+            oversold_u_res = evaluate_oversold_underlying(oversold_u_metrics)
+            active_res = evaluate_oversold_contract(
+                underlying_result=oversold_u_res,
+                spot=c.spot,
+                strike=c.strike,
+                dte=c.dte,
+                p_exec=p_exec,
+                delta=c.delta,
+                liquidity_status=getattr(c, "liquidity_status", "PASS"),
+                dividend_yield=getattr(c, "dividend_yield", 0.0),
+                days_to_earnings=getattr(c, "days_to_earnings", None)
+            )
+
+        raw_gates = active_res.gates if hasattr(active_res, "gates") else {}
+
+        intrinsic_val = max(0.0, c.spot - c.strike)
+        intrinsic_ratio = (intrinsic_val / p_exec) if p_exec > 0 else 0.0
+        leverage = calculate_effective_leverage(delta=c.delta, spot=c.spot, p_exec=p_exec)
+        carry_res = calculate_carry_cost(spot=c.spot, strike=c.strike, dte=c.dte, p_exec=p_exec, dividend_yield=getattr(c, "dividend_yield", 0.0))
+        carry = carry_res.total_annualized_carry
+
+        gate_diagnostics = []
+        for g_name, g_val in raw_gates.items():
+            val_str = g_val.value if hasattr(g_val, "value") else str(g_val)
+            reason = "WITHIN_RULE" if val_str == "PASS" else "VIOLATION"
+            rule_target = ""
+            actual_disp = ""
+
+            if g_name == "strike":
+                rule_target = "65% - 85% Spot"
+                actual_disp = f"${c.strike:.1f} ({(c.strike/c.spot)*100:.1f}%)" if c.spot > 0 else f"${c.strike:.1f}"
+            elif g_name == "delta":
+                rule_target = "0.70 - 0.85 (0.85-0.90 Watch)"
+                actual_disp = f"{c.delta:.2f}"
+            elif g_name == "intrinsic":
+                rule_target = ">= 65% (>= 55% Watch)"
+                actual_disp = f"{intrinsic_ratio*100:.1f}%"
+            elif g_name == "leverage":
+                rule_target = "2.5x - 4.5x"
+                actual_disp = f"{leverage:.1f}x"
+            elif g_name == "carry":
+                rule_target = "<= 15%/yr (<= 25% Watch)"
+                actual_disp = f"{carry*100:.2f}%/yr"
+            elif g_name == "dte":
+                rule_target = ">= 300d (>= 250d Watch)"
+                actual_disp = f"{int(c.dte)}d"
+            elif g_name == "theta":
+                rule_target = "<= 0.08%/d"
+                actual_disp = f"{getattr(active_res, 'theta_daily_pct', 0.0)*100:.3f}%/d"
+                if c.iv is None:
+                    reason = "IV_UNAVAILABLE_DEGRADED"
+            elif g_name == "spread":
+                rule_target = "<= 15% Spread"
+                spread = c.ask - c.bid
+                actual_disp = f"${c.bid:.2f} / ${c.ask:.2f} (${spread:.2f})"
+            elif g_name == "oi":
+                rule_target = ">= 100 contracts"
+                actual_disp = f"{getattr(c, 'open_interest', 0)} OI"
+            elif g_name == "volume":
+                rule_target = ">= 5 volume"
+                actual_disp = f"{getattr(c, 'volume', 0)} Vol"
+            else:
+                rule_target = "Strategy rule"
+                actual_disp = "Evaluated"
+
+            if val_str != "PASS" and reason == "VIOLATION":
+                for r in getattr(active_res, "reasons", []):
+                    if g_name.upper() in r or (g_name == "intrinsic" and "INTRINSIC" in r):
+                        reason = r
+                        break
+                if reason == "VIOLATION":
+                    reason = f"{g_name.upper()}_{val_str}"
+
+            gate_diagnostics.append({
+                "gate_name": g_name,
+                "status": val_str,
+                "actual_value": actual_disp,
+                "target_rule": rule_target,
+                "reason": reason
+            })
+
+        return {
+            "symbol": c.symbol,
+            "underlying": c.underlying,
+            "strike": c.strike,
+            "spot": c.spot,
+            "dte": c.dte,
+            "bid": c.bid,
+            "ask": c.ask,
+            "p_exec": p_exec,
+            "delta": c.delta,
+            "iv": c.iv,
+            "open_interest": getattr(c, "open_interest", 0),
+            "volume": getattr(c, "volume", 0),
+            "status": active_res.status.value if hasattr(active_res.status, "value") else str(active_res.status),
+            "reasons": getattr(active_res, "reasons", []),
+            "effective_leverage": leverage,
+            "carry_cost": carry,
+            "intrinsic_ratio": intrinsic_ratio,
+            "gate_diagnostics": gate_diagnostics
+        }
+
+    def _evaluate_single_csp_diagnostics(self, c: CSPCandidate, strat: str, alpha: float, cash_pool: float) -> Dict[str, Any]:
+        p_exec = calculate_execution_price(c.bid, c.ask, alpha)
+        s1 = evaluate_csp_harvest(c)
+        s2 = evaluate_csp_wheel(c)
+        s3 = evaluate_csp_vol_rank(c)
+
+        active_res = s1 if strat == "csp_harvest" else (s2 if strat == "csp_wheel" else s3)
+        raw_gates = getattr(active_res, "gates", {})
+
+        gate_diagnostics = []
+        for g_name, g_val in raw_gates.items():
+            val_str = g_val.value if hasattr(g_val, "value") else str(g_val)
+            reason = "WITHIN_RULE" if val_str == "PASS" else "VIOLATION"
+            rule_target = ""
+            actual_disp = ""
+
+            if g_name == "dte":
+                rule_target = "7 - 45 days"
+                actual_disp = f"{int(c.dte)}d"
+            elif g_name == "delta":
+                rule_target = "-0.15 to -0.30"
+                actual_disp = f"{c.delta:.2f}"
+            elif g_name == "buffer":
+                rule_target = ">= 3.0%"
+                actual_disp = f"{((c.spot - c.strike)/c.spot)*100:.2f}%" if c.spot > 0 else "0.0%"
+            elif g_name == "aroc":
+                rule_target = ">= 12.0%/yr"
+                actual_disp = f"{getattr(c, 'aroc', 0.0)*100:.1f}%/yr"
+            elif g_name == "pop":
+                rule_target = ">= 70%"
+                actual_disp = f"{getattr(c, 'pop', 0.0)*100:.1f}%"
+            elif g_name == "spread":
+                rule_target = "<= 15% Spread"
+                spread = c.ask - c.bid
+                actual_disp = f"${c.bid:.2f} / ${c.ask:.2f} (${spread:.2f})"
+            elif g_name == "oi":
+                rule_target = ">= 100 contracts"
+                actual_disp = f"{getattr(c, 'open_interest', 0)} OI"
+            elif g_name == "volume":
+                rule_target = ">= 5 volume"
+                actual_disp = f"{getattr(c, 'volume', 0)} Vol"
+            elif g_name == "ivr":
+                rule_target = ">= 50%"
+                actual_disp = f"{getattr(c, 'ivr', 0.0)*100:.1f}%"
+                if getattr(c, "ivr", None) is None:
+                    reason = "IVR_UNAVAILABLE_DEGRADED"
+            elif g_name == "earnings":
+                rule_target = "No earnings in DTE"
+                actual_disp = str(getattr(c, "earnings_status", "CONFIRMED_CLEAR"))
+                if "UNVERIFIED" in actual_disp:
+                    reason = "EARNINGS_UNVERIFIED_DEGRADED"
+            else:
+                rule_target = "Strategy rule"
+                actual_disp = "Evaluated"
+
+            if val_str != "PASS" and reason == "VIOLATION":
+                for r in getattr(active_res, "reasons", []):
+                    if g_name.upper() in r:
+                        reason = r
+                        break
+                if reason == "VIOLATION":
+                    reason = f"{g_name.upper()}_{val_str}"
+
+            gate_diagnostics.append({
+                "gate_name": g_name,
+                "status": val_str,
+                "actual_value": actual_disp,
+                "target_rule": rule_target,
+                "reason": reason
+            })
+
+        return {
+            "symbol": c.symbol,
+            "underlying": c.underlying,
+            "strike": c.strike,
+            "spot": c.spot,
+            "dte": c.dte,
+            "bid": c.bid,
+            "ask": c.ask,
+            "p_exec": p_exec,
+            "delta": c.delta,
+            "aroc": getattr(c, "aroc", 0.0),
+            "buffer": getattr(c, "buffer", 0.0),
+            "pop": getattr(c, "pop", 0.0),
+            "status": active_res.status.value if hasattr(active_res.status, "value") else str(active_res.status),
+            "reasons": getattr(active_res, "reasons", []),
+            "gate_diagnostics": gate_diagnostics
+        }
+
+    def get_ticker_chain_diagnostics(
+        self,
+        ticker: Optional[str],
+        family: str = "leaps",
+        strategy: Optional[str] = None,
+        alpha: float = 0.5,
+        cash_pool: float = 50000.0,
+        force_refresh: bool = False,
+    ) -> Tuple[int, Dict[str, Any]]:
+        if not ticker:
+            return 400, {"error": "missing_ticker", "message": "Query parameter 'ticker' is required."}
+
+        norm_ticker = SymbologyNormalizer.to_canonical(ticker)
+        if not norm_ticker:
+            return 400, {"error": "invalid_ticker", "message": f"Unable to canonicalize ticker '{ticker}'."}
+
+        fam = (family or "leaps").strip().lower()
+        if fam in ("cc", "covered_call"):
+            # Clause 7: Covered Call blueprint protocol
+            return 200, {
+                "status": "blueprint",
+                "family": "cc",
+                "ticker": norm_ticker,
+                "metrics_spec": [
+                    {"name": "otm_call_yield", "label": "Call Premium Yield (30-60 DTE)", "target": ">= 1.5% / month"},
+                    {"name": "annualized_aroc", "label": "Annualized Return on Capital", "target": ">= 15% / yr"},
+                    {"name": "downside_buffer", "label": "Downside Cushion / Breakeven", "target": "Strike - Premium"},
+                    {"name": "delta_window", "label": "Short Call Delta Window", "target": "0.20 to 0.35 Delta"}
+                ],
+                "message": "Covered Call quantitative screening engine blueprint. Full calculation coming soon."
+            }
+
+        # Clause 3: 15-second rate-limit cooldown
+        now = time.time()
+        cooldown_active = False
+        if force_refresh:
+            last_refresh = self._ticker_refresh_cooldown.get(norm_ticker, 0.0)
+            if now - last_refresh < 15.0:
+                cooldown_active = True
+                force_refresh = False
+            else:
+                self._ticker_refresh_cooldown[norm_ticker] = now
+
+        # Normalize strategy key (Clause 5: prefix normalization)
+        strat = (strategy or "").strip().lower()
+        if fam == "csp":
+            if strat in ("harvest", "csp_harvest"):
+                strat = "csp_harvest"
+            elif strat in ("wheel", "csp_wheel"):
+                strat = "csp_wheel"
+            elif strat in ("vol_rank", "csp_vol_rank"):
+                strat = "csp_vol_rank"
+            else:
+                strat = "csp_harvest"
+        else:
+            if strat not in ("deep_itm", "vol_discount", "oversold"):
+                strat = "deep_itm"
+
+        warning = None
+        contracts_out = []
+        spot_price = 0.0
+
+        if fam == "csp":
+            matches = [c for c in self.csp_candidates if (c.underlying or "").upper() == norm_ticker]
+            if (not matches or force_refresh) and not self.offline_mode:
+                try:
+                    new_cands = self.client.get_csp_candidates([norm_ticker])
+                    if new_cands:
+                        with self._lock:
+                            # Clause 1: Atomic upsert, never wipe other tickers
+                            self.csp_candidates = [c for c in self.csp_candidates if (c.underlying or "").upper() != norm_ticker] + new_cands
+                            matches = new_cands
+                except Exception as exc:
+                    logger.warning("Single-ticker CSP live fetch failed for %s: %s", norm_ticker, exc)
+                    warning = f"upstream_refresh_failed: {exc}"
+
+            for c in matches:
+                spot_price = c.spot if spot_price == 0.0 else spot_price
+                diag_item = self._evaluate_single_csp_diagnostics(c, strat, alpha, cash_pool)
+                contracts_out.append(diag_item)
+
+        else: # leaps
+            matches = [c for c in self.candidates if (c.underlying or "").upper() == norm_ticker]
+            if (not matches or force_refresh) and not self.offline_mode:
+                try:
+                    new_cands = self.client.get_leaps_candidates([norm_ticker])
+                    if new_cands:
+                        with self._lock:
+                            # Clause 1: Atomic upsert, never wipe other tickers
+                            self.candidates = [c for c in self.candidates if (c.underlying or "").upper() != norm_ticker] + new_cands
+                            self.ranker = MemoryRanker(self.candidates)
+                            matches = new_cands
+                except Exception as exc:
+                    logger.warning("Single-ticker LEAPS live fetch failed for %s: %s", norm_ticker, exc)
+                    warning = f"upstream_refresh_failed: {exc}"
+
+            for c in matches:
+                spot_price = c.spot if spot_price == 0.0 else spot_price
+                diag_item = self._evaluate_single_leaps_diagnostics(c, strat, alpha)
+                contracts_out.append(diag_item)
+
+        payload = {
+            "status": "ok",
+            "ticker": norm_ticker,
+            "spot": spot_price,
+            "family": fam,
+            "strategy": strat,
+            "alpha": alpha,
+            "cash_pool": cash_pool,
+            "cooldown_active": cooldown_active,
+            "contract_count": len(contracts_out),
+            "contracts": contracts_out,
+            "asof": self.last_scan_time or datetime.now(timezone.utc).isoformat()
+        }
+        if warning:
+            payload["warning"] = warning
+        return 200, payload
+
     def _has_credentials(self) -> bool:
         if self.source != "webull":
             return False
@@ -715,6 +1102,25 @@ def create_api_handler_class(state: AppState):
                         content = f.read()
                     return 200, {"Content-Type": "text/html; charset=utf-8"}, content if method == "GET" else b""
 
+            # GET /chain or /chain.html
+            if method in ("GET", "HEAD") and clean_path in ("/chain", "/chain.html"):
+                chain_path = os.path.join(static_dir, "chain.html")
+                if os.path.exists(chain_path):
+                    with open(chain_path, "rb") as f:
+                        content = f.read()
+                    return 200, {"Content-Type": "text/html; charset=utf-8"}, content if method == "GET" else b""
+                else:
+                    html = b"<!DOCTYPE html><html><head><title>Option Chain Diagnostics</title></head><body><h1>Option Chain Diagnostics</h1><p>Loading chain view...</p></body></html>"
+                    return 200, {"Content-Type": "text/html; charset=utf-8"}, html if method == "GET" else b""
+
+            # GET /chain-workflow or /chain-workflow.html or /docs/chain-workflow-zh.html
+            if method in ("GET", "HEAD") and clean_path in ("/chain-workflow", "/chain-workflow.html", "/docs/chain-workflow-zh.html"):
+                wf_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "docs", "chain-workflow-zh.html"))
+                if os.path.exists(wf_path):
+                    with open(wf_path, "rb") as f:
+                        content = f.read()
+                    return 200, {"Content-Type": "text/html; charset=utf-8"}, content if method == "GET" else b""
+
             # GET /api/v1/config
             if method in ("GET", "HEAD") and clean_path == "/api/v1/config":
                 payload = json.dumps(state.public_config()).encode("utf-8")
@@ -877,6 +1283,37 @@ def create_api_handler_class(state: AppState):
                 }
                 return 200, headers, json.dumps(data).encode("utf-8")
 
+            # GET /api/v1/ticker/chain or /api/ticker/chain
+            if method == "GET" and clean_path in ("/api/v1/ticker/chain", "/api/ticker/chain"):
+                ticker = query_params.get("ticker", query_params.get("symbol", [None]))[0]
+                if not ticker:
+                    return 400, headers, json.dumps({"error": "missing_ticker", "message": "Missing 'ticker' parameter"}).encode("utf-8")
+                family = query_params.get("family", ["leaps"])[0]
+                strategy = query_params.get("strategy", [None])[0]
+                force_refresh_str = query_params.get("force_refresh", ["false"])[0].lower()
+                force_refresh = force_refresh_str in ("true", "1", "yes")
+
+                alpha_str = query_params.get("alpha", [None])[0]
+                try:
+                    alpha = float(alpha_str) if alpha_str is not None else 0.5
+                except ValueError:
+                    alpha = 0.5
+
+                cash_str = query_params.get("cash_pool", [None])[0]
+                try:
+                    cash_pool = float(cash_str) if cash_str is not None else 50000.0
+                except ValueError:
+                    cash_pool = 50000.0
+
+                code, payload = state.get_ticker_chain_diagnostics(
+                    ticker=ticker,
+                    family=family,
+                    strategy=strategy,
+                    alpha=alpha,
+                    cash_pool=cash_pool,
+                    force_refresh=force_refresh,
+                )
+                return code, headers, json.dumps(payload).encode("utf-8")
 
             # GET /api/v1/watchlist
             if method == "GET" and clean_path in ("/api/v1/watchlist", "/api/watchlist"):

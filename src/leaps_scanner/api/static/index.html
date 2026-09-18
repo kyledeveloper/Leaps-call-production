@@ -1239,6 +1239,8 @@
         contracts: 'contracts',
         topPick: 'Top Pick',
         optionChainTitle: 'Option Chain ({count} contracts)',
+        openDedicatedChain: 'Open dedicated option chain diagnostics page',
+        viewChainPage: 'Diagnostics Page',
         tickerSearchLabel: 'Ticker',
         tickerSearchPlaceholder: 'Search ticker, e.g. AAPL',
         tickerSearchClear: 'Clear ticker search',
@@ -1387,6 +1389,8 @@
         contracts: '张合约',
         topPick: '首选',
         optionChainTitle: '期权链（共 {count} 张合约）',
+        openDedicatedChain: '打开全链门控体检独立页面',
+        viewChainPage: '全链体检页',
         tickerSearchLabel: '标的',
         tickerSearchPlaceholder: '输入标的代码，如 AAPL',
         tickerSearchClear: '清除标的搜索',
@@ -2659,7 +2663,7 @@
         return `
           <tr>
             <td><strong>${symbol}</strong></td>
-            <td>${underlying}${earningsBadge}</td>
+            <td>${underlying}${earningsBadge}${!isNested ? ` <a href="/chain?ticker=${encodeURIComponent(underlying)}&family=csp&strategy=${currentBoardKey}&alpha=${currentAlpha}&lang=${typeof lang !== 'undefined' ? lang : 'en'}" target="_blank" title="${t('openDedicatedChain')}" style="font-size:11px; text-decoration:none; opacity:0.8; margin-left:4px;">🔬</a>` : ''}</td>
             <td class="num">$${strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${spot.toFixed(1)}</span></td>
             <td class="num">${Math.round(dte)}d</td>
             <td class="num">$${bid.toFixed(2)} / $${ask.toFixed(2)}</td>
@@ -2678,7 +2682,7 @@
         return `
           <tr>
             <td><strong>${it.symbol}</strong></td>
-            <td>${it.underlying}</td>
+            <td>${it.underlying}${!isNested ? ` <a href="/chain?ticker=${encodeURIComponent(it.underlying)}&family=leaps&strategy=${currentBoardKey}&alpha=${currentAlpha}&lang=${typeof lang !== 'undefined' ? lang : 'en'}" target="_blank" title="${t('openDedicatedChain')}" style="font-size:11px; text-decoration:none; opacity:0.8; margin-left:4px;">🔬</a>` : ''}</td>
             <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
             <td class="num">${Math.round(it.dte)}d</td>
             <td class="num">$${it.bid.toFixed(2)} / $${it.ask.toFixed(2)}</td>
@@ -2695,7 +2699,7 @@
         return `
           <tr>
             <td><strong>${it.symbol}</strong></td>
-            <td>${it.underlying}</td>
+            <td>${it.underlying}${!isNested ? ` <a href="/chain?ticker=${encodeURIComponent(it.underlying)}&family=leaps&strategy=${currentBoardKey}&alpha=${currentAlpha}&lang=${typeof lang !== 'undefined' ? lang : 'en'}" target="_blank" title="${t('openDedicatedChain')}" style="font-size:11px; text-decoration:none; opacity:0.8; margin-left:4px;">🔬</a>` : ''}</td>
             <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
             <td class="num">${Math.round(it.dte)}d</td>
             <td class="num">$${it.p_exec.toFixed(2)}</td>
@@ -2709,7 +2713,7 @@
         return `
           <tr>
             <td><strong>${it.symbol}</strong></td>
-            <td>${it.underlying}</td>
+            <td>${it.underlying}${!isNested ? ` <a href="/chain?ticker=${encodeURIComponent(it.underlying)}&family=leaps&strategy=${currentBoardKey}&alpha=${currentAlpha}&lang=${typeof lang !== 'undefined' ? lang : 'en'}" target="_blank" title="${t('openDedicatedChain')}" style="font-size:11px; text-decoration:none; opacity:0.8; margin-left:4px;">🔬</a>` : ''}</td>
             <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
             <td class="num">${Math.round(it.dte)}d</td>
             <td class="num">$${it.p_exec.toFixed(2)}</td>
@@ -2722,7 +2726,7 @@
       return `
         <tr>
           <td><strong>${it.symbol}</strong></td>
-          <td>${it.underlying}</td>
+          <td>${it.underlying}${!isNested ? ` <a href="/chain?ticker=${encodeURIComponent(it.underlying)}&family=leaps&strategy=${currentBoardKey}&alpha=${currentAlpha}&lang=${typeof lang !== 'undefined' ? lang : 'en'}" target="_blank" title="${t('openDedicatedChain')}" style="font-size:11px; text-decoration:none; opacity:0.8; margin-left:4px;">🔬</a>` : ''}</td>
           <td class="num">$${it.strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${it.spot.toFixed(1)}</span></td>
           <td class="num">${Math.round(it.dte)}d</td>
           <td class="num">$${it.p_exec.toFixed(2)}</td>
@@ -2736,7 +2740,9 @@
       const strikeRange = `$${g.minStrike.toFixed(1)}${g.minStrike !== g.maxStrike ? '–$' + g.maxStrike.toFixed(1) : ''}`;
       const dteRange = `${Math.round(g.minDte)}d${g.minDte !== g.maxDte ? '–' + Math.round(g.maxDte) + 'd' : ''}`;
       const contractsSummary = `<span class="badge badge-contracts">${g.items.length} ${t('contracts')}</span><span class="sub-info">${g.passCount} PASS · ${g.watchCount} WATCH</span>`;
-      const tickerCol = `<div class="master-ticker-col"><span class="accordion-icon">${isExpanded ? '▾' : '▸'}</span><strong>${esc(g.ticker)}</strong></div>`;
+      const safeLang = typeof lang !== 'undefined' ? lang : 'en';
+      const chainUrl = `/chain?ticker=${encodeURIComponent(g.ticker)}&family=${currentFamily}&strategy=${currentBoardKey}&alpha=${currentAlpha}&lang=${safeLang}`;
+      const tickerCol = `<div class="master-ticker-col"><span class="accordion-icon">${isExpanded ? '▾' : '▸'}</span><strong>${esc(g.ticker)}</strong><a href="${chainUrl}" target="_blank" class="master-chain-link" title="${t('openDedicatedChain')}" onclick="event.stopPropagation();" style="margin-left:6px; font-size:12px; opacity:0.8; text-decoration:none;">🔬</a></div>`;
 
       let masterCols = '';
       if (currentFamily === 'csp') {
@@ -2751,41 +2757,50 @@
         const topPexec = typeof topItem.p_exec === 'number' ? topItem.p_exec.toFixed(2) : '0.00';
         const topDelta = typeof topCand.delta === 'number' ? topCand.delta.toFixed(2) : '0.00';
         const topContracts = topCap.recommended_contracts != null ? topCap.recommended_contracts : (topItem.recommended_contracts || 0);
-        const topReqCap = topCap.required_capital_per_contract != null ? topCap.required_capital_per_contract : (topItem.capital_required || 0);
+        const topReqCap = topCap.required_capital_per_contract != null ? topCap.required_capital_per_contract : (topItem.capital_required || (topCand.strike * 100));
+        const topMaxLoss = topCap.total_max_loss != null ? topCap.total_max_loss : (topItem.max_loss || (topReqCap - topItem.p_exec * 100));
+        const topStress = typeof topItem.stress_pnl === 'number' ? topItem.stress_pnl : 0;
+        const capFormatted = '$' + Math.round(topReqCap).toLocaleString();
+        const lossFormatted = '$' + Math.round(topMaxLoss).toLocaleString();
+        const stressFormatted = (topStress >= 0 ? '+$' : '-$') + Math.round(Math.abs(topStress)).toLocaleString();
 
         masterCols = `
           <td>${tickerCol}</td>
           <td>${contractsSummary}</td>
           <td class="num">${strikeRange} <span class="sub-info">${t('spot')}: $${g.spot.toFixed(1)}</span></td>
           <td class="num">${dteRange}</td>
-          <td class="num">$${topBid} / $${topAsk}</td>
-          <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${topPexec} <span class="sub-info">${t('topPick')}</span></td>
+          <td class="num">$${topBid} / $${topAsk} <span class="sub-info">${t('topPick')}</span></td>
+          <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${topPexec}</td>
           <td class="num">${topDelta}</td>
           <td class="num" style="color: var(--accent-green); font-weight: 600;">${arocRange}</td>
           <td class="num">${bufRange}</td>
-          <td class="num" title="${t('popTooltip')}">${popRange}</td>
-          <td class="num"><strong>${topContracts}</strong> <span class="sub-info">${t('topPick')}</span></td>
-          <td class="num">$${Math.round(topReqCap).toLocaleString()} <span class="sub-info">${t('topPick')} req</span></td>
+          <td class="num">${popRange}</td>
+          <td class="num"><strong>${topContracts}</strong> <span class="sub-info">alloc</span></td>
+          <td class="num">${capFormatted} <span class="sub-info">loss: ${lossFormatted} | stress: <span style="color: ${topStress < 0 ? 'var(--accent-rose)' : 'inherit'}">${stressFormatted}</span></span></td>
           <td>${statusBadge}</td>
         `;
       } else if (currentBoardKey === 'deep_itm') {
         const topItem = g.bestItem;
         const levRange = `${g.minLeverage.toFixed(1)}x${g.minLeverage !== g.maxLeverage ? '–' + g.maxLeverage.toFixed(1) + 'x' : ''}`;
         const carryRange = `${(g.minCarry * 100).toFixed(2)}%${g.minCarry !== g.maxCarry ? '–' + (g.maxCarry * 100).toFixed(2) + '%' : ''}/yr`;
+        const topPexec = typeof topItem.p_exec === 'number' ? topItem.p_exec.toFixed(2) : '0.00';
         const topBid = typeof topItem.bid === 'number' ? topItem.bid.toFixed(2) : '0.00';
         const topAsk = typeof topItem.ask === 'number' ? topItem.ask.toFixed(2) : '0.00';
-        const topPexec = typeof topItem.p_exec === 'number' ? topItem.p_exec.toFixed(2) : '0.00';
         const topDelta = typeof topItem.delta === 'number' ? topItem.delta.toFixed(2) : '0.00';
-        const topIntrinsic = topItem.p_exec > 0 ? ((topItem.intrinsic_per_share / topItem.p_exec) * 100).toFixed(1) + '%' : '0.0%';
-        const topTheta = typeof topItem.theta_daily_pct === 'number' ? (topItem.theta_daily_pct * 100).toFixed(3) + '%/d' : '0.000%/d';
+        const topIntrinsic = typeof topItem.intrinsic_per_share === 'number' && topItem.p_exec > 0
+          ? ((topItem.intrinsic_per_share / topItem.p_exec) * 100).toFixed(1) + '%'
+          : '0.0%';
+        const topTheta = typeof topItem.theta_daily_pct === 'number'
+          ? ((topItem.theta_daily_pct) * 100).toFixed(3) + '%/d'
+          : '0.000%/d';
 
         masterCols = `
           <td>${tickerCol}</td>
           <td>${contractsSummary}</td>
           <td class="num">${strikeRange} <span class="sub-info">${t('spot')}: $${g.spot.toFixed(1)}</span></td>
           <td class="num">${dteRange}</td>
-          <td class="num">$${topBid} / $${topAsk}</td>
-          <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${topPexec} <span class="sub-info">${t('topPick')}</span></td>
+          <td class="num">$${topBid} / $${topAsk} <span class="sub-info">${t('topPick')}</span></td>
+          <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${topPexec}</td>
           <td class="num">${topDelta}</td>
           <td class="num">${levRange}</td>
           <td class="num">${topIntrinsic}</td>
@@ -2797,7 +2812,10 @@
         const topItem = g.bestItem;
         const carryRange = `${(g.minCarry * 100).toFixed(2)}%${g.minCarry !== g.maxCarry ? '–' + (g.maxCarry * 100).toFixed(2) + '%' : ''}/yr`;
         const topPexec = typeof topItem.p_exec === 'number' ? topItem.p_exec.toFixed(2) : '0.00';
-        const topIvPct = topItem.iv_percentile !== null && typeof topItem.iv_percentile === 'number' ? (topItem.iv_percentile * 100).toFixed(1) + '%' : 'N/A';
+        const topIvPct = topItem.iv_percentile !== null && topItem.iv_percentile !== undefined
+          ? (topItem.iv_percentile * 100).toFixed(1) + '%'
+          : 'N/A';
+        const topRegime = topItem.regime || 'NONE';
 
         masterCols = `
           <td>${tickerCol}</td>
@@ -2806,7 +2824,7 @@
           <td class="num">${dteRange}</td>
           <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${topPexec} <span class="sub-info">${t('topPick')}</span></td>
           <td class="num">${topIvPct}</td>
-          <td><span class="badge" style="background: rgba(56,189,248,0.15); color: var(--accent-blue);">${topItem.regime || 'NONE'}</span></td>
+          <td><span class="badge" style="background: rgba(56,189,248,0.15); color: var(--accent-blue);">${topRegime}</span></td>
           <td class="num">${carryRange}</td>
           <td>${statusBadge}</td>
         `;
@@ -2835,8 +2853,9 @@
         <tr class="detail-row ${isExpanded ? 'open' : ''}" id="detail-${esc(g.ticker)}" style="${isExpanded ? '' : 'display: none;'}">
           <td colspan="${colSpan}">
             <div class="nested-chain-container">
-              <div class="nested-chain-toolbar">
+              <div class="nested-chain-toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
                 <span class="nested-chain-title"><strong>${esc(g.ticker)}</strong> ${t('optionChainTitle', { count: g.items.length })}</span>
+                <a href="${chainUrl}" target="_blank" class="chain-deep-link" style="display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:600; color:var(--accent-blue); text-decoration:none; padding:3px 8px; border-radius:6px; background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.25);" title="${t('openDedicatedChain')}">🔬 ${t('viewChainPage')}</a>
               </div>
               <div class="nested-table-scroll">
                 <table class="nested-chain-table">

@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>期权链多策略门控体检 — Option Chain Diagnostics</title>
+  <style>
+    :root {
+      --bg-base: #0f172a;
+      --bg-card: #1e293b;
+      --bg-hover: #334155;
+      --border: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-blue: #38bdf8;
+      --accent-green: #34d399;
+      --accent-amber: #fbbf24;
+      --accent-rose: #f43f5e;
+      --badge-pass-bg: rgba(52, 211, 153, 0.15);
+      --badge-pass-text: #34d399;
+      --badge-watch-bg: rgba(251, 191, 36, 0.15);
+      --badge-watch-text: #fbbf24;
+      --badge-reject-bg: rgba(244, 63, 94, 0.15);
+      --badge-reject-text: #f43f5e;
+      --badge-degraded-bg: rgba(245, 158, 11, 0.2);
+      --badge-degraded-text: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      padding: clamp(12px, 2.5vw, 28px);
+      line-height: 1.5;
+      max-width: 1600px;
+      margin: 0 auto;
+      min-height: 100vh;
+    }
+    a { color: var(--accent-blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Top Nav / Back button */
+    .top-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .back-btn:hover { background: var(--bg-hover); text-decoration: none; }
+
+    .nav-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .lang-switcher {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .lang-btn {
+      background: var(--bg-card);
+      border: none;
+      color: var(--text-muted);
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .lang-btn.active {
+      background: var(--accent-blue);
+      color: #0f172a;
+    }
+
+    /* Hero Bar */
+    .hero-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .ticker-profile {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .ticker-badge {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .spot-price {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--accent-blue);
+    }
+    .hero-meta {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .hero-meta span strong {
+      color: var(--text-main);
+    }
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .ticker-switch-input {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 7px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      width: 110px;
+      text-transform: uppercase;
+    }
+    .ticker-switch-input:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+    .btn-action {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .btn-action:hover {
+      background: var(--bg-hover);
+      border-color: var(--accent-blue);
+    }
+    .btn-refresh {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent-blue);
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+    .btn-refresh:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      border-color: var(--border);
+      color: var(--text-muted);
+    }
+
+    /* Banners */
+    .banner-warning {
+      background: rgba(251, 191, 36, 0.15);
+      border: 1px solid rgba(251, 191, 36, 0.4);
+      color: var(--accent-amber);
+      padding: 10px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      display: none;
+    }
+
+    /* Tabs & Sub-Tabs */
+    .tabs-wrapper {
+      margin-bottom: 20px;
+    }
+    .family-tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+      overflow-x: auto;
+    }
+    .family-tab {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 15px;
+      font-weight: 700;
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .family-tab:hover {
+      color: var(--text-main);
+      background: var(--bg-hover);
+    }
+    .family-tab.active {
+      color: var(--accent-blue);
+      background: rgba(56, 189, 248, 0.15);
+    }
+    .strategy-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .strategy-tab {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .strategy-tab:hover {
+      color: var(--text-main);
+      border-color: var(--text-muted);
+    }
+    .strategy-tab.active {
+      background: var(--text-main);
+      color: #0f172a;
+      border-color: var(--text-main);
+      font-weight: 700;
+    }
+
+    /* Filter Toolbar */
+    .filter-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .status-filters {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .status-pill {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 5px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .status-pill.active {
+      background: var(--bg-hover);
+      color: var(--text-main);
+      border-color: var(--accent-blue);
+    }
+    .status-pill.active[data-filter="PASS"] { background: var(--badge-pass-bg); color: var(--badge-pass-text); border-color: rgba(52, 211, 153, 0.4); }
+    .status-pill.active[data-filter="WATCH"] { background: var(--badge-watch-bg); color: var(--badge-watch-text); border-color: rgba(251, 191, 36, 0.4); }
+    .status-pill.active[data-filter="REJECT"] { background: var(--badge-reject-bg); color: var(--badge-reject-text); border-color: rgba(244, 63, 94, 0.4); }
+
+    .summary-stats {
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .stat-badge {
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .stat-pass { background: var(--badge-pass-bg); color: var(--badge-pass-text); }
+    .stat-watch { background: var(--badge-watch-bg); color: var(--badge-watch-text); }
+    .stat-reject { background: var(--badge-reject-bg); color: var(--badge-reject-text); }
+
+    .accordion-controls {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-accordion-toggle {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-accordion-toggle:hover { color: var(--text-main); background: var(--bg-hover); }
+
+    /* Expiry Accordion Groups */
+    .expiry-group {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .expiry-header {
+      padding: 12px 18px;
+      background: #1e293b;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .expiry-header:hover {
+      background: #273549;
+    }
+    .expiry-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      font-size: 15px;
+    }
+    .expiry-arrow {
+      transition: transform 0.2s;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .expiry-group.open .expiry-arrow {
+      transform: rotate(90deg);
+    }
+    .expiry-badges {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .expiry-content {
+      display: none;
+      border-top: 1px solid var(--border);
+    }
+    .expiry-group.open .expiry-content {
+      display: block;
+    }
+
+    /* Option Chain Table */
+    .chain-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .chain-table th {
+      background: #141f32;
+      color: var(--text-muted);
+      font-weight: 700;
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .chain-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+      white-space: nowrap;
+    }
+    .chain-row {
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .chain-row:hover {
+      background: rgba(56, 189, 248, 0.04);
+    }
+    .chain-row.expanded {
+      background: rgba(56, 189, 248, 0.08);
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+    .badge-pass { background: var(--badge-pass-bg); color: var(--badge-pass-text); }
+    .badge-watch { background: var(--badge-watch-bg); color: var(--badge-watch-text); }
+    .badge-reject { background: var(--badge-reject-bg); color: var(--badge-reject-text); }
+    .badge-degraded { background: var(--badge-degraded-bg); color: var(--badge-degraded-text); border: 1px solid rgba(245, 158, 11, 0.3); }
+
+    /* Diagnostic Card Row */
+    .diag-container-row td {
+      padding: 0 !important;
+      background: #131c2e;
+      border-bottom: 1px solid var(--border);
+    }
+    .diag-card {
+      padding: 16px 20px;
+    }
+    .diag-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .diag-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent-blue);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .gate-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 10px;
+    }
+    .gate-item {
+      background: #1a2436;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .gate-item.pass { border-left: 3px solid var(--accent-green); }
+    .gate-item.watch { border-left: 3px solid var(--accent-amber); }
+    .gate-item.reject { border-left: 3px solid var(--accent-rose); }
+    .gate-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .gate-name {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-main);
+    }
+    .gate-rule {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .gate-actual {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .gate-reason {
+      font-size: 11px;
+      color: var(--accent-rose);
+      font-family: monospace;
+      word-break: break-all;
+    }
+    .gate-reason.degraded {
+      color: var(--accent-amber);
+    }
+
+    /* Covered Call Blueprint Card */
+    .blueprint-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-top: 16px;
+    }
+    .blueprint-hero {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .blueprint-hero h2 {
+      font-size: 20px;
+      color: var(--accent-blue);
+    }
+    .blueprint-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .blueprint-pill {
+      background: #131c2e;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .blueprint-pill h4 {
+      font-size: 14px;
+      color: #fff;
+      margin-bottom: 6px;
+    }
+    .blueprint-pill p {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .blueprint-target {
+      margin-top: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent-green);
+      font-family: monospace;
+    }
+
+    /* Empty state & Loading */
+    .empty-state {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .loading-spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(56, 189, 248, 0.2);
+      border-top-color: var(--accent-blue);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <div class="top-nav">
+    <a href="/index.html" class="back-btn" id="backBtn">
+      <span id="backText">← 返回主仪表盘</span>
+    </a>
+    <div class="nav-controls">
+      <div class="lang-switcher">
+        <button class="lang-btn" data-lang="en" onclick="setLang('en')">EN</button>
+        <button class="lang-btn active" data-lang="zh" onclick="setLang('zh')">中文</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hero Card -->
+  <div class="hero-card">
+    <div class="ticker-profile">
+      <div class="ticker-badge" id="tickerBadge">
+        <span>AAPL</span>
+      </div>
+      <div class="spot-price" id="spotPrice">--</div>
+      <div class="hero-meta">
+        <span><span id="labelAsOf">扫描快照:</span> <strong id="asOfTime">--</strong></span>
+        <span><span id="labelContracts">合约总数:</span> <strong id="totalContractsCount">0</strong></span>
+      </div>
+    </div>
+
+    <div class="hero-actions">
+      <input type="text" class="ticker-switch-input" id="tickerInput" placeholder="输入代码" maxlength="8">
+      <button class="btn-action" onclick="handleSwitchTicker()" id="btnSwitchTicker">切换标的</button>
+      <button class="btn-action btn-refresh" id="btnRefresh" onclick="handleRefreshChain()">
+        <span id="refreshIcon">⚡</span> <span id="refreshText">刷新单票全链</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Warning Banner -->
+  <div class="banner-warning" id="warningBanner"></div>
+
+  <!-- Strategy Family Tabs -->
+  <div class="tabs-wrapper">
+    <div class="family-tabs" id="familyTabs">
+      <button class="family-tab active" data-family="leaps" onclick="switchFamily('leaps')">
+        <span id="tabLeaps">LEAPS Call (深度虚/实值买方)</span>
+      </button>
+      <button class="family-tab" data-family="csp" onclick="switchFamily('csp')">
+        <span id="tabCsp">Cash-Secured Put (现金担保卖方)</span>
+      </button>
+      <button class="family-tab" data-family="cc" onclick="switchFamily('cc')">
+        <span id="tabCc">Covered Call (备兑看涨 - 蓝图)</span>
+      </button>
+    </div>
+
+    <!-- Strategy Sub-Tabs -->
+    <div class="strategy-tabs" id="strategyTabs">
+      <!-- Injected dynamically -->
+    </div>
+  </div>
+
+  <!-- Filter & Controls Toolbar -->
+  <div class="filter-bar" id="filterBar">
+    <div class="status-filters">
+      <button class="status-pill active" data-filter="ALL" onclick="setStatusFilter('ALL')">全部 (ALL)</button>
+      <button class="status-pill" data-filter="PASS" onclick="setStatusFilter('PASS')">仅 PASS</button>
+      <button class="status-pill" data-filter="WATCH" onclick="setStatusFilter('WATCH')">仅 WATCH</button>
+      <button class="status-pill" data-filter="REJECT" onclick="setStatusFilter('REJECT')">仅 REJECT</button>
+    </div>
+
+    <div class="summary-stats" id="summaryStats">
+      <span class="stat-badge stat-pass" id="statPass">PASS: 0</span>
+      <span class="stat-badge stat-watch" id="statWatch">WATCH: 0</span>
+      <span class="stat-badge stat-reject" id="statReject">REJECT: 0</span>
+    </div>
+
+    <div class="accordion-controls">
+      <button class="btn-accordion-toggle" onclick="toggleAllAccordions(true)" id="btnExpandAll">展开全部到期日</button>
+      <button class="btn-accordion-toggle" onclick="toggleAllAccordions(false)" id="btnCollapseAll">折叠全部到期日</button>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <div id="chainContainer">
+    <div class="empty-state">
+      <span class="loading-spinner"></span> <span id="loadingText">正在加载期权链门控体检数据...</span>
+    </div>
+  </div>
+
+  <script>
+    // State Store
+    const state = {
+      ticker: "AAPL",
+      family: "leaps",
+      strategy: "deep_itm",
+      alpha: 0.5,
+      cash_pool: 50000.0,
+      lang: "zh",
+      statusFilter: "ALL",
+      rawData: null,
+      expandedContracts: new Set(),
+      expandedGroups: new Set(),
+      cooldownTimer: null,
+      cooldownRemaining: 0
+    };
+
+    // Strategy Configurations
+    const STRATEGIES = {
+      leaps: [
+        { id: "deep_itm", name_zh: "深度实值 (Deep ITM)", name_en: "Deep ITM" },
+        { id: "vol_discount", name_zh: "波动率折价 (Vol Discount)", name_en: "Vol Discount" },
+        { id: "oversold", name_zh: "超跌共振 (Oversold)", name_en: "Oversold Confluence" }
+      ],
+      csp: [
+        { id: "csp_harvest", name_zh: "高溢价收割 (Harvest)", name_en: "Yield Harvest" },
+        { id: "csp_wheel", name_zh: "轮动建仓 (Wheel)", name_en: "Wheel Entry" },
+        { id: "csp_vol_rank", name_zh: "高IVR收割 (Vol Rank)", name_en: "High Vol Rank" }
+      ],
+      cc: [
+        { id: "blueprint", name_zh: "量化模型蓝图 (Model Blueprint)", name_en: "Quantitative Blueprint" }
+      ]
+    };
+
+    // Dictionary
+    const I18N = {
+      zh: {
+        back: "← 返回主仪表盘",
+        refresh: "刷新单票全链",
+        refreshing: "刷新中...",
+        cooldown: "冷却中 ({n}s)",
+        switchTicker: "切换标的",
+        asOf: "快照时间:",
+        contractsCount: "合约总数:",
+        tabLeaps: "LEAPS Call (深度实值/虚值买方)",
+        tabCsp: "Cash-Secured Put (现金担保卖方)",
+        tabCc: "Covered Call (备兑看涨 - 蓝图)",
+        strike: "行权价 (Strike)",
+        pExec: "执行价 (P_exec)",
+        delta: "Delta",
+        iv: "IV / 隐含波动率",
+        leverage: "有效杠杆",
+        carry: "持有成本",
+        aroc: "年化回报率 (AROC)",
+        buffer: "安全边际 (Buffer)",
+        pop: "胜率 (POP)",
+        status: "综合状态",
+        actions: "门控质检",
+        viewGates: "🔍 门控明细",
+        hideGates: "收起明细",
+        expandAll: "展开全部到期日",
+        collapseAll: "折叠全部到期日",
+        noContracts: "当前策略与筛选条件下未找到任何期权合约。",
+        loading: "正在加载期权链门控体检数据...",
+        pass: "通过 (PASS)",
+        watch: "观察 (WATCH)",
+        reject: "违规 (REJECT)",
+        dataDegraded: "数据降级",
+        withinRule: "符合策略指标要求",
+        gateTitle: "门控指标逐项质检 (Gate Diagnostics)"
+      },
+      en: {
+        back: "← Back to Dashboard",
+        refresh: "Refresh Chain",
+        refreshing: "Refreshing...",
+        cooldown: "Cooldown ({n}s)",
+        switchTicker: "Switch Ticker",
+        asOf: "Snapshot:",
+        contractsCount: "Contracts:",
+        tabLeaps: "LEAPS Call (Long Deep ITM)",
+        tabCsp: "Cash-Secured Put (Short Put)",
+        tabCc: "Covered Call (Blueprint)",
+        strike: "Strike",
+        pExec: "P_exec",
+        delta: "Delta",
+        iv: "IV",
+        leverage: "Leverage",
+        carry: "Carry Cost",
+        aroc: "AROC (Ann.)",
+        buffer: "Buffer",
+        pop: "POP",
+        status: "Status",
+        actions: "Diagnostics",
+        viewGates: "🔍 View Gates",
+        hideGates: "Hide Gates",
+        expandAll: "Expand All Expiries",
+        collapseAll: "Collapse All Expiries",
+        noContracts: "No option contracts found matching current filters.",
+        loading: "Loading option chain diagnostics...",
+        pass: "PASS",
+        watch: "WATCH",
+        reject: "REJECT",
+        dataDegraded: "DATA DEGRADED",
+        withinRule: "Within strategy rule thresholds",
+        gateTitle: "Gate Diagnostics & Filter Audit"
+      }
+    };
+
+    function t(key) {
+      return (I18N[state.lang] && I18N[state.lang][key]) || I18N.zh[key] || key;
+    }
+
+    // Parse URL Params
+    function parseParams() {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get("ticker")) state.ticker = p.get("ticker").replace(/^\$/, "").toUpperCase();
+      if (p.get("family")) state.family = p.get("family").toLowerCase();
+      if (p.get("strategy")) {
+        let strat = p.get("strategy").toLowerCase();
+        // Clause 5: Normalize prefix
+        if (state.family === "csp" && !strat.startsWith("csp_")) {
+          strat = "csp_" + strat;
+        }
+        state.strategy = strat;
+      } else {
+        state.strategy = state.family === "csp" ? "csp_harvest" : (state.family === "cc" ? "blueprint" : "deep_itm");
+      }
+      if (p.get("alpha")) state.alpha = parseFloat(p.get("alpha")) || 0.5;
+      if (p.get("cash_pool")) state.cash_pool = parseFloat(p.get("cash_pool")) || 50000.0;
+      if (p.get("lang")) state.lang = p.get("lang").toLowerCase() === "en" ? "en" : "zh";
+
+      // Update UI Language state
+      document.documentElement.setAttribute("data-lang", state.lang);
+      document.documentElement.setAttribute("lang", state.lang === "zh" ? "zh-CN" : "en");
+      document.querySelectorAll(".lang-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.getAttribute("data-lang") === state.lang);
+      });
+      document.getElementById("tickerInput").value = state.ticker;
+    }
+
+    function syncURL() {
+      const p = new URLSearchParams();
+      p.set("ticker", state.ticker);
+      p.set("family", state.family);
+      p.set("strategy", state.strategy);
+      p.set("alpha", state.alpha);
+      p.set("cash_pool", state.cash_pool);
+      p.set("lang", state.lang);
+      const newUrl = window.location.pathname + "?" + p.toString();
+      window.history.replaceState({}, "", newUrl);
+
+      // Also update back button to pass state back to dashboard
+      const backUrl = `/index.html?alpha=${state.alpha}&family=${state.family}&lang=${state.lang}&ticker=${state.ticker}`;
+      document.getElementById("backBtn").setAttribute("href", backUrl);
+    }
+
+    function setLang(lang) {
+      state.lang = lang;
+      parseParams();
+      syncURL();
+      applyI18n();
+      renderStrategyTabs();
+      renderData();
+    }
+
+    function applyI18n() {
+      document.getElementById("backText").textContent = t("back");
+      document.getElementById("btnSwitchTicker").textContent = t("switchTicker");
+      document.getElementById("labelAsOf").textContent = t("asOf");
+      document.getElementById("labelContracts").textContent = t("contractsCount");
+      document.getElementById("tabLeaps").textContent = t("tabLeaps");
+      document.getElementById("tabCsp").textContent = t("tabCsp");
+      document.getElementById("tabCc").textContent = t("tabCc");
+      document.getElementById("btnExpandAll").textContent = t("expandAll");
+      document.getElementById("btnCollapseAll").textContent = t("collapseAll");
+      if (state.cooldownRemaining <= 0) {
+        document.getElementById("refreshText").textContent = t("refresh");
+      }
+    }
+
+    // Family & Strategy Switchers
+    function switchFamily(fam) {
+      if (state.family === fam) return;
+      state.family = fam;
+      state.strategy = fam === "csp" ? "csp_harvest" : (fam === "cc" ? "blueprint" : "deep_itm");
+      document.querySelectorAll(".family-tab").forEach(tab => {
+        tab.classList.toggle("active", tab.getAttribute("data-family") === fam);
+      });
+      renderStrategyTabs();
+      syncURL();
+      fetchChainData();
+    }
+
+    function renderStrategyTabs() {
+      const container = document.getElementById("strategyTabs");
+      container.innerHTML = "";
+      const list = STRATEGIES[state.family] || [];
+      list.forEach(item => {
+        const btn = document.createElement("button");
+        btn.className = "strategy-tab" + (state.strategy === item.id ? " active" : "");
+        btn.textContent = state.lang === "zh" ? item.name_zh : item.name_en;
+        btn.onclick = () => {
+          state.strategy = item.id;
+          document.querySelectorAll(".strategy-tab").forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+          syncURL();
+          fetchChainData();
+        };
+        container.appendChild(btn);
+      });
+    }
+
+    function setStatusFilter(flt) {
+      state.statusFilter = flt;
+      document.querySelectorAll(".status-pill").forEach(p => {
+        p.classList.toggle("active", p.getAttribute("data-filter") === flt);
+      });
+      renderData();
+    }
+
+    function handleSwitchTicker() {
+      const input = document.getElementById("tickerInput");
+      const val = (input.value || "").trim().replace(/^\$/, "").toUpperCase();
+      if (!val) return;
+      state.ticker = val;
+      state.expandedContracts.clear();
+      state.expandedGroups.clear();
+      syncURL();
+      fetchChainData();
+    }
+
+    document.getElementById("tickerInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleSwitchTicker();
+    });
+
+    // Cooldown Timer
+    function startCooldownTimer(seconds = 15) {
+      state.cooldownRemaining = seconds;
+      const btn = document.getElementById("btnRefresh");
+      btn.disabled = true;
+
+      if (state.cooldownTimer) clearInterval(state.cooldownTimer);
+      state.cooldownTimer = setInterval(() => {
+        state.cooldownRemaining--;
+        if (state.cooldownRemaining <= 0) {
+          clearInterval(state.cooldownTimer);
+          btn.disabled = false;
+          document.getElementById("refreshText").textContent = t("refresh");
+        } else {
+          document.getElementById("refreshText").textContent = t("cooldown").replace("{n}", state.cooldownRemaining);
+        }
+      }, 1000);
+      document.getElementById("refreshText").textContent = t("cooldown").replace("{n}", state.cooldownRemaining);
+    }
+
+    // Refresh Handler
+    function handleRefreshChain() {
+      if (state.cooldownRemaining > 0) return;
+      fetchChainData(true);
+    }
+
+    // Fetch API
+    async function fetchChainData(forceRefresh = false) {
+      const container = document.getElementById("chainContainer");
+      container.innerHTML = `<div class="empty-state"><span class="loading-spinner"></span> <span>${t("loading")}</span></div>`;
+      const warningBanner = document.getElementById("warningBanner");
+      warningBanner.style.display = "none";
+
+      if (forceRefresh) {
+        document.getElementById("refreshText").textContent = t("refreshing");
+      }
+
+      try {
+        const url = `/api/v1/ticker/chain?ticker=${encodeURIComponent(state.ticker)}&family=${state.family}&strategy=${state.strategy}&alpha=${state.alpha}&cash_pool=${state.cash_pool}${forceRefresh ? '&force_refresh=true' : ''}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (forceRefresh) {
+          startCooldownTimer(15);
+        }
+
+        if (data.cooldown_active) {
+          startCooldownTimer(15);
+        }
+
+        if (data.warning) {
+          warningBanner.textContent = "⚠️ " + data.warning;
+          warningBanner.style.display = "block";
+        }
+
+        state.rawData = data;
+        renderData();
+      } catch (err) {
+        container.innerHTML = `<div class="empty-state" style="color: var(--accent-rose);">❌ 加载失败: ${err.message}</div>`;
+      }
+    }
+
+    // Render Main Data
+    function renderData() {
+      const data = state.rawData;
+      const container = document.getElementById("chainContainer");
+      if (!data) return;
+
+      // Update Hero
+      document.getElementById("tickerBadge").innerHTML = `<span>${data.ticker || state.ticker}</span>`;
+      document.getElementById("spotPrice").textContent = data.spot ? `$${Number(data.spot).toFixed(2)}` : "--";
+      document.getElementById("asOfTime").textContent = (data.asof || "").slice(0, 19).replace("T", " ") || "--";
+
+      // Clause 7: Covered Call Blueprint
+      if (data.status === "blueprint" || state.family === "cc") {
+        document.getElementById("filterBar").style.display = "none";
+        document.getElementById("totalContractsCount").textContent = "0";
+        renderCoveredCallBlueprint(data);
+        return;
+      }
+
+      document.getElementById("filterBar").style.display = "flex";
+      const contracts = data.contracts || [];
+      document.getElementById("totalContractsCount").textContent = contracts.length;
+
+      // Count stats
+      let passCount = 0, watchCount = 0, rejectCount = 0;
+      contracts.forEach(c => {
+        const st = (c.status || "").toUpperCase();
+        if (st === "PASS") passCount++;
+        else if (st === "WATCH") watchCount++;
+        else rejectCount++;
+      });
+      document.getElementById("statPass").textContent = `PASS: ${passCount}`;
+      document.getElementById("statWatch").textContent = `WATCH: ${watchCount}`;
+      document.getElementById("statReject").textContent = `REJECT: ${rejectCount}`;
+
+      // Filter contracts
+      const filtered = contracts.filter(c => {
+        if (state.statusFilter === "ALL") return true;
+        return (c.status || "").toUpperCase() === state.statusFilter;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="empty-state">${t("noContracts")}</div>`;
+        return;
+      }
+
+      // Group by Expiration / DTE (Clause 6)
+      const groups = {};
+      filtered.forEach(c => {
+        const dteKey = `${Math.round(c.dte)}d`;
+        if (!groups[dteKey]) {
+          groups[dteKey] = {
+            dte: c.dte,
+            dteKey: dteKey,
+            contracts: []
+          };
+        }
+        groups[dteKey].contracts.push(c);
+      });
+
+      // Sort groups by DTE ascending
+      const sortedGroups = Object.values(groups).sort((a, b) => a.dte - b.dte);
+
+      // Default expand all groups if none tracked
+      if (state.expandedGroups.size === 0) {
+        sortedGroups.forEach(g => state.expandedGroups.add(g.dteKey));
+      }
+
+      container.innerHTML = "";
+      sortedGroups.forEach(grp => {
+        const isOpen = state.expandedGroups.has(grp.dteKey);
+        const groupEl = document.createElement("div");
+        groupEl.className = "expiry-group" + (isOpen ? " open" : "");
+        groupEl.id = `grp-${grp.dteKey}`;
+
+        // Header counts
+        let gPass = 0, gWatch = 0, gReject = 0;
+        grp.contracts.forEach(c => {
+          const st = (c.status || "").toUpperCase();
+          if (st === "PASS") gPass++;
+          else if (st === "WATCH") gWatch++;
+          else gReject++;
+        });
+
+        groupEl.innerHTML = `
+          <div class="expiry-header" onclick="toggleGroup('${grp.dteKey}')">
+            <div class="expiry-title">
+              <span class="expiry-arrow">▶</span>
+              <span>📅 到期期限: <strong>${grp.dteKey}</strong> (${Math.round(grp.dte)} 天)</span>
+              <span style="font-size: 13px; color: var(--text-muted); font-weight: normal;">${grp.contracts.length} 张合约</span>
+            </div>
+            <div class="expiry-badges">
+              ${gPass > 0 ? `<span class="badge badge-pass">${gPass} PASS</span>` : ''}
+              ${gWatch > 0 ? `<span class="badge badge-watch">${gWatch} WATCH</span>` : ''}
+              ${gReject > 0 ? `<span class="badge badge-reject">${gReject} REJECT</span>` : ''}
+            </div>
+          </div>
+          <div class="expiry-content">
+            <div style="overflow-x: auto;">
+              <table class="chain-table">
+                <thead>
+                  <tr>
+                    <th>${t("strike")}</th>
+                    <th>${t("pExec")}</th>
+                    <th>${t("delta")}</th>
+                    ${state.family === "csp" ? `
+                      <th>${t("aroc")}</th>
+                      <th>${t("buffer")}</th>
+                      <th>${t("pop")}</th>
+                    ` : `
+                      <th>${t("leverage")}</th>
+                      <th>${t("carry")}</th>
+                      <th>${t("iv")}</th>
+                    `}
+                    <th>${t("status")}</th>
+                    <th style="text-align: right;">${t("actions")}</th>
+                  </tr>
+                </thead>
+                <tbody id="tbody-${grp.dteKey}"></tbody>
+              </table>
+            </div>
+          </div>
+        `;
+
+        container.appendChild(groupEl);
+        renderContractsInTable(`tbody-${grp.dteKey}`, grp.contracts);
+      });
+    }
+
+    // Render Contracts inside Group
+    function renderContractsInTable(tbodyId, contracts) {
+      const tbody = document.getElementById(tbodyId);
+      if (!tbody) return;
+
+      tbody.innerHTML = "";
+      contracts.forEach(c => {
+        const isExpanded = state.expandedContracts.has(c.symbol);
+        const tr = document.createElement("tr");
+        tr.className = "chain-row" + (isExpanded ? " expanded" : "");
+        tr.onclick = (e) => {
+          // If clicked a button or anchor, don't re-toggle
+          if (e.target.tagName === "BUTTON" || e.target.tagName === "A") return;
+          toggleContract(c.symbol);
+        };
+
+        const statusClass = c.status === "PASS" ? "badge-pass" : (c.status === "WATCH" ? "badge-watch" : "badge-reject");
+
+        tr.innerHTML = `
+          <td><strong>$${Number(c.strike).toFixed(1)}</strong></td>
+          <td>$${Number(c.p_exec).toFixed(2)}</td>
+          <td>${Number(c.delta).toFixed(2)}</td>
+          ${state.family === "csp" ? `
+            <td><strong>${(Number(c.aroc || 0) * 100).toFixed(1)}%/yr</strong></td>
+            <td>${(Number(c.buffer || 0) * 100).toFixed(1)}%</td>
+            <td>${(Number(c.pop || 0) * 100).toFixed(1)}%</td>
+          ` : `
+            <td><strong>${Number(c.effective_leverage || 0).toFixed(1)}x</strong></td>
+            <td>${(Number(c.carry_cost || 0) * 100).toFixed(2)}%/yr</td>
+            <td>${c.iv != null ? (Number(c.iv) * 100).toFixed(1) + '%' : '--'}</td>
+          `}
+          <td><span class="badge ${statusClass}">${c.status}</span></td>
+          <td style="text-align: right;">
+            <button class="btn-action" style="padding: 4px 8px; font-size: 11px;" onclick="toggleContract('${c.symbol}')">
+              ${isExpanded ? t("hideGates") : t("viewGates")}
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+
+        // If expanded, insert diagnostic health card row
+        if (isExpanded) {
+          const diagTr = document.createElement("tr");
+          diagTr.className = "diag-container-row";
+          const colSpan = state.family === "csp" ? 8 : 8;
+          diagTr.innerHTML = `
+            <td colspan="${colSpan}">
+              <div class="diag-card">
+                <div class="diag-header">
+                  <div class="diag-title">
+                    <span>${t("gateTitle")}</span>
+                    <span style="color: var(--text-muted); font-size: 12px; font-family: monospace;">(${c.symbol})</span>
+                  </div>
+                  <div>
+                    <span class="badge ${statusClass}">${c.status}</span>
+                  </div>
+                </div>
+                <div class="gate-grid">
+                  ${(c.gate_diagnostics || []).map(g => renderGateItem(g)).join("")}
+                </div>
+              </div>
+            </td>
+          `;
+          tbody.appendChild(diagTr);
+        }
+      });
+    }
+
+    // Render single gate item (Clause 4)
+    function renderGateItem(g) {
+      const st = (g.status || "").toLowerCase();
+      const isDegraded = (g.reason || "").includes("_DEGRADED");
+      const badgeHtml = isDegraded
+        ? `<span class="badge badge-degraded">${t("dataDegraded")}</span>`
+        : `<span class="badge badge-${st}">${g.status}</span>`;
+
+      return `
+        <div class="gate-item ${st}">
+          <div class="gate-top">
+            <span class="gate-name">${g.gate_name}</span>
+            ${badgeHtml}
+          </div>
+          <div class="gate-rule">${g.target_rule}</div>
+          <div class="gate-actual">${g.actual_value}</div>
+          <div class="gate-reason ${isDegraded ? 'degraded' : ''}">
+            ${g.status === "PASS" ? t("withinRule") : g.reason}
+          </div>
+        </div>
+      `;
+    }
+
+    // Render Covered Call Blueprint (Clause 7)
+    function renderCoveredCallBlueprint(data) {
+      const container = document.getElementById("chainContainer");
+      const specs = data.metrics_spec || [];
+      container.innerHTML = `
+        <div class="blueprint-card">
+          <div class="blueprint-hero">
+            <span style="font-size: 32px;">📐</span>
+            <div>
+              <h2>Covered Call (备兑看涨) 量化筛选模型蓝图</h2>
+              <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">
+                ${data.message || "Covered Call quantitative screening engine blueprint. Full calculation coming soon."}
+              </p>
+            </div>
+          </div>
+          <div class="blueprint-grid">
+            ${specs.map(s => `
+              <div class="blueprint-pill">
+                <h4>${s.label}</h4>
+                <p>指标键值: <code>${s.name}</code></p>
+                <div class="blueprint-target">目标门控: ${s.target}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    // Toggle Handlers
+    function toggleGroup(dteKey) {
+      if (state.expandedGroups.has(dteKey)) {
+        state.expandedGroups.delete(dteKey);
+      } else {
+        state.expandedGroups.add(dteKey);
+      }
+      const el = document.getElementById(`grp-${dteKey}`);
+      if (el) el.classList.toggle("open", state.expandedGroups.has(dteKey));
+    }
+
+    function toggleAllAccordions(expand) {
+      const groups = document.querySelectorAll(".expiry-group");
+      groups.forEach(g => {
+        const dteKey = g.id.replace("grp-", "");
+        if (expand) {
+          state.expandedGroups.add(dteKey);
+          g.classList.add("open");
+        } else {
+          state.expandedGroups.delete(dteKey);
+          g.classList.remove("open");
+        }
+      });
+    }
+
+    function toggleContract(symbol) {
+      if (state.expandedContracts.has(symbol)) {
+        state.expandedContracts.delete(symbol);
+      } else {
+        state.expandedContracts.add(symbol);
+      }
+      renderData();
+    }
+
+    // Initialize
+    window.addEventListener("DOMContentLoaded", () => {
+      parseParams();
+      syncURL();
+      applyI18n();
+      renderStrategyTabs();
+      fetchChainData();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,160 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "单标的期权链专属页面与多策略 Filter 体检全流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {
+      "id": "ui_lane",
+      "label": "用户交互与前端呈现层"
+    },
+    {
+      "id": "api_lane",
+      "label": "后端网关与混合调度层"
+    },
+    {
+      "id": "engine_lane",
+      "label": "策略评估与Gate诊断层"
+    },
+    {
+      "id": "data_lane",
+      "label": "行情快照与期权链适配层"
+    }
+  ],
+  "phases": [
+    {
+      "id": "phase_entry",
+      "label": "页面入口与混合数据调度",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "phase_diag",
+      "label": "多策略分流与门闩诊断",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "phase_view",
+      "label": "状态筛选与单合约体检卡片",
+      "fromCol": 4,
+      "toCol": 5
+    }
+  ],
+  "mainPath": [
+    "entry_router",
+    "hybrid_dispatcher",
+    "chain_data_loader",
+    "gate_diagnostics_engine",
+    "strategy_matrix_switcher",
+    "diagnostic_report_view"
+  ],
+  "nodes": [
+    {
+      "id": "entry_router",
+      "lane": "ui_lane",
+      "col": 0,
+      "type": "frontend",
+      "label": "期权链独立路由",
+      "sublabel": "/chain?ticker=AAPL",
+      "tag": "书签直达",
+      "width": 130
+    },
+    {
+      "id": "hybrid_dispatcher",
+      "lane": "api_lane",
+      "col": 1,
+      "type": "backend",
+      "label": "混合数据网关",
+      "sublabel": "快照优先与按需穿透",
+      "tag": "零网络/实时",
+      "width": 130
+    },
+    {
+      "id": "chain_data_loader",
+      "lane": "data_lane",
+      "col": 2,
+      "type": "backend",
+      "label": "全链数据整合",
+      "sublabel": "补齐 Greeks 与 P_exec",
+      "tag": "统一规格",
+      "width": 130
+    },
+    {
+      "id": "gate_diagnostics_engine",
+      "lane": "engine_lane",
+      "col": 3,
+      "type": "security",
+      "label": "Gate 体检诊断引擎",
+      "sublabel": "输出 PASS/WATCH/REJECT",
+      "tag": "逐项判定",
+      "width": 140
+    },
+    {
+      "id": "strategy_matrix_switcher",
+      "lane": "ui_lane",
+      "col": 4,
+      "type": "frontend",
+      "label": "三合一策略矩阵",
+      "sublabel": "LEAPS / CSP / CC",
+      "tag": "即时切流",
+      "width": 130
+    },
+    {
+      "id": "diagnostic_report_view",
+      "lane": "ui_lane",
+      "col": 5,
+      "type": "frontend",
+      "label": "期权链体检报告看板",
+      "sublabel": "展开查看 Gate 阈值与理由",
+      "tag": "深度分析",
+      "width": 140
+    },
+    {
+      "id": "cc_placeholder_node",
+      "lane": "engine_lane",
+      "col": 4,
+      "type": "external",
+      "label": "Covered Call 架构规范",
+      "sublabel": "备兑参数与 Coming Soon",
+      "tag": "阶段占位",
+      "width": 140
+    }
+  ],
+  "edges": [
+    {
+      "from": "entry_router",
+      "to": "hybrid_dispatcher",
+      "label": "请求标的链"
+    },
+    {
+      "from": "hybrid_dispatcher",
+      "to": "chain_data_loader",
+      "label": "调度候选链"
+    },
+    {
+      "from": "chain_data_loader",
+      "to": "gate_diagnostics_engine",
+      "label": "全量合约输入"
+    },
+    {
+      "from": "gate_diagnostics_engine",
+      "to": "strategy_matrix_switcher",
+      "label": "多维判定输出"
+    },
+    {
+      "from": "strategy_matrix_switcher",
+      "to": "diagnostic_report_view",
+      "label": "渲染期权链"
+    },
+    {
+      "from": "strategy_matrix_switcher",
+      "to": "cc_placeholder_node",
+      "label": "切至 CC 族"
+    }
+  ]
+}

@@ -4,7 +4,7 @@
   "description": "Coding-agent skill pack and local tools: reflexion memory, blast-radius, self-toolmaker, pre-push gates.",
   "main": "index.js",
   "scripts": {
-    "test": "node test/memory.test.js && node test/toolmaker.test.js && node test/pre-push-check.test.js && node test/blast-radius.test.js && node test/agent.test.js && node test/intent-gate.test.js && node test/i18n.test.js && node test/adversary.test.js && node test/ui-filter-search.test.js"
+    "test": "node test/memory.test.js && node test/toolmaker.test.js && node test/pre-push-check.test.js && node test/blast-radius.test.js && node test/agent.test.js && node test/intent-gate.test.js && node test/i18n.test.js && node test/adversary.test.js && node test/ui-filter-search.test.js && node test/chain-page.test.js"
   },
   "keywords": [],
   "author": "",
