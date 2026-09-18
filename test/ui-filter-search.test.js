@@ -249,4 +249,16 @@ console.log('Running UI Filter & Search TDD Tests (Red-Team Clauses A-F)...');
   console.log('✓ Clause F Passed: Dynamic colSpan correctly applied to all boards.');
 }
 
-console.log('All Red-Team clauses A-F verified successfully! 🎉');
+// Clause G: Co-location of Status Filter and Ticker Search on the same row
+{
+  console.log('Testing Clause G: Status filter and ticker search co-located in filter-toolbar...');
+  const toolbarMatch = htmlContent.match(/<div class="filter-toolbar"[^>]*>([\s\S]*?)<\/div>\s*<!-- Main Table/);
+  assert(toolbarMatch, 'index.html must contain a .filter-toolbar container before the main table');
+  const toolbarHtml = toolbarMatch[1];
+  assert(toolbarHtml.includes('class="status-filter"'), '.filter-toolbar must contain .status-filter');
+  assert(toolbarHtml.includes('class="ticker-search"'), '.filter-toolbar must contain .ticker-search');
+  assert(htmlContent.includes('.filter-toolbar {'), 'CSS must define .filter-toolbar styles');
+  console.log('✓ Clause G Passed: Status filter and ticker search co-located on the same row.');
+}
+
+console.log('All Red-Team clauses A-G verified successfully! 🎉');

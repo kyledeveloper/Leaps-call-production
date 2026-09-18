@@ -87,12 +87,18 @@
     .badge-pass { background: var(--badge-pass-bg); color: var(--badge-pass-text); }
     .badge-watch { background: var(--badge-watch-bg); color: var(--badge-watch-text); }
     .badge-reject { background: var(--badge-reject-bg); color: var(--badge-reject-text); }
+    .filter-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px 20px;
+      margin-bottom: 12px;
+    }
     .status-filter {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       align-items: center;
-      margin-bottom: 12px;
     }
     .status-filter .filter-label {
       font-size: 12px;
@@ -102,12 +108,16 @@
       color: var(--text-muted);
       margin-right: 4px;
     }
+    .filter-divider {
+      width: 1px;
+      height: 20px;
+      background: var(--border);
+    }
     .ticker-search {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       align-items: center;
-      margin-bottom: 12px;
     }
     .ticker-search .filter-label {
       font-size: 12px;
@@ -602,6 +612,7 @@
       th, td { padding: 8px 10px; font-size: 12px; }
       table { min-width: 720px; }
       .status-badges .btn { flex: 1 1 calc(50% - 8px); }
+      .filter-divider { display: none; }
     }
     @media (max-width: 520px) {
       .title-group p { display: none; }
@@ -734,22 +745,26 @@
     <div class="help-body" id="helpBody"></div>
   </details>
 
-  <div class="status-filter" role="group" aria-label="Status filter">
-    <span class="filter-label" data-i18n="statusLabel">Status</span>
-    <button type="button" class="status-chip on" data-status="PASS" onclick="toggleStatusFilter('PASS')">PASS <span id="countPass">0</span></button>
-    <button type="button" class="status-chip on" data-status="WATCH" onclick="toggleStatusFilter('WATCH')">WATCH <span id="countWatch">0</span></button>
-    <button type="button" class="status-chip" data-status="REJECT" onclick="toggleStatusFilter('REJECT')">REJECT <span id="countReject">0</span></button>
-    <span class="hint" id="filterMeta">Default: PASS + WATCH</span>
-  </div>
-
-  <!-- Ticker Search: below screener boards, above options chain table -->
-  <div class="ticker-search" role="search" aria-label="Ticker search">
-    <span class="filter-label" data-i18n="tickerSearchLabel">Ticker</span>
-    <div class="ticker-search-box">
-      <input type="text" id="tickerSearchInput" data-i18n-placeholder="tickerSearchPlaceholder" placeholder="Search ticker, e.g. AAPL" autocomplete="off" autocapitalize="characters" spellcheck="false" oninput="handleTickerSearchInput()" />
-      <button type="button" id="tickerSearchClear" class="ticker-clear" data-i18n-title="tickerSearchClear" title="Clear ticker search" onclick="clearTickerSearch()" style="display: none;">&times;</button>
+  <!-- Unified Filter & Search Toolbar: status chips and ticker search on the same row -->
+  <div class="filter-toolbar" role="toolbar" aria-label="Filter and search toolbar">
+    <div class="status-filter" role="group" aria-label="Status filter">
+      <span class="filter-label" data-i18n="statusLabel">Status</span>
+      <button type="button" class="status-chip on" data-status="PASS" onclick="toggleStatusFilter('PASS')">PASS <span id="countPass">0</span></button>
+      <button type="button" class="status-chip on" data-status="WATCH" onclick="toggleStatusFilter('WATCH')">WATCH <span id="countWatch">0</span></button>
+      <button type="button" class="status-chip" data-status="REJECT" onclick="toggleStatusFilter('REJECT')">REJECT <span id="countReject">0</span></button>
+      <span class="hint" id="filterMeta">Default: PASS + WATCH</span>
     </div>
-    <span class="hint" id="tickerSearchMeta"></span>
+
+    <div class="filter-divider"></div>
+
+    <div class="ticker-search" role="search" aria-label="Ticker search">
+      <span class="filter-label" data-i18n="tickerSearchLabel">Ticker</span>
+      <div class="ticker-search-box">
+        <input type="text" id="tickerSearchInput" data-i18n-placeholder="tickerSearchPlaceholder" placeholder="Search ticker, e.g. AAPL" autocomplete="off" autocapitalize="characters" spellcheck="false" oninput="handleTickerSearchInput()" />
+        <button type="button" id="tickerSearchClear" class="ticker-clear" data-i18n-title="tickerSearchClear" title="Clear ticker search" onclick="clearTickerSearch()" style="display: none;">&times;</button>
+      </div>
+      <span class="hint" id="tickerSearchMeta"></span>
+    </div>
   </div>
 
   <!-- Main Table Container -->
