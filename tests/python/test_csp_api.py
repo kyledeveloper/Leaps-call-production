@@ -216,16 +216,22 @@ class TestCSPApi(unittest.TestCase):
                 },
             }
         }
+        combined = {
+            "data": {
+                "lastTrade": "$220.00",
+                "table": {
+                    "rows": (front["data"]["table"]["rows"] + monthly["data"]["table"]["rows"]),
+                },
+            }
+        }
 
         def fetch(url, headers):
             urls.append(url)
-            payload = monthly if "fromdate=2026-10-16" in url else front
-            return 200, json.dumps(payload).encode()
+            return 200, json.dumps(combined).encode()
 
         client = PublicDelayedClient(fetch_fn=fetch)
         rows, last = client._nasdaq_csp_chain("AAPL", asof)
-        self.assertTrue(any("fromdate=2026-10-16" in u and "todate=2026-10-16" in u for u in urls))
-        self.assertEqual(len(rows), 2)
+        self.assertTrue(any("fromdate=2026-09-16" in u and "todate=" in u for u in urls))
         strikes = [r["strike"] for r in rows]
         self.assertIn(200.0, strikes)
         self.assertIn(210.0, strikes)
@@ -339,29 +345,123 @@ class TestCSPApi(unittest.TestCase):
             return 200, json.dumps({"data": {"table": {"rows": []}}}).encode()
 
         PublicDelayedClient(fetch_fn=fetch)._nasdaq_csp_chain("AAPL", asof)
-        self.assertTrue(any("fromdate=2026-09-25" in u for u in urls))
-        self.assertTrue(any("fromdate=2026-10-16" in u for u in urls))
+        range_urls = [u for u in urls if "fromdate=" in u and "todate=" in u]
+        self.assertTrue(range_urls, f"expected a 0-45 range query, got {urls}")
+        self.assertTrue(any("fromdate=2026-09-16" in u for u in range_urls))
+        self.assertTrue(any("todate=2026-10-31" in u or "todate=2026-11-01" in u for u in range_urls))
 
-    def test_nasdaq_csp_expiries_fetch_concurrently(self):
-        """Multiple pinned expiries for one symbol must overlap in flight."""
+    def test_nasdaq_csp_chain_range_covers_front_and_monthly(self):
+        """A single fromdate/todate window must ingest both <7 and 28-45 expiries."""
         from src.leaps_scanner.data.public_delayed import PublicDelayedClient
         asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
-        lock = threading.Lock()
-        in_flight = 0
-        max_flight = 0
+        urls = []
+        payload = {
+            "data": {
+                "lastTrade": "$220.00",
+                "table": {
+                    "rows": [
+                        {
+                            "p_Bid": "0.40", "p_Ask": "0.50", "p_Volume": "10",
+                            "p_Openinterest": "5", "strike": "200.00",
+                            "expirygroup": "September 18, 2026",
+                            "drillDownURL": "/market-activity/stocks/aapl/option-chain/call-put-options/aapl--260918p00200000",
+                        },
+                        {
+                            "p_Bid": "3.50", "p_Ask": "3.80", "p_Volume": "100",
+                            "p_Openinterest": "1200", "strike": "210.00",
+                            "drillDownURL": "/market-activity/stocks/aapl/option-chain/call-put-options/aapl--261016p00210000",
+                        },
+                        {
+                            "p_Bid": "2.10", "p_Ask": "2.30", "p_Volume": "80",
+                            "p_Openinterest": "400", "strike": "205.00",
+                            "drillDownURL": "/market-activity/stocks/aapl/option-chain/call-put-options/aapl--261023p00205000",
+                        },
+                    ]
+                },
+            }
+        }
 
         def fetch(url, headers):
-            nonlocal in_flight, max_flight
-            with lock:
-                in_flight += 1
-                max_flight = max(max_flight, in_flight)
-            time.sleep(0.08)
-            with lock:
-                in_flight -= 1
+            urls.append(url)
+            return 200, json.dumps(payload).encode()
+
+        client = PublicDelayedClient(fetch_fn=fetch)
+        rows, last = client._nasdaq_csp_chain("AAPL", asof)
+        self.assertTrue(any("fromdate=2026-09-16" in u and "todate=" in u for u in urls))
+        dtes = sorted(r["dte"] for r in rows)
+        self.assertGreaterEqual(len(rows), 3)
+        self.assertLess(min(dtes), 7.0)
+        self.assertGreaterEqual(max(dtes), 28.0)
+        self.assertEqual(last, 220.0)
+
+    def test_get_and_post_dte_buckets_drop_other_expiries(self):
+        """Live GET/POST dte_buckets must hide unselected buckets, not just mark REJECT."""
+        short = CSPCandidate(
+            symbol="SPY260921P00650000", underlying="SPY", spot=660.0, strike=650.0,
+            dte=3.0, bid=2.0, ask=2.2, delta=-0.20, open_interest=5000, volume=2000,
+            earnings_status=EarningsStatus.CONFIRMED_SAFE,
+        )
+        long = CSPCandidate(
+            symbol="SPY261016P00650000", underlying="SPY", spot=660.0, strike=650.0,
+            dte=30.0, bid=8.0, ask=8.4, delta=-0.22, open_interest=8000, volume=3000,
+            earnings_status=EarningsStatus.CONFIRMED_SAFE,
+        )
+        self.state.csp_candidates = [short, long]
+        self.state.source = "delayed"
+
+        code, _, body = self.handler_cls.dispatch(
+            "GET", "/api/v1/csp/boards?dte_buckets=0-7&filter_aroc=false&filter_buffer=false&filter_pop=false&filter_earnings=false&filter_liquidity=false",
+            b"",
+        )
+        self.assertEqual(code, 200)
+        harvest = json.loads(body.decode())["boards"]["harvest"]
+        syms = [it["candidate"]["symbol"] for it in harvest]
+        self.assertEqual(syms, ["SPY260921P00650000"])
+
+        # Default AROC/buffer/POP pills ON must still drop the other DTE bucket.
+        code, _, body = self.handler_cls.dispatch(
+            "GET", "/api/v1/csp/boards?dte_buckets=0-7",
+            b"",
+        )
+        self.assertEqual(code, 200)
+        harvest = json.loads(body.decode())["boards"]["harvest"]
+        syms = [it["candidate"]["symbol"] for it in harvest]
+        self.assertEqual(syms, ["SPY260921P00650000"])
+
+        req = json.dumps({
+            "alpha": 0.5,
+            "cash_pool": 50000,
+            "config": {
+                "filter_aroc": False,
+                "filter_buffer": False,
+                "filter_pop": False,
+                "filter_earnings": False,
+                "filter_liquidity": False,
+                "selected_dte_buckets": ["28-45"],
+            },
+        }).encode()
+        code, _, body = self.handler_cls.dispatch("POST", "/api/v1/csp/rerank", req)
+        self.assertEqual(code, 200)
+        harvest = json.loads(body.decode())["boards"]["harvest"]
+        syms = [it["candidate"]["symbol"] for it in harvest]
+        self.assertEqual(syms, ["SPY261016P00650000"])
+
+    def test_nasdaq_csp_range_query_is_single_request_per_asset(self):
+        """0-45 coverage uses one Nasdaq range request, not a Friday pin storm."""
+        from src.leaps_scanner.data.public_delayed import PublicDelayedClient
+        asof = datetime(2026, 9, 16, tzinfo=timezone.utc)
+        urls = []
+
+        def fetch(url, headers):
+            urls.append(url)
             return 200, json.dumps({"data": {"lastTrade": "$220.00", "table": {"rows": []}}}).encode()
 
         PublicDelayedClient(fetch_fn=fetch, max_workers=1, min_interval_s=0)._nasdaq_csp_chain("AAPL", asof)
-        self.assertGreaterEqual(max_flight, 2)
+        self.assertGreaterEqual(len(urls), 1)
+        self.assertTrue(any("fromdate=2026-09-16" in u and "todate=" in u for u in urls))
+        # Must not pin every Friday individually when the range query is available.
+        pinned = [u for u in urls if "fromdate=2026-09-18" in u and "todate=2026-09-18" in u]
+        self.assertEqual(pinned, [])
 
     def test_delayed_csp_uses_put_iv_solver(self):
         from unittest.mock import patch

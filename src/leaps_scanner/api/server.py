@@ -1149,7 +1149,11 @@ def create_api_handler_class(state: AppState):
                 if os.path.exists(index_path):
                     with open(index_path, "rb") as f:
                         content = f.read()
-                    return 200, {"Content-Type": "text/html; charset=utf-8"}, content if method == "GET" else b""
+                    return 200, {
+                        "Content-Type": "text/html; charset=utf-8",
+                        "Cache-Control": "no-store, no-cache, must-revalidate",
+                        "Pragma": "no-cache",
+                    }, content if method == "GET" else b""
                 else:
                     html = b"<h1>LEAPS Scanner API</h1>"
                     return 200, {"Content-Type": "text/html; charset=utf-8"}, html if method == "GET" else b""

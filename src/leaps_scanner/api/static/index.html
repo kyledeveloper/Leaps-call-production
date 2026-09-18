@@ -435,6 +435,14 @@
       padding: 14px 18px;
       margin-bottom: 16px;
       display: flex;
+      flex-direction: column;
+      flex-wrap: nowrap;
+      gap: 12px;
+      align-items: stretch;
+      justify-content: flex-start;
+    }
+    .csp-panel-top {
+      display: flex;
       flex-wrap: wrap;
       gap: 16px;
       align-items: center;
@@ -489,6 +497,41 @@
       background: rgba(56, 189, 248, 0.15);
       color: var(--accent-blue);
       border-color: rgba(56, 189, 248, 0.4);
+    }
+    .csp-dte-block {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border);
+    }
+    .csp-dte-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-right: 4px;
+    }
+    .dte-count {
+      font-size: 10px;
+      font-weight: 700;
+      background: rgba(148, 163, 184, 0.15);
+      border-radius: 999px;
+      padding: 1px 6px;
+      color: var(--text-muted);
+      min-width: 1.5em;
+      text-align: center;
+    }
+    .csp-pill.active .dte-count {
+      background: rgba(56, 189, 248, 0.22);
+      color: var(--accent-blue);
+    }
+    .csp-dte-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      flex: 1 1 180px;
     }
 
     /* Strategy Tabs */
@@ -985,6 +1028,7 @@
 
   <!-- CSP Specific Parameter & Filter Controls Panel -->
   <div class="csp-panel" id="cspPanel" style="display: none;">
+    <div class="csp-panel-top">
     <div class="csp-inputs">
       <div class="csp-input-group">
         <label for="cashPoolInput"><strong data-i18n="cashPool">Cash Pool ($):</strong></label>
@@ -1002,10 +1046,16 @@
       <button type="button" class="csp-pill active" id="pillPop" onclick="toggleCspFilter('pop')">🎯 <span data-i18n="filterPop">POP ≥ 70%</span></button>
       <button type="button" class="csp-pill active" id="pillEarnings" onclick="toggleCspFilter('earnings')">📅 <span data-i18n="filterEarnings">Earnings Gate</span></button>
       <button type="button" class="csp-pill active" id="pillLiquidity" onclick="toggleCspFilter('liquidity')">💧 <span data-i18n="filterLiquidity">Liquidity Gate</span></button>
-      <button type="button" class="csp-pill active" id="pillDteUnder7" onclick="toggleCspDteBucket('<7')">⏱️ <span data-i18n="filterDteUnder7">&lt; 7D</span></button>
-      <button type="button" class="csp-pill active" id="pillDte7to14" onclick="toggleCspDteBucket('7-14')">⏱️ <span data-i18n="filterDte7to14">7–14D</span></button>
-      <button type="button" class="csp-pill active" id="pillDte14to28" onclick="toggleCspDteBucket('14-28')">⏱️ <span data-i18n="filterDte14to28">14–28D</span></button>
-      <button type="button" class="csp-pill active" id="pillDte28to45" onclick="toggleCspDteBucket('28-45')">⏱️ <span data-i18n="filterDte28to45">28–45D</span></button>
+    </div>
+    </div>
+    <div class="csp-dte-block" id="cspDteBlock">
+      <span class="csp-dte-label" data-i18n="filterDteLabel">Expiration</span>
+      <button type="button" class="csp-pill active" id="pillDteAll" onclick="selectAllCspDteBuckets()">🌐 <span data-i18n="filterDteAll">All 0–45D</span> <span class="dte-count" id="countDteAll">0</span></button>
+      <button type="button" class="csp-pill active" id="pillDteUnder7" onclick="toggleCspDteBucket('<7')">⏱️ <span data-i18n="filterDteUnder7">0–7D</span> <span class="dte-count" id="countDteUnder7">0</span></button>
+      <button type="button" class="csp-pill active" id="pillDte7to14" onclick="toggleCspDteBucket('7-14')">⏱️ <span data-i18n="filterDte7to14">7–14D</span> <span class="dte-count" id="countDte7to14">0</span></button>
+      <button type="button" class="csp-pill active" id="pillDte14to28" onclick="toggleCspDteBucket('14-28')">⏱️ <span data-i18n="filterDte14to28">14–28D</span> <span class="dte-count" id="countDte14to28">0</span></button>
+      <button type="button" class="csp-pill active" id="pillDte28to45" onclick="toggleCspDteBucket('28-45')">⏱️ <span data-i18n="filterDte28to45">28–45D</span> <span class="dte-count" id="countDte28to45">0</span></button>
+      <span class="csp-dte-hint" id="dteFilterHint" data-i18n="filterDteHint">Click a window to view only that slice. Click All to show 0–45 DTE.</span>
     </div>
   </div>
 
@@ -1177,10 +1227,16 @@
         filterPop: 'POP ≥ 70%',
         filterEarnings: 'Earnings Gate',
         filterLiquidity: 'Liquidity Gate',
-        filterDteUnder7: '< 7D',
+        filterDteLabel: 'Expiration',
+        filterDteAll: 'All 0–45D',
+        filterDteUnder7: '0–7D',
         filterDte7to14: '7–14D',
         filterDte14to28: '14–28D',
         filterDte28to45: '28–45D',
+        filterDteHint: 'Click a window to view only that slice (weeklies and 4–6 week monthlies). Click All to show 0–45 DTE.',
+        filterDteNone: 'No expiration window selected — table is empty.',
+        filterDteIsolated: 'Showing {bucket} only. Click All to restore 0–45 DTE.',
+        dteSliceRejectHint: 'No PASS/WATCH in this window — showing REJECT so scan coverage is visible.',
         cspTab1Full: '1. Premium Harvesting',
         cspTab1Short: '1. Harvesting',
         cspTab2Full: '2. Wheel / Dip-Buying',
@@ -1294,7 +1350,7 @@
         liveScan: 'Live Webull scan · {n} LEAPS calls · {key}',
         liveScanCsp: 'Live Webull scan · {n} CSP puts · {key}',
         delayedScan: 'Yahoo history + Nasdaq delayed OPRA · {n} LEAPS calls · ~15 min delay, not NBBO.',
-        delayedScanCsp: 'Yahoo history + Nasdaq delayed OPRA · {n} CSP puts (7–45 DTE) · ~15 min delay, not NBBO.',
+        delayedScanCsp: 'Yahoo history + Nasdaq delayed OPRA · {n} CSP puts (≤ 45 DTE) · ~15 min delay, not NBBO.',
         fetchingDelayed: 'Fetching Yahoo bars + Nasdaq delayed LEAPS chains. This can take a short while…',
         fetchingDelayedCsp: 'Fetching Yahoo bars + Nasdaq delayed CSP put chains. This can take a short while…',
         missingCreds: 'Live Webull needs App Key and App Secret. Or use Delayed public (no keys).',
@@ -1331,10 +1387,16 @@
         filterPop: '估算胜率 ≥ 70%',
         filterEarnings: '财报风险规避',
         filterLiquidity: '流动性风控',
-        filterDteUnder7: '< 7天',
+        filterDteLabel: '到期区间',
+        filterDteAll: '全部 0–45天',
+        filterDteUnder7: '0–7天',
         filterDte7to14: '7–14天',
         filterDte14to28: '14–28天',
         filterDte28to45: '28–45天',
+        filterDteHint: '单击某一档只看该区间（含 0–7 天周期权与 28–45 天月期权）。点「全部」恢复 0–45 天。',
+        filterDteNone: '未选择到期区间，表格为空。',
+        filterDteIsolated: '仅显示 {bucket}。点「全部」恢复 0–45 天。',
+        dteSliceRejectHint: '该区间暂无 PASS/WATCH，已列出 REJECT 以便核对扫描覆盖。',
         cspTab1Full: '1. 权利金年化收割',
         cspTab1Short: '1. 权利金收割',
         cspTab2Full: '2. 轮动抄底折扣入场',
@@ -1448,7 +1510,7 @@
         liveScan: 'Webull 实盘扫描 · {n} 张 LEAPS · {key}',
         liveScanCsp: 'Webull 实盘扫描 · {n} 张 CSP Put · {key}',
         delayedScan: 'Yahoo 历史 + Nasdaq 延迟 OPRA · {n} 张 LEAPS · 约 15 分钟延迟，非 NBBO。',
-        delayedScanCsp: 'Yahoo 历史 + Nasdaq 延迟 OPRA · {n} 张 CSP Put（7–45 天）· 约 15 分钟延迟，非 NBBO。',
+        delayedScanCsp: 'Yahoo 历史 + Nasdaq 延迟 OPRA · {n} 张 CSP Put（≤ 45 天）· 约 15 分钟延迟，非 NBBO。',
         missingCreds: 'Webull 实盘需要 App Key 和 App Secret。也可改用公开延迟（无需密钥）。',
         feedFailed: '公共行情连接失败，已保留公开延迟行情。',
         sandboxHint: '公开延迟行情通过 Yahoo 日线 + Nasdaq OPRA 延迟期权链获取真实数据，无需密钥。',
@@ -1571,20 +1633,124 @@
       handleCspParamChange();
     }
 
+    const DTE_BUCKET_KEYS = ['<7', '7-14', '14-28', '28-45'];
+    const DTE_PILL_IDS = {
+      '<7': 'pillDteUnder7',
+      '7-14': 'pillDte7to14',
+      '14-28': 'pillDte14to28',
+      '28-45': 'pillDte28to45'
+    };
+    const DTE_COUNT_IDS = {
+      '<7': 'countDteUnder7',
+      '7-14': 'countDte7to14',
+      '14-28': 'countDte14to28',
+      '28-45': 'countDte28to45'
+    };
+
+    function itemDte(it) {
+      if (!it) return null;
+      const c = it.candidate || it;
+      const d = c.dte;
+      return typeof d === 'number' && isFinite(d) ? d : null;
+    }
+
+    function getDteBucket(dte) {
+      if (dte == null || dte < 0) return null;
+      if (dte < 7) return '<7';
+      if (dte < 14) return '7-14';
+      if (dte < 28) return '14-28';
+      if (dte <= 45.05) return '28-45';
+      return null;
+    }
+
+    function formatCspDte(dte) {
+      if (typeof dte !== 'number' || !isFinite(dte)) return '—';
+      if (dte < 10) return dte.toFixed(1) + 'd';
+      return Math.round(dte) + 'd';
+    }
+
+    function selectedDteBuckets() {
+      const buckets = (cspFilters && cspFilters.dte_buckets) || {};
+      return DTE_BUCKET_KEYS.filter(k => buckets[k]);
+    }
+
+    function filterItemsByDte(items) {
+      if (currentFamily !== 'csp') return items;
+      const selected = selectedDteBuckets();
+      if (selected.length === 0) return [];
+      if (selected.length === DTE_BUCKET_KEYS.length) return items;
+      return items.filter(it => selected.includes(getDteBucket(itemDte(it))));
+    }
+
+    function formatGroupDte(g) {
+      const unique = [];
+      const seen = new Set();
+      (g.items || []).forEach(it => {
+        const d = itemDte(it);
+        if (d == null) return;
+        const key = d < 10 ? d.toFixed(1) : String(Math.round(d));
+        if (seen.has(key)) return;
+        seen.add(key);
+        unique.push({ d, key });
+      });
+      unique.sort((a, b) => a.d - b.d);
+      if (!unique.length) return '—';
+      if (unique.length <= 5) return unique.map(x => x.key + 'd').join(' · ');
+      return unique[0].key + 'd–' + unique[unique.length - 1].key + 'd (' + unique.length + ')';
+    }
+
+    function syncDtePills() {
+      const selected = selectedDteBuckets();
+      DTE_BUCKET_KEYS.forEach(k => {
+        const el = document.getElementById(DTE_PILL_IDS[k]);
+        if (el) el.classList.toggle('active', selected.includes(k));
+      });
+      const allPill = document.getElementById('pillDteAll');
+      if (allPill) allPill.classList.toggle('active', selected.length === DTE_BUCKET_KEYS.length);
+      const hint = document.getElementById('dteFilterHint');
+      if (hint) {
+        if (selected.length === 0) hint.innerText = t('filterDteNone');
+        else if (selected.length === DTE_BUCKET_KEYS.length) hint.innerText = t('filterDteHint');
+        else hint.innerText = t('filterDteIsolated', { bucket: selected.join(', ') });
+      }
+    }
+
+    function paintDteCounts(allItems) {
+      const counts = { '<7': 0, '7-14': 0, '14-28': 0, '28-45': 0 };
+      (allItems || []).forEach(it => {
+        const b = getDteBucket(itemDte(it));
+        if (b && counts[b] !== undefined) counts[b] += 1;
+      });
+      DTE_BUCKET_KEYS.forEach(k => {
+        const el = document.getElementById(DTE_COUNT_IDS[k]);
+        if (el) el.innerText = String(counts[k]);
+      });
+      const allEl = document.getElementById('countDteAll');
+      if (allEl) allEl.innerText = String((allItems || []).length);
+    }
+
     function toggleCspDteBucket(bucket) {
       if (!cspFilters.dte_buckets) {
         cspFilters.dte_buckets = { '<7': true, '7-14': true, '14-28': true, '28-45': true };
       }
-      cspFilters.dte_buckets[bucket] = !cspFilters.dte_buckets[bucket];
-      const pillMap = {
-        '<7': 'pillDteUnder7',
-        '7-14': 'pillDte7to14',
-        '14-28': 'pillDte14to28',
-        '28-45': 'pillDte28to45'
-      };
-      const el = document.getElementById(pillMap[bucket]);
-      if (el) el.classList.toggle('active', cspFilters.dte_buckets[bucket]);
-      handleCspParamChange();
+      const buckets = cspFilters.dte_buckets;
+      const onlyThis = !!buckets[bucket] && DTE_BUCKET_KEYS.every(k => k === bucket ? buckets[k] : !buckets[k]);
+      if (onlyThis) {
+        DTE_BUCKET_KEYS.forEach(k => { buckets[k] = true; });
+      } else {
+        DTE_BUCKET_KEYS.forEach(k => { buckets[k] = (k === bucket); });
+      }
+      syncDtePills();
+      renderActiveBoard();
+    }
+
+    function selectAllCspDteBuckets() {
+      if (!cspFilters.dte_buckets) {
+        cspFilters.dte_buckets = { '<7': true, '7-14': true, '14-28': true, '28-45': true };
+      }
+      DTE_BUCKET_KEYS.forEach(k => { cspFilters.dte_buckets[k] = true; });
+      syncDtePills();
+      renderActiveBoard();
     }
 
     function handleCspParamChange() {
@@ -1603,8 +1769,6 @@
       const cashPool = parseFloat(document.getElementById('cashPoolInput').value) || 50000;
       const maxCapRaw = document.getElementById('maxCapInput').value.trim();
       const maxCap = maxCapRaw ? parseFloat(maxCapRaw) : null;
-      const activeDteBuckets = Object.keys(cspFilters.dte_buckets || {})
-        .filter(k => cspFilters.dte_buckets[k]);
       const payload = {
         alpha: currentAlpha,
         cash_pool: cashPool,
@@ -1620,8 +1784,7 @@
           filter_earnings: cspFilters.earnings,
           strict_earnings: false,
           filter_liquidity: cspFilters.liquidity,
-          max_capital_per_contract: maxCap,
-          selected_dte_buckets: activeDteBuckets
+          max_capital_per_contract: maxCap
         }
       };
       try {
@@ -2284,10 +2447,7 @@
           const cashPool = parseFloat(document.getElementById('cashPoolInput').value) || 50000;
           const maxCapRaw = document.getElementById('maxCapInput').value.trim();
           const maxCap = maxCapRaw ? parseFloat(maxCapRaw) : '';
-          const activeDteBuckets = Object.keys(cspFilters.dte_buckets || {})
-            .filter(k => cspFilters.dte_buckets[k]);
-          const dteParam = activeDteBuckets.length > 0 ? activeDteBuckets.join(',') : 'empty';
-          url = `/api/v1/csp/boards?alpha=${alpha}&cash_pool=${cashPool}&filter_aroc=${cspFilters.aroc}&filter_buffer=${cspFilters.buffer}&filter_ivr=${cspFilters.ivr}&filter_pop=${cspFilters.pop}&filter_earnings=${cspFilters.earnings}&filter_liquidity=${cspFilters.liquidity}&max_capital=${maxCap}&dte_buckets=${encodeURIComponent(dteParam)}`;
+          url = `/api/v1/csp/boards?alpha=${alpha}&cash_pool=${cashPool}&filter_aroc=${cspFilters.aroc}&filter_buffer=${cspFilters.buffer}&filter_ivr=${cspFilters.ivr}&filter_pop=${cspFilters.pop}&filter_earnings=${cspFilters.earnings}&filter_liquidity=${cspFilters.liquidity}&max_capital=${maxCap}`;
         }
         const res = await fetch(url);
         if (res.ok) {
@@ -2493,7 +2653,8 @@
             return und.startsWith(tickerQuery) || sym.startsWith(tickerQuery);
           })
         : allItems;
-      const items = searchedItems.filter(it => visibleStatuses.has(effectiveStatus(it)));
+      const dteItems = filterItemsByDte(searchedItems);
+      const items = dteItems.filter(it => visibleStatuses.has(effectiveStatus(it)));
       return new Set(items.map(itemTicker).filter(Boolean));
     }
 
@@ -2705,7 +2866,7 @@
             <td><strong>${symbol}</strong></td>
             <td>${underlying}${earningsBadge}${!isNested ? ` <a href="/chain?ticker=${encodeURIComponent(underlying)}&family=csp&strategy=${currentBoardKey}&alpha=${currentAlpha}&lang=${typeof lang !== 'undefined' ? lang : 'en'}" target="_blank" title="${t('openDedicatedChain')}" style="font-size:11px; text-decoration:none; opacity:0.8; margin-left:4px;">🔬</a>` : ''}</td>
             <td class="num">$${strike.toFixed(1)} <span class="sub-info">${t('spot')}: $${spot.toFixed(1)}</span></td>
-            <td class="num">${Math.round(dte)}d</td>
+            <td class="num">${formatCspDte(dte)}</td>
             <td class="num">$${bid.toFixed(2)} / $${ask.toFixed(2)}</td>
             <td class="num" style="color: var(--accent-blue); font-weight: 600;">$${pExec.toFixed(2)}</td>
             <td class="num">${delta.toFixed(2)}</td>
@@ -2778,7 +2939,7 @@
     function renderMasterRow(g, colSpan, isExpanded, tableHeaderHtml) {
       const statusBadge = `<span class="badge badge-${g.bestStatus.toLowerCase()}">${g.bestStatus}</span>`;
       const strikeRange = `$${g.minStrike.toFixed(1)}${g.minStrike !== g.maxStrike ? '–$' + g.maxStrike.toFixed(1) : ''}`;
-      const dteRange = `${Math.round(g.minDte)}d${g.minDte !== g.maxDte ? '–' + Math.round(g.maxDte) + 'd' : ''}`;
+      const dteRange = currentFamily === 'csp' ? formatGroupDte(g) : `${Math.round(g.minDte)}d${g.minDte !== g.maxDte ? '–' + Math.round(g.maxDte) + 'd' : ''}`;
       const contractsSummary = `<span class="badge badge-contracts">${g.items.length} ${t('contracts')}</span><span class="sub-info">${g.passCount} PASS · ${g.watchCount} WATCH</span>`;
       const safeLang = typeof lang !== 'undefined' ? lang : 'en';
       const chainUrl = `/chain?ticker=${encodeURIComponent(g.ticker)}&family=${currentFamily}&strategy=${currentBoardKey}&alpha=${currentAlpha}&lang=${safeLang}`;
@@ -2934,23 +3095,39 @@
               return aExact - bExact;
             })
         : allItems;
+      paintDteCounts(allItems);
+      syncDtePills();
+      const searchedDteItems = filterItemsByDte(searchedItems);
       const counts = { PASS: 0, WATCH: 0, REJECT: 0 };
-      searchedItems.forEach(it => {
+      searchedDteItems.forEach(it => {
         const st = effectiveStatus(it);
         if (counts[st] !== undefined) counts[st] += 1;
       });
       document.getElementById('countPass').innerText = counts.PASS;
       document.getElementById('countWatch').innerText = counts.WATCH;
       document.getElementById('countReject').innerText = counts.REJECT;
-      const items = searchedItems.filter(it => visibleStatuses.has(effectiveStatus(it)));
-      const hidden = searchedItems.length - items.length;
+      const items = searchedDteItems.filter(it => visibleStatuses.has(effectiveStatus(it)));
+      // Short-dated CSP names are often REJECT on liquidity. If the DTE slice
+      // has no PASS/WATCH, still show REJECT so the pills don't look like a no-op.
+      if (currentFamily === 'csp' && items.length === 0 && counts.REJECT > 0) {
+        searchedDteItems.forEach(it => {
+          if (effectiveStatus(it) === 'REJECT') items.push(it);
+        });
+      }
+      const hidden = searchedDteItems.length - items.length;
       const meta = document.getElementById('filterMeta');
       if (!allItems.length) {
         meta.innerText = t('filterEmpty');
+      } else if (!searchedDteItems.length && currentFamily === 'csp') {
+        meta.innerText = t('filterDteNone');
       } else if (!visibleStatuses.size) {
         meta.innerText = t('filterNone');
       } else {
-        meta.innerText = t('filterShowing', { shown: items.length, total: searchedItems.length }) + (hidden ? t('filterHidden', { hidden: hidden }) : '');
+        let showing = t('filterShowing', { shown: items.length, total: searchedDteItems.length }) + (hidden ? t('filterHidden', { hidden: hidden }) : '');
+        if (currentFamily === 'csp' && counts.PASS + counts.WATCH === 0 && counts.REJECT > 0) {
+          showing += ' · ' + t('dteSliceRejectHint');
+        }
+        meta.innerText = showing;
       }
       const tickerMeta = document.getElementById('tickerSearchMeta');
       if (tickerMeta) {

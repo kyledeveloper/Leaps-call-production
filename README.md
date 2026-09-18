@@ -1,6 +1,6 @@
 # Options Quant Strategy Scanner
 
-Research scanner for **US Options Strategies** featuring dual strategy families: **LEAPS Call** (buyer stock-replacement, $DTE \ge 250$) and **Cash-Secured Put (CSP)** (systematic seller yield, $DTE\ 7–45$). It is **not** an auto-trader.
+Research scanner for **US Options Strategies** featuring dual strategy families: **LEAPS Call** (buyer stock-replacement, $DTE \ge 250$) and **Cash-Secured Put (CSP)** (systematic seller yield, $DTE\ \le 45$). It is **not** an auto-trader.
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -14,17 +14,17 @@ Research scanner for **US Options Strategies** featuring dual strategy families:
 | **2. Volatility discount** | Cheap vol, long vega | Real IV percentile after ≥90 stored ATM IV days. Delayed uses HV20 percentile until then and **caps at WATCH**. |
 | **3. Oversold confluence** | Mean-reversion on core names | RSI / 200DMA / 52w / bounce score. Requires core-universe membership and ≥200 daily bars. |
 
-### 2. Cash-Secured Put (CSP) Family (Seller Strategies, $DTE\ 7–45$)
+### 2. Cash-Secured Put (CSP) Family (Seller Strategies, $DTE\ \le 45$)
 
 | Board | Idea | Key Rules & Filters |
 |---|---|---|
-| **1. Premium Harvest** | Systematic annual yield harvest | $\Delta \in [-0.30, -0.15]$, DTE 7–45, ranked by Annualized Return on Capital (AROC). Zero-bid and spread-inversion veto. |
+| **1. Premium Harvest** | Systematic annual yield harvest | $\Delta \in [-0.30, -0.15]$, DTE ≤ 45 with four user buckets (<7 / 7–14 / 14–28 / 28–45), ranked by Annualized Return on Capital (AROC). Zero-bid and spread-inversion veto. |
 | **2. Wheel / Accumulation** | Value dip accumulation | $\Delta \in [-0.45, -0.30]$, downside buffer $\ge 5\%$, RSI $\le 55$, price-to-200DMA $\le 1.05$. |
 | **3. High IV Rank** | Volatility crush & mean reversion | IV Rank $\ge 50\%$, $\Delta \in [-0.35, -0.15]$, capturing elevated implied volatility premiums. |
 
 #### 🛡️ CSP Seller Risk Modeling & Controls
 - **Execution Slippage ($P_{exec}$)**: Penalizes wide spreads and thin order books ($Bid + (1 - \alpha) \times (Ask - Bid) \times DepthFactor$). Zero-bid ($Bid \le 0$) is immediately rejected.
-- **DTE < 7 Guard & Gamma Penalty**: Prevents terminal gamma explosion and AROC division-by-zero ($DTE_{safe} = \max(DTE, 7)$; 15% haircut for $DTE < 14$).
+- **DTE buckets & Gamma Penalty**: User-selectable `<7`, `7–14`, `14–28`, `28–45` (scan window 0–45, including weeklies). Short DTE is not hard-rejected; AROC uses $DTE_{safe} = \max(DTE, 1)$ with a haircut inside 21 days.
 - **POP & Downside Buffer**: Delta-linear probability of profit ($1 - |\Delta|$) with disclaimer; buffer $(S - K) / S$.
 - **Capital Allocation & Max Loss**: Computes nominal required collateral ($K \times 100$), maximum possible loss ($K \times 100 - P_{exec} \times 100$), and caps single-stock exposure at 25% of the total cash pool.
 - **-15% Market Crash Stress Test**: Simulates net portfolio PnL under a sudden 15% underlying gap down.

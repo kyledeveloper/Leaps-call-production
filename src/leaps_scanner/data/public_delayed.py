@@ -37,7 +37,7 @@ from src.leaps_scanner.data.store.daily_bars import DailyBarCache
 from src.leaps_scanner.data.universe import CORE_ETFS, SymbologyNormalizer
 from src.leaps_scanner.data.funnel import keep_scan_delta
 from src.leaps_scanner.scoring.ranker import StrategyCandidate
-from src.leaps_scanner.scoring.csp_ranker import CSPCandidate, EarningsStatus
+from src.leaps_scanner.scoring.csp_ranker import CSPCandidate, EarningsStatus, get_dte_bucket
 
 logger = logging.getLogger(__name__)
 
@@ -189,24 +189,33 @@ def csp_target_expiries(
     include_weeklies: bool = True,
 ) -> List[str]:
     """
-    DC-CSP-10 & DC-CSP-11: Expiries Nasdaq must be queried one-at-a-time (fromdate=todate=that day).
-    Covers all Friday and holiday-shifted Thursday expiries between min_dte and max_dte.
+    DC-CSP-10 & DC-CSP-11: Expiries Nasdaq can be queried one-at-a-time (fromdate=todate=that day).
+    Covers weekday (Mon–Fri) expiries between min_dte and max_dte so 0DTE / Mon/Wed
+    weeklies are not dropped. Holiday-shifted Thursday monthlies are still included.
     """
     start = asof.date() if min_dte <= 0.0 else (asof + timedelta(days=min_dte)).date()
     end = (asof + timedelta(days=max_dte)).date()
     out: List[str] = []
 
-    cursor = start
-    while cursor.weekday() != 4:
-        cursor += timedelta(days=1)
-
-    while cursor <= end + timedelta(days=3):
-        exp_date = cursor - timedelta(days=1) if _nyse_friday_holiday(cursor) else cursor
-        if start <= exp_date <= end:
-            iso = exp_date.isoformat()
-            if iso not in out:
-                out.append(iso)
-        cursor += timedelta(days=7)
+    if include_weeklies:
+        cursor = start
+        while cursor <= end:
+            if cursor.weekday() < 5:
+                iso = cursor.isoformat()
+                if iso not in out:
+                    out.append(iso)
+            cursor += timedelta(days=1)
+    else:
+        cursor = start
+        while cursor.weekday() != 4:
+            cursor += timedelta(days=1)
+        while cursor <= end + timedelta(days=3):
+            exp_date = cursor - timedelta(days=1) if _nyse_friday_holiday(cursor) else cursor
+            if start <= exp_date <= end:
+                iso = exp_date.isoformat()
+                if iso not in out:
+                    out.append(iso)
+            cursor += timedelta(days=7)
 
     y, m = start.year, start.month
     for _ in range(4):
@@ -223,6 +232,17 @@ def csp_target_expiries(
 
     out.sort()
     return out
+
+
+def csp_nasdaq_date_window(
+    asof: datetime,
+    min_dte: float = 0.0,
+    max_dte: float = 45.05,
+) -> Tuple[str, str]:
+    """Inclusive fromdate/todate for a single Nasdaq option-chain range query."""
+    start = asof.date() if min_dte <= 0.0 else (asof + timedelta(days=min_dte)).date()
+    end = (asof + timedelta(days=max_dte)).date()
+    return start.isoformat(), end.isoformat()
 
 
 def _nasdaq_chain_headers(symbol: str) -> Dict[str, str]:
@@ -338,7 +358,10 @@ def parse_nasdaq_csp_chain(
             continue
         if not expiry:
             expiry = parse_expiry_date(
-                row.get("putExpiryDate") or row.get("expiryDate") or row.get("expirationDate")
+                row.get("putExpiryDate")
+                or row.get("expiryDate")
+                or row.get("expirationDate")
+                or row.get("expirygroup")
             )
         if not expiry:
             continue
@@ -462,18 +485,63 @@ def _select_contracts(rows: List[dict], spot: float, max_n: int = 48) -> List[di
     return chosen
 
 
-def _select_csp_contracts(rows: List[dict], spot: float, max_n: int = 40) -> List[dict]:
-    """Keep near-OTM puts (0.70S-1.02S) for 7-45 DTE CSP scans."""
+def _select_csp_contracts(rows: List[dict], spot: float, max_n: int = 48) -> List[dict]:
+    """
+    Keep tradable CSP puts across all 4 DTE buckets.
+
+    Short-dated names are selected in the harvest buffer zone (~3% OTM) plus
+    a near-ATM weekly so Wheel can still see them. A global 0.92-moneyness
+    sort would otherwise fill the cap with 14-28 DTE and drop <7 / 28-45.
+    """
     if spot <= 0:
         return []
 
-    def moneyness(row: dict) -> float:
-        return row["strike"] / spot
+    buckets: Dict[str, List[dict]] = {"<7": [], "7-14": [], "14-28": [], "28-45": []}
+    for row in rows:
+        strike = float(row.get("strike") or 0.0)
+        if strike <= 0:
+            continue
+        moneyness = strike / spot
+        if moneyness < 0.60 or moneyness > 1.05:
+            continue
+        bucket = get_dte_bucket(float(row.get("dte") or 0.0))
+        if bucket is None:
+            continue
+        buckets[bucket].append(row)
 
-    preferred = [r for r in rows if 0.70 <= moneyness(r) <= 1.02]
-    pool = preferred or [r for r in rows if 0.60 <= moneyness(r) <= 1.05]
-    pool.sort(key=lambda r: (abs(moneyness(r) - 0.92), -r.get("open_interest", 0)))
-    return pool[:max_n]
+    targets = {
+        "<7": (0.97, 0.995),
+        "7-14": (0.97,),
+        "14-28": (0.93,),
+        "28-45": (0.92,),
+    }
+    per = max(8, int(max_n) // 4)
+    chosen: List[dict] = []
+    seen: set = set()
+    for bucket, pool in buckets.items():
+        if not pool:
+            continue
+        bucket_targets = targets[bucket]
+        take = max(2, per // len(bucket_targets))
+        for target in bucket_targets:
+            ranked = sorted(
+                pool,
+                key=lambda r: (
+                    abs(float(r["strike"]) / spot - target),
+                    -int(r.get("open_interest") or 0),
+                ),
+            )
+            added = 0
+            for row in ranked:
+                ident = row.get("symbol") or (row.get("strike"), row.get("dte"), row.get("expiry"))
+                if ident in seen:
+                    continue
+                seen.add(ident)
+                chosen.append(row)
+                added += 1
+                if added >= take:
+                    break
+    return chosen
 
 
 class PublicDelayedClient:
@@ -830,7 +898,7 @@ class PublicDelayedClient:
         asof: datetime,
         should_stop: Optional[StopFn] = None,
     ) -> Tuple[List[dict], Optional[float]]:
-        """Nasdaq returns one expiry per request. Pin fromdate=todate to each monthly Friday."""
+        """Fetch 0-45 DTE puts. Prefer one Nasdaq range query (all weeklies + monthlies)."""
         if should_stop and should_stop():
             return [], None
         ticker = urllib.parse.quote(symbol)
@@ -839,7 +907,7 @@ class PublicDelayedClient:
         last = None
         collected: List[dict] = []
         seen: set = set()
-        expiries = csp_target_expiries(asof, min_dte=0.0, max_dte=45.05, include_weeklies=True)
+        window_from, window_to = csp_nasdaq_date_window(asof, min_dte=0.0, max_dte=45.05)
 
         def ingest(payload: dict) -> None:
             nonlocal last
@@ -851,8 +919,25 @@ class PublicDelayedClient:
                 seen.add(key)
                 collected.append(row)
 
+        def one(url: str) -> dict:
+            return self._get_json(url, headers, should_stop=should_stop)
+
+        def fetch_range(asset: str) -> str:
+            url = (
+                "https://api.nasdaq.com/api/quote/"
+                f"{ticker}/option-chain?assetclass={asset}&limit=0"
+                f"&fromdate={window_from}&todate={window_to}"
+            )
+            try:
+                ingest(one(url))
+                return "ok"
+            except InterruptedError:
+                return "cancel"
+            except Exception:
+                return "fail"
+
         def fetch_dates(asset: str, dates: List[str]) -> bool:
-            """GET each expiry concurrently. True if cancelled."""
+            """Fallback: GET each expiry. True if cancelled."""
             if not dates:
                 return False
             urls = [
@@ -864,10 +949,7 @@ class PublicDelayedClient:
                 for day in dates
             ]
 
-            def one(url: str) -> dict:
-                return self._get_json(url, headers, should_stop=should_stop)
-
-            workers = min(2, len(urls))  # DC-CSP-13: Max 2 inner workers per symbol
+            workers = min(2, len(urls))
             if workers <= 1:
                 try:
                     ingest(one(urls[0]))
@@ -898,19 +980,24 @@ class PublicDelayedClient:
                 pool.shutdown(wait=True, cancel_futures=True)
             return False
 
+        range_ok = False
         for asset in asset_classes:
             if collected:
                 break
-            if fetch_dates(asset, expiries):
+            status = fetch_range(asset)
+            if status == "cancel":
                 return collected, last
+            if status == "ok":
+                range_ok = True
             if collected:
                 break
-            extra = [
-                d for d in csp_target_expiries(asof, min_dte=0.0, max_dte=45.05, include_weeklies=True)
-                if d not in expiries
-            ]
-            if fetch_dates(asset, extra):
-                return collected, last
+        if not collected and not range_ok:
+            for asset in asset_classes:
+                expiries = csp_target_expiries(asof, min_dte=0.0, max_dte=45.05, include_weeklies=True)
+                if fetch_dates(asset, expiries):
+                    return collected, last
+                if collected:
+                    break
         return collected, last
 
     def _scan_csp_symbol(
@@ -1015,7 +1102,7 @@ class PublicDelayedClient:
         should_stop: Optional[StopFn] = None,
     ) -> List[CSPCandidate]:
         """
-        Concurrently fetch CSP candidates (7~45 DTE Puts) across symbols.
+        Concurrently fetch CSP candidates (0~45 DTE Puts) across symbols.
         Uses ThreadPoolExecutor for multi-threaded parallel scanning.
         """
         asof = datetime.now(timezone.utc)

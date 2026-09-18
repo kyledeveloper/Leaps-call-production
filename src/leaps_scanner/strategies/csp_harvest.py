@@ -3,7 +3,7 @@ Board 1: Cash Secured Put - Premium Harvesting Strategy.
 Targets OTM puts for pure income generation.
 Characteristics:
 - Target Delta: -0.15 to -0.30 (PASS), -0.10 to -0.35 (WATCH)
-- DTE: 7 to 45 days (DTE < 7 hard rejected per DC-CSP-4)
+- DTE: 0 to 45 days (user-selected buckets; DTE < 7 is not a hard reject)
 - Downside Buffer: >= 3.0% (PASS), 1.0% to 3.0% (WATCH)
 """
 from dataclasses import dataclass, field

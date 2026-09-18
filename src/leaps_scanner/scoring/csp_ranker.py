@@ -76,6 +76,27 @@ class CSPFilterConfig:
     selected_dte_buckets: Optional[List[str]] = None  # DC-CSP-16: ["<7", "7-14", "14-28", "28-45"]
 
 
+DTE_BUCKET_ALIASES = {
+    "0-7": "<7",
+    "lt7": "<7",
+    "under7": "<7",
+    "<7": "<7",
+    "7-14": "7-14",
+    "14-28": "14-28",
+    "28-45": "28-45",
+    "29-45": "28-45",
+}
+
+
+def normalize_dte_bucket(token: Optional[str]) -> Optional[str]:
+    if token is None:
+        return None
+    key = str(token).strip()
+    if not key:
+        return None
+    return DTE_BUCKET_ALIASES.get(key, key)
+
+
 def get_dte_bucket(dte: float) -> Optional[str]:
     """
     DC-CSP-12: Accurate floating-point bucket categorization with boundary tolerance.
@@ -146,6 +167,18 @@ def evaluate_csp_filters(
     reasons = []
     key = (board or "harvest").replace("csp_", "")
 
+    # DC-CSP-16: DTE pills are hard inclusion filters and must run before
+    # AROC/buffer/POP early-returns, otherwise excluded expiries stay on the
+    # board as REJECT and the default PASS+WATCH view never changes.
+    if config.selected_dte_buckets is not None:
+        selected = [normalize_dte_bucket(b) for b in config.selected_dte_buckets]
+        selected = [b for b in selected if b]
+        if len(selected) == 0:
+            return False, ["DTE_NO_BUCKET_SELECTED"]
+        bucket = get_dte_bucket(candidate.dte)
+        if bucket is None or bucket not in selected:
+            return False, ["DTE_BUCKET_EXCLUDED"]
+
     if config.max_capital_per_contract is not None and config.max_capital_per_contract > 0:
         if capital_info["required_capital_per_contract"] > config.max_capital_per_contract:
             return False, ["EXCEEDS_MAX_CAPITAL_PER_CONTRACT"]
@@ -191,14 +224,6 @@ def evaluate_csp_filters(
             return False, list(l_guard.reasons)
         if l_guard.volume_status == GuardStatus.REJECT:
             reasons.append("VOLUME_THIN")
-
-    # DC-CSP-16: DTE bucket filtering with explicit empty set differentiation
-    if config.selected_dte_buckets is not None:
-        if len(config.selected_dte_buckets) == 0:
-            return False, ["DTE_NO_BUCKET_SELECTED"]
-        bucket = get_dte_bucket(candidate.dte)
-        if bucket is None or bucket not in config.selected_dte_buckets:
-            return False, ["DTE_BUCKET_EXCLUDED"]
 
     return True, reasons
 
@@ -291,6 +316,12 @@ def rank_csp_boards(
                 capital_info=capital_info,
                 board=board_key,
             )
+            # DTE pills are hard filters: drop the row so the dashboard changes.
+            if not passes_filters and any(
+                reason in ("DTE_BUCKET_EXCLUDED", "DTE_NO_BUCKET_SELECTED")
+                for reason in filter_reasons
+            ):
+                return
             # Baseline status comes from folding all gates
             gate_enum_map = {k: GuardStatus(v) for k, v in gates.items() if v in GuardStatus.__members__}
             base_status = fold_gates(gate_enum_map) if gate_enum_map else res.status

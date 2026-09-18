@@ -597,3 +597,80 @@ console.log('Running UI Filter & Search TDD Tests (Red-Team Clauses A-F)...');
     process.exit(1);
   });
 }
+
+// Clause J: CSP DTE pills isolate client-side (do not wait on rerank)
+{
+  console.log('Testing Clause J: CSP DTE bucket isolate + client filter...');
+  const { context, elements, get } = createSandbox();
+
+  assert.strictEqual(get('getDteBucket(0.1)'), '<7');
+  assert.strictEqual(get('getDteBucket(6.99)'), '<7');
+  assert.strictEqual(get('getDteBucket(7)'), '7-14');
+  assert.strictEqual(get('getDteBucket(28.1)'), '28-45');
+  assert.strictEqual(get('getDteBucket(42.1)'), '28-45');
+  assert.strictEqual(get('formatCspDte(0.1)'), '0.1d');
+  assert.strictEqual(get('formatCspDte(3.1)'), '3.1d');
+  assert.strictEqual(get('formatCspDte(28.1)'), '28d');
+  assert.strictEqual(get('formatCspDte(42.1)'), '42d');
+
+  function cspRow(und, dte, status, sym) {
+    return {
+      candidate: {
+        underlying: und, symbol: sym, dte, strike: 100, spot: 110,
+        bid: 1.2, ask: 1.4, delta: -0.22, earnings_status: 'CONFIRMED_SAFE'
+      },
+      p_exec: 1.3, roc: 0.013, aroc: 0.22, buffer: 0.09, pop: 0.8,
+      capital_info: { recommended_contracts: 1, required_capital_per_contract: 10000, total_max_loss: 9870 },
+      status
+    };
+  }
+
+  const harvest = [
+    cspRow('AAPL', 3.1, 'REJECT', 'AAPL260921P00100000'),
+    cspRow('AAPL', 10.1, 'PASS', 'AAPL260925P00100000'),
+    cspRow('AAPL', 21.1, 'PASS', 'AAPL261002P00100000'),
+    cspRow('AAPL', 35.1, 'PASS', 'AAPL261023P00100000'),
+    cspRow('MSFT', 0.1, 'REJECT', 'MSFT260918P00100000'),
+    cspRow('MSFT', 42.1, 'WATCH', 'MSFT261030P00100000')
+  ];
+
+  vm.runInContext("currentFamily = 'csp'; currentBoardKey = 'csp_harvest'; viewMode = 'flat'; tickerQuery = '';", context);
+  vm.runInContext('visibleStatuses.clear(); visibleStatuses.add("PASS"); visibleStatuses.add("WATCH");', context);
+  vm.runInContext('cachedBoards = ' + JSON.stringify({ csp_harvest: harvest, harvest: harvest }) + ';', context);
+
+  get('renderActiveBoard')();
+  assert(elements.tableBody.innerHTML.includes('AAPL260925P00100000'), 'default view still shows 7-14 PASS');
+  assert(elements.tableBody.innerHTML.includes('AAPL261023P00100000'), 'default view still shows 28-45 PASS');
+  assert(!elements.tableBody.innerHTML.includes('AAPL260921P00100000'), 'default PASS+WATCH hides <7 REJECT');
+  assert.strictEqual(elements.countDteUnder7.innerText, '2', '<7 pill must show scan count including REJECT');
+  assert.strictEqual(elements.countDte28to45.innerText, '2', '28-45 pill must show scan count');
+
+  get("toggleCspDteBucket('<7')");
+  const isolatedShort = get('JSON.stringify(cspFilters.dte_buckets)');
+  assert.strictEqual(JSON.parse(isolatedShort)['<7'], true);
+  assert.strictEqual(JSON.parse(isolatedShort)['7-14'], false);
+  assert.strictEqual(JSON.parse(isolatedShort)['28-45'], false);
+  assert(elements.tableBody.innerHTML.includes('AAPL260921P00100000'), 'isolating <7 must surface weekly REJECT rows');
+  assert(elements.tableBody.innerHTML.includes('0.1d') || elements.tableBody.innerHTML.includes('3.1d'), 'weekly DTE must render as tenths of a day');
+  assert(!elements.tableBody.innerHTML.includes('AAPL260925P00100000'), 'isolating <7 must hide 7-14');
+  assert(!elements.tableBody.innerHTML.includes('AAPL261023P00100000'), 'isolating <7 must hide 28-45');
+
+  get("toggleCspDteBucket('28-45')");
+  const isolatedLong = JSON.parse(get('JSON.stringify(cspFilters.dte_buckets)'));
+  assert.strictEqual(isolatedLong['28-45'], true);
+  assert.strictEqual(isolatedLong['<7'], false);
+  assert(elements.tableBody.innerHTML.includes('AAPL261023P00100000'), 'clicking 28-45 must isolate that window');
+  assert(elements.tableBody.innerHTML.includes('MSFT261030P00100000'), '42 DTE contract must remain visible in 28-45');
+  assert(!elements.tableBody.innerHTML.includes('AAPL260925P00100000'), '28-45 isolate must drop 7-14');
+  assert(!elements.tableBody.innerHTML.includes('AAPL260921P00100000'), '28-45 isolate must drop weeklies');
+
+  get('selectAllCspDteBuckets()');
+  const restored = JSON.parse(get('JSON.stringify(cspFilters.dte_buckets)'));
+  assert.strictEqual(restored['<7'], true);
+  assert.strictEqual(restored['28-45'], true);
+  assert(elements.tableBody.innerHTML.includes('AAPL260925P00100000'), 'All restores 7-14');
+  assert(elements.tableBody.innerHTML.includes('AAPL261023P00100000'), 'All restores 28-45');
+
+  console.log('✓ Clause J Passed: CSP DTE isolate filter is client-side and visible.');
+}
+

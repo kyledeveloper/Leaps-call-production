@@ -191,6 +191,189 @@ class TestCSPDTECoverage(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertGreaterEqual(rows[0]["dte"], 0.05)
 
+    def test_csp_target_expiries_includes_monday_wednesday_weeklies(self):
+        """0-7 DTE must include Mon/Wed weeklies, not only Fridays."""
+        asof = datetime(2026, 9, 16, 14, 0, tzinfo=timezone.utc)  # Wednesday
+        expiries = csp_target_expiries(asof, min_dte=0.0, max_dte=45.0, include_weeklies=True)
+        self.assertIn("2026-09-16", expiries)  # today (Wed)
+        self.assertIn("2026-09-18", expiries)  # Friday
+        self.assertIn("2026-09-21", expiries)  # Monday weekly
+        self.assertIn("2026-09-23", expiries)  # Wednesday weekly
+        self.assertIn("2026-10-16", expiries)  # monthly Friday ~30 DTE
+        self.assertIn("2026-10-23", expiries)  # 28-45 weekly
+
+    def test_select_csp_contracts_keeps_all_four_dte_buckets(self):
+        """Per-bucket quota must not let 14-28 DTE crowd out <7 and 28-45."""
+        from src.leaps_scanner.data.public_delayed import _select_csp_contracts
+        spot = 100.0
+        rows = []
+        specs = [("<7", 3.0, 0.85), ("7-14", 10.0, 0.90), ("14-28", 21.0, 0.92), ("28-45", 35.0, 0.92)]
+        for bucket, dte, m in specs:
+            for i in range(20):
+                strike = round(spot * m - i * 0.5, 2)
+                rows.append({
+                    "strike": strike,
+                    "dte": dte,
+                    "open_interest": 1000 - i,
+                    "symbol": f"X{bucket}{i}",
+                    "expiry": "2026-10-16",
+                })
+        chosen = _select_csp_contracts(rows, spot, max_n=40)
+        got = set()
+        for r in chosen:
+            d = r["dte"]
+            if d < 7:
+                got.add("<7")
+            elif d < 14:
+                got.add("7-14")
+            elif d < 28:
+                got.add("14-28")
+            else:
+                got.add("28-45")
+        self.assertEqual(got, {"<7", "7-14", "14-28", "28-45"})
+        self.assertGreaterEqual(sum(1 for r in chosen if r["dte"] < 7), 4)
+        self.assertGreaterEqual(sum(1 for r in chosen if r["dte"] >= 28), 4)
+
+    def test_select_prefers_near_atm_for_short_dte(self):
+        """<7 DTE must prefer harvest-zone ~3% OTM and ATM, not 8% OTM junk."""
+        from src.leaps_scanner.data.public_delayed import _select_csp_contracts
+        spot = 100.0
+        rows = [
+            {"strike": 92.0, "dte": 3.0, "open_interest": 9999, "symbol": "FAR", "expiry": "2026-09-21"},
+            {"strike": 97.0, "dte": 3.0, "open_interest": 20, "symbol": "HARVEST", "expiry": "2026-09-21"},
+            {"strike": 99.5, "dte": 3.0, "open_interest": 10, "symbol": "ATM", "expiry": "2026-09-21"},
+        ]
+        chosen = _select_csp_contracts(rows, spot, max_n=8)
+        symbols = [r["symbol"] for r in chosen]
+        self.assertIn("HARVEST", symbols)
+        self.assertIn("ATM", symbols)
+        # Far-OTM must not outrank the harvest-zone strike just because OI is huge.
+        self.assertLess(symbols.index("HARVEST"), symbols.index("FAR") if "FAR" in symbols else 99)
+
+    def test_select_keeps_weeklies_and_28_to_45_when_far_otm_floods_pool(self):
+        """A flood of 14-28 8% OTM names must not erase 0-7 weeklies or 28-45 monthlies."""
+        from src.leaps_scanner.data.public_delayed import _select_csp_contracts
+        spot = 100.0
+        rows = []
+        for i in range(80):
+            rows.append({
+                "strike": 92.0 - i * 0.1,
+                "dte": 21.0,
+                "open_interest": 9000 - i,
+                "symbol": f"MID{i}",
+                "expiry": "2026-10-09",
+            })
+        rows.append({"strike": 97.0, "dte": 2.0, "open_interest": 5, "symbol": "WKLY", "expiry": "2026-09-21"})
+        rows.append({"strike": 92.0, "dte": 35.0, "open_interest": 5, "symbol": "MTHLY", "expiry": "2026-10-23"})
+        chosen = _select_csp_contracts(rows, spot, max_n=40)
+        symbols = {r["symbol"] for r in chosen}
+        self.assertIn("WKLY", symbols)
+        self.assertIn("MTHLY", symbols)
+
+    def test_rank_csp_boards_drops_unselected_dte_buckets(self):
+        """DTE pills must remove rows, not only stamp REJECT (hidden by default UI)."""
+        cands = [
+            self.base_cand,  # 3 DTE
+            CSPCandidate(
+                symbol="AAPL261016P00220000",
+                underlying="AAPL",
+                spot=230.0,
+                strike=220.0,
+                dte=30.0,
+                bid=4.00,
+                ask=4.20,
+                delta=-0.22,
+                open_interest=5000,
+                volume=1200,
+                iv_rank=0.60,
+                rsi_14=45.0,
+                pct_to_200dma=-0.02,
+                earnings_status=EarningsStatus.CONFIRMED_SAFE,
+            ),
+        ]
+        only_short = rank_csp_boards(cands, config=CSPFilterConfig(selected_dte_buckets=["<7"]))
+        harvest_syms = [it.candidate.symbol for it in only_short["harvest"]]
+        self.assertEqual(harvest_syms, ["AAPL260925P00220000"])
+
+        only_long = rank_csp_boards(cands, config=CSPFilterConfig(selected_dte_buckets=["28-45"]))
+        harvest_long = [it.candidate.symbol for it in only_long["harvest"]]
+        self.assertEqual(harvest_long, ["AAPL261016P00220000"])
+
+        none = rank_csp_boards(cands, config=CSPFilterConfig(selected_dte_buckets=[]))
+        self.assertEqual(none["harvest"], [])
+
+    def test_dte_bucket_filter_runs_before_aroc_early_return(self):
+        """Default AROC/POP pills must not prevent DTE buckets from dropping rows."""
+        long = CSPCandidate(
+            symbol="AAPL261016P00220000",
+            underlying="AAPL",
+            spot=230.0,
+            strike=220.0,
+            dte=30.0,
+            bid=0.40,
+            ask=0.50,
+            delta=-0.22,
+            open_interest=5000,
+            volume=1200,
+            iv_rank=0.60,
+            rsi_14=45.0,
+            pct_to_200dma=-0.02,
+            earnings_status=EarningsStatus.CONFIRMED_SAFE,
+        )
+        cfg = CSPFilterConfig(
+            filter_aroc=True,
+            min_aroc=0.99,
+            selected_dte_buckets=["<7"],
+        )
+        boards = rank_csp_boards([self.base_cand, long], config=cfg)
+        harvest_syms = [it.candidate.symbol for it in boards["harvest"]]
+        self.assertEqual(harvest_syms, ["AAPL260925P00220000"])
+        self.assertNotIn("AAPL261016P00220000", harvest_syms)
+
+    def test_dte_bucket_aliases_zero_seven(self):
+        """GET/query tokens 0-7 / lt7 must map to the <7 bucket."""
+        from src.leaps_scanner.scoring.csp_ranker import normalize_dte_bucket
+        self.assertEqual(normalize_dte_bucket("0-7"), "<7")
+        self.assertEqual(normalize_dte_bucket("lt7"), "<7")
+        self.assertEqual(normalize_dte_bucket("<7"), "<7")
+        self.assertEqual(normalize_dte_bucket("29-45"), "28-45")
+        self.assertEqual(normalize_dte_bucket("28-45"), "28-45")
+        cfg = CSPFilterConfig(selected_dte_buckets=["0-7"])
+        passes, _ = evaluate_csp_filters(
+            self.base_cand, cfg, p_exec=1.55, aroc=0.25, buffer=0.04, pop=0.80,
+            capital_info={"required_capital_per_contract": 22000.0},
+        )
+        self.assertTrue(passes)
+
+        cfg_29 = CSPFilterConfig(selected_dte_buckets=["29-45"])
+        long = CSPCandidate(
+            symbol="AAPL261016P00220000",
+            underlying="AAPL",
+            spot=230.0,
+            strike=220.0,
+            dte=30.0,
+            bid=4.00,
+            ask=4.20,
+            delta=-0.22,
+            open_interest=5000,
+            volume=1200,
+            iv_rank=0.60,
+            rsi_14=45.0,
+            pct_to_200dma=-0.02,
+            earnings_status=EarningsStatus.CONFIRMED_SAFE,
+        )
+        passes_29, _ = evaluate_csp_filters(
+            long, cfg_29, p_exec=4.10, aroc=0.25, buffer=0.04, pop=0.80,
+            capital_info={"required_capital_per_contract": 22000.0},
+        )
+        self.assertTrue(passes_29)
+        passes_short_29, reasons_short_29 = evaluate_csp_filters(
+            self.base_cand, cfg_29, p_exec=1.55, aroc=0.25, buffer=0.04, pop=0.80,
+            capital_info={"required_capital_per_contract": 22000.0},
+        )
+        self.assertFalse(passes_short_29)
+        self.assertIn("DTE_BUCKET_EXCLUDED", reasons_short_29)
+
 
 if __name__ == "__main__":
     unittest.main()
