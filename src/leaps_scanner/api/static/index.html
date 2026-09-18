@@ -102,6 +102,52 @@
       color: var(--text-muted);
       margin-right: 4px;
     }
+    .ticker-search {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .ticker-search .filter-label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-right: 4px;
+    }
+    .ticker-search-box {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+    .ticker-search-box input {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      border-radius: 8px;
+      padding: 7px 30px 7px 12px;
+      font-size: 14px;
+      width: 220px;
+      text-transform: uppercase;
+    }
+    .ticker-search-box input:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+    .ticker-clear {
+      position: absolute;
+      right: 4px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 2px 8px;
+    }
+    .ticker-clear:hover { color: var(--text-main); }
     .status-chip {
       background: transparent;
       border: 1px solid var(--border);
@@ -696,6 +742,16 @@
     <span class="hint" id="filterMeta">Default: PASS + WATCH</span>
   </div>
 
+  <!-- Ticker Search: below screener boards, above options chain table -->
+  <div class="ticker-search" role="search" aria-label="Ticker search">
+    <span class="filter-label" data-i18n="tickerSearchLabel">Ticker</span>
+    <div class="ticker-search-box">
+      <input type="text" id="tickerSearchInput" data-i18n-placeholder="tickerSearchPlaceholder" placeholder="Search ticker, e.g. AAPL" autocomplete="off" autocapitalize="characters" spellcheck="false" oninput="handleTickerSearchInput()" />
+      <button type="button" id="tickerSearchClear" class="ticker-clear" data-i18n-title="tickerSearchClear" title="Clear ticker search" onclick="clearTickerSearch()" style="display: none;">&times;</button>
+    </div>
+    <span class="hint" id="tickerSearchMeta"></span>
+  </div>
+
   <!-- Main Table Container -->
   <div class="table-container">
     <table id="dataTable">
@@ -712,6 +768,8 @@
     let currentBoardKey = 'deep_itm';
     let cachedBoards = {};
     const visibleStatuses = new Set(['PASS', 'WATCH']);
+    let tickerQuery = '';
+    let tickerSearchTimer = null;
     let scanPollTimer = null;
     let lastCfg = null;
     let cspDebounceTimer = null;
@@ -846,6 +904,11 @@
         tab3Full: '3. Blue-Chip Oversold Confluence',
         tab3Short: '3. Oversold',
         statusLabel: 'Status',
+        tickerSearchLabel: 'Ticker',
+        tickerSearchPlaceholder: 'Search ticker, e.g. AAPL',
+        tickerSearchClear: 'Clear ticker search',
+        tickerSearchActive: 'Filtering: {ticker}',
+        tickerNoMatch: 'No contracts found for "{ticker}".',
         filterDefault: 'Default: PASS + WATCH',
         filterEmpty: 'No scanned contracts on this board.',
         filterNone: 'No status selected — click PASS / WATCH / REJECT.',
@@ -972,6 +1035,11 @@
         tab3Full: '3. 蓝筹超跌共振',
         tab3Short: '3. 超跌',
         statusLabel: '状态',
+        tickerSearchLabel: '标的',
+        tickerSearchPlaceholder: '输入标的代码，如 AAPL',
+        tickerSearchClear: '清除标的搜索',
+        tickerSearchActive: '筛选中：{ticker}',
+        tickerNoMatch: '未找到 "{ticker}" 的合约。',
         filterDefault: '默认：PASS + WATCH',
         filterEmpty: '此策略榜暂无已扫描合约。',
         filterNone: '未选择状态 — 点击 PASS / WATCH / REJECT。',
@@ -1029,6 +1097,9 @@
       if (vars) Object.keys(vars).forEach(k => { s = s.split('{' + k + '}').join(vars[k]); });
       return s;
     }
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
 
     function applyStaticI18n() {
       document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
@@ -1039,6 +1110,8 @@
       const subTitleEl = document.querySelector('.title-group p');
       if (subTitleEl) subTitleEl.innerText = t('platformSubtitle');
       document.querySelectorAll('[data-i18n]').forEach(el => { el.innerText = t(el.dataset.i18n); });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+      document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
       const enBtn = document.getElementById('langEn');
       const zhBtn = document.getElementById('langZh');
       if (enBtn) enBtn.className = lang === 'en' ? 'on-lang' : '';
@@ -1811,29 +1884,53 @@
       });
       renderActiveBoard();
     }
+    function handleTickerSearchInput() {
+      clearTimeout(tickerSearchTimer);
+      tickerSearchTimer = setTimeout(() => {
+        const input = document.getElementById('tickerSearchInput');
+        tickerQuery = (input.value || '').trim().toUpperCase();
+        document.getElementById('tickerSearchClear').style.display = tickerQuery ? '' : 'none';
+        renderActiveBoard();
+      }, 150);
+    }
+    function clearTickerSearch() {
+      clearTimeout(tickerSearchTimer);
+      tickerQuery = '';
+      const input = document.getElementById('tickerSearchInput');
+      input.value = '';
+      document.getElementById('tickerSearchClear').style.display = 'none';
+      renderActiveBoard();
+    }
 
     function renderActiveBoard() {
       const allItems = cachedBoards[currentBoardKey]
         || cachedBoards[currentBoardKey.replace(/^csp_/, '')]
         || cachedBoards['csp_' + currentBoardKey]
         || [];
+      const searchedItems = tickerQuery
+        ? allItems.filter(it => (it.symbol || '').toUpperCase() === tickerQuery)
+        : allItems;
       const counts = { PASS: 0, WATCH: 0, REJECT: 0 };
-      allItems.forEach(it => {
+      searchedItems.forEach(it => {
         const st = effectiveStatus(it);
         if (counts[st] !== undefined) counts[st] += 1;
       });
       document.getElementById('countPass').innerText = counts.PASS;
       document.getElementById('countWatch').innerText = counts.WATCH;
       document.getElementById('countReject').innerText = counts.REJECT;
-      const items = allItems.filter(it => visibleStatuses.has(effectiveStatus(it)));
-      const hidden = allItems.length - items.length;
+      const items = searchedItems.filter(it => visibleStatuses.has(effectiveStatus(it)));
+      const hidden = searchedItems.length - items.length;
       const meta = document.getElementById('filterMeta');
       if (!allItems.length) {
         meta.innerText = t('filterEmpty');
       } else if (!visibleStatuses.size) {
         meta.innerText = t('filterNone');
       } else {
-        meta.innerText = t('filterShowing', { shown: items.length, total: allItems.length }) + (hidden ? t('filterHidden', { hidden: hidden }) : '');
+        meta.innerText = t('filterShowing', { shown: items.length, total: searchedItems.length }) + (hidden ? t('filterHidden', { hidden: hidden }) : '');
+      }
+      const tickerMeta = document.getElementById('tickerSearchMeta');
+      if (tickerMeta) {
+        tickerMeta.innerText = tickerQuery ? t('tickerSearchActive', { ticker: tickerQuery }) : '';
       }
       const thead = document.getElementById('tableHeader');
       const tbody = document.getElementById('tableBody');
@@ -1897,6 +1994,10 @@
 
       if (allItems.length === 0) {
         tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('emptyBoard')}</td></tr>`;
+        return;
+      }
+      if (tickerQuery && searchedItems.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; color: var(--text-muted); padding: 32px;">${t('tickerNoMatch', { ticker: esc(tickerQuery) })}</td></tr>`;
         return;
       }
       if (items.length === 0) {
