@@ -65,7 +65,12 @@ SELECTED_ADRS: List[str] = [
     "BABA", "PDD", "BIDU", "NIO", "LI", "JD"
 ]
 
-# 6. Authoritative Deduplicated Full Core Universe (Set of all eligible symbols)
+# 6. Default User Watchlist Seed Tickers
+DEFAULT_WATCHLIST: List[str] = [
+    "AAPL", "NVDA", "MSFT", "TSLA", "AMZN"
+]
+
+# 7. Authoritative Deduplicated Full Core Universe (Set of all eligible institutional symbols)
 FULL_CORE_UNIVERSE: Set[str] = (
     set(SP100_COMPONENTS) |
     set(NASDAQ100_COMPONENTS) |
@@ -84,6 +89,9 @@ class SymbologyNormalizer:
     @staticmethod
     def to_canonical(symbol: str) -> str:
         s = symbol.strip().upper()
+        # Strip cashtag if present
+        if s.startswith("$"):
+            s = s[1:].strip()
         # Convert separators to canonical dot notation
         s = s.replace("-", ".").replace("/", ".")
         return s
@@ -100,7 +108,7 @@ class SymbologyNormalizer:
 def get_universe(category: str = "all") -> List[str]:
     """
     Retrieve sorted ticker list by category.
-    Categories: 'sp100', 'nasdaq100', 'ndx', 'npx', 'djia', 'etfs', 'adrs', 'all'
+    Categories: 'sp100', 'nasdaq100', 'ndx', 'npx', 'djia', 'etfs', 'adrs', 'watchlist', 'all'
     """
     cat = category.lower().strip()
     if cat in ("sp100", "oex"):
@@ -113,6 +121,8 @@ def get_universe(category: str = "all") -> List[str]:
         return sorted(list(set(CORE_ETFS)))
     elif cat == "adrs":
         return sorted(list(set(SELECTED_ADRS)))
+    elif cat == "watchlist":
+        return sorted(list(DEFAULT_WATCHLIST))
     else:
         return sorted(list(FULL_CORE_UNIVERSE))
 

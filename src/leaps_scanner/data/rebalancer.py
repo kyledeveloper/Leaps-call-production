@@ -18,6 +18,8 @@ try:
     HAS_FCNTL = True
 except ImportError:
     HAS_FCNTL = False
+import threading
+from typing import Tuple
 
 from src.leaps_scanner.data.universe import (
     SP100_COMPONENTS,
@@ -25,10 +27,14 @@ from src.leaps_scanner.data.universe import (
     DJIA_COMPONENTS,
     CORE_ETFS,
     SELECTED_ADRS,
+    DEFAULT_WATCHLIST,
     SymbologyNormalizer
 )
 
 logger = logging.getLogger(__name__)
+
+# Maximum allowed tickers in user watchlist (Clause 4 Cardinality Bound)
+MAX_WATCHLIST_SIZE = 100
 
 # RFC-compliant User Agent for Wikimedia & public financial endpoints
 USER_AGENT = "LeapsScanner/1.0 (quant-contact@internal.lan; dev@leaps-call.local)"
@@ -44,6 +50,7 @@ INDEX_ALIASES: Dict[str, str] = {
     "sp": "sp100",
     "dow": "djia",
     "dowjones": "djia",
+    "watch": "watchlist",
 }
 
 
@@ -242,6 +249,7 @@ class DynamicUniverseManager:
         offline_mode: bool = True,
         pinned_symbols: Optional[Set[str]] = None
     ):
+        self._lock = threading.RLock()
         self.cache_path = cache_path or self.DEFAULT_CACHE_REL_PATH
         self.offline_mode = offline_mode
         self.pinned_symbols: Set[str] = set(
@@ -255,7 +263,8 @@ class DynamicUniverseManager:
 
     def pin_symbol(self, symbol: str) -> None:
         """Pin active contract/holding into monitored universe under REMOVED_GRACE_PERIOD."""
-        self.pinned_symbols.add(SymbologyNormalizer.to_canonical(symbol))
+        with self._lock:
+            self.pinned_symbols.add(SymbologyNormalizer.to_canonical(symbol))
 
     def _get_static_seeds(self) -> Dict[str, List[str]]:
         return {
@@ -263,7 +272,8 @@ class DynamicUniverseManager:
             "nasdaq100": sorted(list(set(NASDAQ100_COMPONENTS))),
             "djia": sorted(list(set(DJIA_COMPONENTS))),
             "etfs": sorted(list(set(CORE_ETFS))),
-            "adrs": sorted(list(set(SELECTED_ADRS)))
+            "adrs": sorted(list(set(SELECTED_ADRS))),
+            "watchlist": sorted(list(set(DEFAULT_WATCHLIST)))
         }
 
     def _load_or_initialize(self) -> None:
@@ -297,6 +307,12 @@ class DynamicUniverseManager:
             self._rebalance_history = payload.get("rebalance_history", [])
             self._last_synced = payload.get("last_synced")
             self._last_cache_mtime = os.path.getmtime(self.cache_path)
+
+            # Clause 1: Zero-Corruption Migration:
+            # Check key existence strictly AFTER valid SHA256 verification
+            if "watchlist" not in self._indices:
+                self._indices["watchlist"] = sorted(list(set(DEFAULT_WATCHLIST)))
+                self._save_cache()
 
         except Exception as e:
             logger.warning(f"Universe cache corrupted or invalid at {self.cache_path}: {e}. Quarantining and fallback to seed.")
@@ -365,23 +381,106 @@ class DynamicUniverseManager:
                     except Exception:
                         pass
 
+    CORE_INDICES = ("sp100", "nasdaq100", "djia", "etfs", "adrs")
+
     def get_constituents(self, index_name: str) -> List[str]:
-        self._check_and_reload_if_modified()
-        idx = normalize_index_name(index_name)
-        return sorted(list(set(self._indices.get(idx, []))))
+        with self._lock:
+            self._check_and_reload_if_modified()
+            idx = normalize_index_name(index_name)
+            return sorted(list(set(self._indices.get(idx, []))))
 
     def get_master_universe(self) -> Set[str]:
-        """Compute strict mathematical union across all active indices and pinned holdings."""
-        self._check_and_reload_if_modified()
-        master: Set[str] = set()
-        for components in self._indices.values():
-            master.update(components)
-        master.update(self.pinned_symbols)
-        return master
+        """
+        Compute strict mathematical union across all active institutional indices and pinned holdings.
+        Clause 2: Excludes 'watchlist' to prevent user speculative tickers from contaminating Core.
+        """
+        with self._lock:
+            self._check_and_reload_if_modified()
+            master: Set[str] = set()
+            for k in self.CORE_INDICES:
+                master.update(self._indices.get(k, []))
+            master.update(self.pinned_symbols)
+            return master
+
+    def get_watchlist(self) -> List[str]:
+        """Return sorted canonical symbols in the user watchlist."""
+        with self._lock:
+            self._check_and_reload_if_modified()
+            return sorted(list(set(self._indices.get("watchlist", []))))
+
+    def add_watchlist_ticker(self, symbol: str) -> Tuple[bool, str]:
+        """
+        Clause 3 & 4: Sanitizes symbol, enforces TICKER_REGEX and MAX_WATCHLIST_SIZE=100.
+        Thread and process safe ACID update.
+        """
+        if not symbol or not isinstance(symbol, str):
+            return False, "Symbol must be a non-empty string"
+
+        # Clause 4 sanitization
+        s = symbol.strip().upper()
+        if s.startswith("$"):
+            s = s[1:].strip()
+        canonical = SymbologyNormalizer.to_canonical(s)
+
+        if not TICKER_REGEX.match(canonical):
+            return False, f"Invalid ticker format: {symbol}"
+
+        with self._lock:
+            self._check_and_reload_if_modified()
+            current = self._indices.get("watchlist", [])
+            current_set = set(current)
+            if canonical in current_set:
+                return False, f"{canonical} already in watchlist"
+            if len(current_set) >= MAX_WATCHLIST_SIZE:
+                return False, f"Watchlist capacity exceeded (max {MAX_WATCHLIST_SIZE})"
+
+            updated = sorted(list(current_set | {canonical}))
+            self._indices["watchlist"] = updated
+            self._save_cache()
+            return True, f"Added {canonical} to watchlist"
+
+    def remove_watchlist_ticker(self, symbol: str) -> bool:
+        """Clause 3 & 4: Remove ticker from watchlist."""
+        if not symbol or not isinstance(symbol, str):
+            return False
+        s = symbol.strip().upper()
+        if s.startswith("$"):
+            s = s[1:].strip()
+        canonical = SymbologyNormalizer.to_canonical(s)
+        with self._lock:
+            self._check_and_reload_if_modified()
+            current_set = set(self._indices.get("watchlist", []))
+            if canonical not in current_set:
+                return False
+            current_set.remove(canonical)
+            self._indices["watchlist"] = sorted(list(current_set))
+            self._save_cache()
+            return True
+
+    def set_watchlist(self, symbols: List[str]) -> List[str]:
+        """Clause 3 & 4: Replace entire watchlist with sanitized, deduplicated symbols."""
+        sanitized = set()
+        for sym in (symbols or []):
+            if sym and isinstance(sym, str):
+                s = sym.strip().upper()
+                if s.startswith("$"):
+                    s = s[1:].strip()
+                can = SymbologyNormalizer.to_canonical(s)
+                if TICKER_REGEX.match(can):
+                    sanitized.add(can)
+            if len(sanitized) >= MAX_WATCHLIST_SIZE:
+                break
+        with self._lock:
+            self._check_and_reload_if_modified()
+            updated = sorted(list(sanitized))
+            self._indices["watchlist"] = updated
+            self._save_cache()
+            return updated
 
     def get_rebalance_history(self) -> List[Dict[str, Any]]:
-        self._check_and_reload_if_modified()
-        return list(self._rebalance_history)
+        with self._lock:
+            self._check_and_reload_if_modified()
+            return list(self._rebalance_history)
 
     def apply_rebalance(
         self,
@@ -393,27 +492,28 @@ class DynamicUniverseManager:
         Applies new constituents to specified index, records diff events,
         and saves updated cache atomically.
         """
-        idx = normalize_index_name(index_name)
-        old_set = set(self._indices.get(idx, []))
-        new_set = set(new_constituents)
+        with self._lock:
+            idx = normalize_index_name(index_name)
+            old_set = set(self._indices.get(idx, []))
+            new_set = set(new_constituents)
 
-        added = sorted(list(new_set - old_set))
-        removed = sorted(list(old_set - new_set))
+            added = sorted(list(new_set - old_set))
+            removed = sorted(list(old_set - new_set))
 
-        if added or removed:
-            event = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "index": idx,
-                "added": added,
-                "removed": removed,
-                "reason": reason
-            }
-            self._rebalance_history.append(event)
-            self._indices[idx] = sorted(list(new_set))
-            self._last_synced = datetime.now(timezone.utc).isoformat()
-            self._save_cache()
+            if added or removed:
+                event = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "index": idx,
+                    "added": added,
+                    "removed": removed,
+                    "reason": reason
+                }
+                self._rebalance_history.append(event)
+                self._indices[idx] = sorted(list(new_set))
+                self._last_synced = datetime.now(timezone.utc).isoformat()
+                self._save_cache()
 
-        return {"added": added, "removed": removed}
+            return {"added": added, "removed": removed}
 
     def sync_index(
         self,

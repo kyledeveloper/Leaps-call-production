@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sha256": "a809f4beff29241a2b62a31b6c36c85bc4a9a75fb9fe9a31ca6d1c9298b6a8a5",
+  "sha256": "a1503b00bec980770af510c9595776a870e4d601e334ba8104c28e9a2dc1e13d",
   "payload": {
     "indices": {
       "sp100": [
@@ -267,6 +267,13 @@
         "LI",
         "NIO",
         "PDD"
+      ],
+      "watchlist": [
+        "AAPL",
+        "AMZN",
+        "MSFT",
+        "NVDA",
+        "TSLA"
       ]
     },
     "rebalance_history": [],

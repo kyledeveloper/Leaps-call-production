@@ -21,7 +21,7 @@ from src.leaps_scanner.data.store.iv_history import IVHistoryStore, default_iv_h
 from src.leaps_scanner.data.store.daily_bars import DailyBarCache, default_daily_bar_cache_path
 from src.leaps_scanner.scoring.ranker import MemoryRanker, RankedItem, StrategyCandidate
 from src.leaps_scanner.scoring.csp_ranker import CSPCandidate, CSPFilterConfig, rank_csp_boards, CSPBoardSnapshot
-from src.leaps_scanner.data.rebalancer import get_universe_manager
+from src.leaps_scanner.data.rebalancer import get_universe_manager, DynamicUniverseManager
 from src.leaps_scanner.data.universe import SymbologyNormalizer
 
 logger = logging.getLogger(__name__)
@@ -29,11 +29,12 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_SCAN_SYMBOLS = ["SPY", "QQQ", "AAPL", "NVDA", "MSFT"]
-CANONICAL_SCAN_TIERS = ("etfs", "djia", "sp100", "ndx", "core")
+CANONICAL_SCAN_TIERS = ("etfs", "djia", "sp100", "ndx", "core", "watchlist")
 SCAN_TIER_ALIASES: Dict[str, str] = {
     "nasdaq100": "ndx",
     "npx": "ndx",
     "oex": "sp100",
+    "watch": "watchlist",
 }
 SCAN_TIERS = CANONICAL_SCAN_TIERS + tuple(SCAN_TIER_ALIASES.keys())
 
@@ -77,6 +78,7 @@ class AppState:
         offline_mode: bool = False,
         iv_store: Optional[IVHistoryStore] = None,
         bar_cache: Optional[DailyBarCache] = None,
+        universe_manager: Optional[DynamicUniverseManager] = None,
     ):
         _load_dotenv()
 
@@ -90,6 +92,11 @@ class AppState:
         else:
             self.bar_cache = DailyBarCache(persist_path=str(default_daily_bar_cache_path()))
 
+        if universe_manager is not None:
+            self.universe_manager = universe_manager
+        else:
+            self.universe_manager = get_universe_manager(offline_mode=True)
+
         self.offline_mode = offline_mode
         if offline_mode:
             _forget_env_secrets()
@@ -97,13 +104,11 @@ class AppState:
                 offline_mode=True,
                 token_file=None,
             )
-            self.universe_manager = get_universe_manager(offline_mode=True)
             self.source = "sandbox"
             self.connection_status = "sandbox"
         else:
             _forget_env_secrets()
             self.client = PublicDelayedClient(iv_store=self.iv_store, bar_cache=self.bar_cache)
-            self.universe_manager = get_universe_manager(offline_mode=True)
             self.source = "delayed"
             self.connection_status = "delayed"
 
@@ -130,7 +135,6 @@ class AppState:
         if raw not in SCAN_TIERS:
             raw = "etfs"
         chosen = normalize_scan_tier(raw) or "etfs"
-        self.scan_tier = chosen
         if chosen == "etfs":
             names = self.universe_manager.get_constituents("etfs")
         elif chosen == "djia":
@@ -139,6 +143,10 @@ class AppState:
             names = self.universe_manager.get_constituents("sp100")
         elif chosen == "ndx":
             names = self.universe_manager.get_constituents("nasdaq100")
+        elif chosen == "watchlist":
+            names = self.universe_manager.get_constituents("watchlist")
+            # Clause 5: Explicit Empty Watchlist Guard - do NOT fallback to DEFAULT_SCAN_SYMBOLS
+            return [SymbologyNormalizer.to_canonical(s) for s in names]
         else:
             names = sorted(self.universe_manager.get_master_universe())
         names = [SymbologyNormalizer.to_canonical(s) for s in names]
@@ -178,20 +186,38 @@ class AppState:
         if tier:
             raw = tier.strip().lower()
             if raw not in SCAN_TIERS:
-                return 400, {**self.public_config(), "error": "invalid_tier", "message": "tier must be etfs, djia, sp100, ndx, or core"}
+                return 400, {**self.public_config(), "error": "invalid_tier", "message": "tier must be etfs, djia, sp100, ndx, core, or watchlist"}
             target_tier = normalize_scan_tier(raw) or "etfs"
+
+        eff_tier = target_tier or self.scan_tier or "etfs"
+        syms = [SymbologyNormalizer.to_canonical(s) for s in symbols] if symbols else self.resolve_scan_symbols(eff_tier)
+
+        # Clause 5: Empty Watchlist Guard - reject scan if watchlist is empty
+        if eff_tier == "watchlist" and not syms:
+            return 400, {
+                **self.public_config(),
+                "error": "empty_watchlist",
+                "message": "Watchlist is empty. Please add at least one ticker before scanning."
+            }
 
         with self._lock:
             same_tier = target_tier is None or target_tier == self.scan_tier
             same_family = getattr(self, "scan_family", "leaps") == family
+            same_symbols = (set(syms) == set(getattr(self, "scanned_symbols", [])))
             if self.scan_status == "running" and same_tier and same_family:
-                return 409, {**self.public_config(), "error": "scan_in_progress", "message": f"A {family.upper()} scan is already running."}
+                if (target_tier or self.scan_tier) == "watchlist" and not same_symbols:
+                    # Clause 6: Watchlist changed during scan - interrupt and restart
+                    self._scan_cancel = True
+                else:
+                    return 409, {**self.public_config(), "error": "scan_in_progress", "message": f"A {family.upper()} scan is already running."}
+            elif self.scan_status == "running" and (not same_tier or not same_family):
+                # Switching tiers or families cancels the in-flight job
+                self._scan_cancel = True
             self._scan_seq += 1
             seq = self._scan_seq
             self.scan_family = family
             if target_tier:
                 self.scan_tier = target_tier
-            syms = [SymbologyNormalizer.to_canonical(s) for s in symbols] if symbols else self.resolve_scan_symbols()
             self.scanned_symbols = list(syms)
             self.scan_status = "running"
             self.scan_progress = {"done": 0, "total": len(syms), "symbol": None}
@@ -518,7 +544,9 @@ class AppState:
                 "sp100": len(self.universe_manager.get_constituents("sp100")),
                 "ndx": len(self.universe_manager.get_constituents("nasdaq100")),
                 "core": len(self.universe_manager.get_master_universe()),
+                "watchlist": len(self.universe_manager.get_constituents("watchlist")),
             },
+            "watchlist_symbols": self.universe_manager.get_constituents("watchlist"),
             "strategies": ["deep_itm", "vol_discount", "oversold"],
             "csp_strategies": ["harvest", "wheel", "vol_rank"],
         }
@@ -850,6 +878,85 @@ def create_api_handler_class(state: AppState):
                 return 200, headers, json.dumps(data).encode("utf-8")
 
 
+            # GET /api/v1/watchlist
+            if method == "GET" and clean_path in ("/api/v1/watchlist", "/api/watchlist"):
+                watchlist = state.universe_manager.get_watchlist()
+                data = {
+                    "status": "ok",
+                    "watchlist": watchlist,
+                    "symbols": watchlist,
+                    "count": len(watchlist)
+                }
+                return 200, headers, json.dumps(data).encode("utf-8")
+
+            # POST /api/v1/watchlist
+            if method == "POST" and clean_path in ("/api/v1/watchlist", "/api/watchlist"):
+                action = "add"
+                ticker = None
+                tickers = None
+                if body:
+                    try:
+                        req_data = json.loads(body.decode("utf-8"))
+                        action = req_data.get("action", "add")
+                        ticker = req_data.get("ticker") or req_data.get("symbol")
+                        tickers = req_data.get("tickers") or req_data.get("symbols")
+                    except Exception:
+                        pass
+                if action == "set" and isinstance(tickers, list):
+                    updated = state.universe_manager.set_watchlist(tickers)
+                    return 200, headers, json.dumps({
+                        "status": "ok",
+                        "watchlist": updated,
+                        "symbols": updated,
+                        "count": len(updated)
+                    }).encode("utf-8")
+                elif action == "remove":
+                    if not ticker:
+                        return 400, headers, json.dumps({"error": "missing_ticker", "message": "Missing ticker parameter"}).encode("utf-8")
+                    removed = state.universe_manager.remove_watchlist_ticker(ticker)
+                    wl = state.universe_manager.get_watchlist()
+                    return 200, headers, json.dumps({
+                        "status": "ok",
+                        "removed": removed,
+                        "watchlist": wl,
+                        "symbols": wl,
+                        "count": len(wl)
+                    }).encode("utf-8")
+                else:  # add
+                    if not ticker:
+                        return 400, headers, json.dumps({"error": "missing_ticker", "message": "Missing ticker parameter"}).encode("utf-8")
+                    ok, msg = state.universe_manager.add_watchlist_ticker(ticker)
+                    wl = state.universe_manager.get_watchlist()
+                    code = 200 if ok else 400
+                    return code, headers, json.dumps({
+                        "status": "ok" if ok else "error",
+                        "message": msg,
+                        "watchlist": wl,
+                        "symbols": wl,
+                        "count": len(wl)
+                    }).encode("utf-8")
+
+            # DELETE /api/v1/watchlist
+            if method == "DELETE" and clean_path in ("/api/v1/watchlist", "/api/watchlist"):
+                ticker = query_params.get("ticker", query_params.get("symbol", [None]))[0]
+                if not ticker and body:
+                    try:
+                        req_data = json.loads(body.decode("utf-8"))
+                        ticker = req_data.get("ticker") or req_data.get("symbol")
+                    except Exception:
+                        pass
+                if not ticker:
+                    return 400, headers, json.dumps({"error": "missing_ticker", "message": "Missing ticker parameter"}).encode("utf-8")
+                removed = state.universe_manager.remove_watchlist_ticker(ticker)
+                wl = state.universe_manager.get_watchlist()
+                return 200, headers, json.dumps({
+                    "status": "ok",
+                    "removed": removed,
+                    "watchlist": wl,
+                    "symbols": wl,
+                    "count": len(wl)
+                }).encode("utf-8")
+
             # GET /api/v1/universe
             if method == "GET" and clean_path in ("/api/v1/universe", "/api/universe"):
                 data = {
@@ -860,9 +967,9 @@ def create_api_handler_class(state: AppState):
                         "ndx": len(state.universe_manager.get_constituents("nasdaq100")),
                         "djia": len(state.universe_manager.get_constituents("djia")),
                         "etfs": len(state.universe_manager.get_constituents("etfs")),
-                        "adrs": len(state.universe_manager.get_constituents("adrs"))
+                        "adrs": len(state.universe_manager.get_constituents("adrs")),
+                        "watchlist": len(state.universe_manager.get_constituents("watchlist")),
                     },
-
                     "master_count": len(state.universe_manager.get_master_universe()),
                     "rebalance_history": state.universe_manager.get_rebalance_history()[-10:],
                     "last_synced": getattr(state.universe_manager, "_last_synced", None)
@@ -905,6 +1012,17 @@ def create_api_handler_class(state: AppState):
             content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length) if content_length > 0 else b""
             code, headers, body_out = self.dispatch("POST", self.path, body)
+            self.send_response(code)
+            for k, v in headers.items():
+                self.send_header(k, v)
+            self.send_header("Content-Length", str(len(body_out)))
+            self.end_headers()
+            self.wfile.write(body_out)
+
+        def do_DELETE(self):
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length) if content_length > 0 else b""
+            code, headers, body_out = self.dispatch("DELETE", self.path, body)
             self.send_response(code)
             for k, v in headers.items():
                 self.send_header(k, v)

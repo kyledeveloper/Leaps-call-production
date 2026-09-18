@@ -169,6 +169,50 @@ class TestUniverseExpansion(unittest.TestCase):
         self.assertEqual(len(mgr.get_constituents("npx")), len(mgr.get_constituents("nasdaq100")))
         self.assertEqual(len(mgr.get_constituents("sp100")), len(SP100_COMPONENTS))
 
+    def test_watchlist_universe_crud_and_anti_contamination(self):
+        import tempfile
+        import os
+        from src.leaps_scanner.data.universe import DEFAULT_WATCHLIST
+        from src.leaps_scanner.data.rebalancer import DynamicUniverseManager
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache_file = os.path.join(tmp_dir, "test_cache.json")
+            mgr = DynamicUniverseManager(cache_path=cache_file, offline_mode=True)
+
+            # 1. Default seed tickers present
+            watchlist = mgr.get_watchlist()
+            self.assertEqual(watchlist, sorted(DEFAULT_WATCHLIST))
+
+            # 2. Add ticker with cashtag and lowercase normalization (Clause 4)
+            added, reason = mgr.add_watchlist_ticker("$gme")
+            self.assertTrue(added)
+            self.assertIn("GME", mgr.get_watchlist())
+
+            # 3. Duplicate ticker is rejected cleanly
+            dup_added, _ = mgr.add_watchlist_ticker("GME")
+            self.assertFalse(dup_added)
+
+            # 4. Invalid ticker format is rejected (Clause 4)
+            bad_added, _ = mgr.add_watchlist_ticker("INVALID_TICKER_123!")
+            self.assertFalse(bad_added)
+
+            # 5. Core Anti-Contamination (Clause 2): Master universe MUST NOT contain custom speculative ticker
+            master = mgr.get_master_universe()
+            self.assertNotIn("GME", master)
+
+            # 6. Remove ticker (Clause 3)
+            removed = mgr.remove_watchlist_ticker("GME")
+            self.assertTrue(removed)
+            self.assertNotIn("GME", mgr.get_watchlist())
+
+            # 7. User-cleared empty watchlist is not resurrected (Clause 1)
+            mgr.set_watchlist([])
+            self.assertEqual(mgr.get_watchlist(), [])
+
+            # Reload manager from same cache file; empty watchlist must remain empty!
+            reloaded_mgr = DynamicUniverseManager(cache_path=cache_file, offline_mode=True)
+            self.assertEqual(reloaded_mgr.get_watchlist(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

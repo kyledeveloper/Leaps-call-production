@@ -572,6 +572,92 @@
       flex: 1 1 auto;
       min-width: 4.5rem;
     }
+    .watchlist-panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+    }
+    .watchlist-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .watchlist-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+    .watchlist-count {
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 8px;
+      border-radius: 9999px;
+    }
+    .watchlist-input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .watchlist-input-row input {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 13px;
+      width: 160px;
+      text-transform: uppercase;
+    }
+    .watchlist-input-row input:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+    .watchlist-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      min-height: 28px;
+    }
+    .watchlist-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--accent-blue);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+    }
+    .watchlist-remove {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0 2px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .watchlist-remove:hover {
+      color: var(--accent-rose);
+    }
     .cred-grid {
       display: grid;
       grid-template-columns: 1fr 1fr auto;
@@ -686,6 +772,24 @@
       <button type="button" id="tierSp100" onclick="setScanTier('sp100')" data-i18n="tierSp100">SP100</button>
       <button type="button" id="tierNdx" onclick="setScanTier('ndx')" data-i18n="tierNdx">NDX</button>
       <button type="button" id="tierCore" onclick="setScanTier('core')" data-i18n="tierCore">Core union</button>
+      <button type="button" id="tierWatchlist" onclick="setScanTier('watchlist')" data-i18n="tierWatchlist">Watchlist</button>
+    </div>
+
+    <!-- Watchlist Management Panel (Visible when Watchlist tier is active) -->
+    <div class="watchlist-panel" id="watchlistPanel" style="display: none;">
+      <div class="watchlist-header">
+        <div class="watchlist-title-group">
+          <span>⭐</span>
+          <strong data-i18n="watchlistTitle">My Watchlist</strong>
+          <span class="watchlist-count" id="watchlistCount">0 symbols</span>
+        </div>
+        <div class="watchlist-input-row">
+          <input type="text" id="watchlistInput" data-i18n-placeholder="watchlistPlaceholder" placeholder="Add ticker, e.g. PLTR" autocomplete="off" autocapitalize="characters" spellcheck="false" onkeydown="handleWatchlistKeyDown(event)" />
+          <button type="button" class="btn btn-sm" id="watchlistAddBtn" onclick="addWatchlistTicker()" data-i18n="watchlistAdd">+ Add</button>
+        </div>
+      </div>
+      <div class="watchlist-chips" id="watchlistChips"></div>
+      <div class="hint" id="watchlistHint" style="display: none;" data-i18n="watchlistEmpty">Your watchlist is empty. Add tickers above to scan.</div>
     </div>
   </div>
 
@@ -912,6 +1016,14 @@
         tierSp100: 'SP100',
         tierNdx: 'NDX',
         tierCore: 'Core union',
+        tierWatchlist: 'Watchlist',
+        watchlistTitle: 'My Watchlist',
+        watchlistCount: '{n} symbols',
+        watchlistPlaceholder: 'Add ticker, e.g. PLTR',
+        watchlistAdd: '+ Add',
+        watchlistEmpty: 'Your watchlist is empty. Add tickers above to scan.',
+        watchlistInvalid: 'Invalid ticker format',
+        watchlistError: 'Failed to update watchlist',
 
         alphaLabel: 'Execution Price Parameter (α Slippage Slider)',
         alphaDisplay: 'α = {alpha} (Midpoint + {pct}% Spread)',
@@ -1043,6 +1155,14 @@
         tierSp100: '标普100',
         tierNdx: '纳指100',
         tierCore: '核心并集',
+        tierWatchlist: '自选池',
+        watchlistTitle: '自选股票池',
+        watchlistCount: '{n} 只标的',
+        watchlistPlaceholder: '输入代码，如 PLTR',
+        watchlistAdd: '+ 添加',
+        watchlistEmpty: '自选池为空。请在上方输入代码添加标的后扫描。',
+        watchlistInvalid: '无效的股票代码格式',
+        watchlistError: '更新自选池失败',
 
         alphaLabel: '执行价参数（α 滑点滑条）',
         alphaDisplay: 'α = {alpha}（中间价 + {pct}% 价差）',
@@ -1289,6 +1409,7 @@
       lang = next === 'zh' ? 'zh' : 'en';
       try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
       applyStaticI18n();
+      renderWatchlistChips(currentWatchlist);
       paintStrategyHelp(currentBoardKey);
       renderActiveBoard();
       if (lastCfg) applyConfig(lastCfg);
@@ -1584,7 +1705,8 @@
       djia: { id: 'tierDjia', labelKey: 'tierDjia', fallbackN: 30, uniKeys: ['djia'] },
       sp100: { id: 'tierSp100', labelKey: 'tierSp100', fallbackN: 101, uniKeys: ['sp100'] },
       ndx: { id: 'tierNdx', labelKey: 'tierNdx', fallbackN: 101, uniKeys: ['ndx', 'nasdaq100'] },
-      core: { id: 'tierCore', labelKey: 'tierCore', fallbackN: 140, uniKeys: ['core'] }
+      core: { id: 'tierCore', labelKey: 'tierCore', fallbackN: 140, uniKeys: ['core'] },
+      watchlist: { id: 'tierWatchlist', labelKey: 'tierWatchlist', fallbackN: 5, uniKeys: ['watchlist'] }
     };
 
     function canonicalizeTier(raw) {
@@ -1592,7 +1714,100 @@
       const s = String(raw).toLowerCase().trim();
       if (s === 'nasdaq100' || s === 'npx') return 'ndx';
       if (s === 'oex') return 'sp100';
+      if (s === 'watch' || s === 'watchlist') return 'watchlist';
       return TIER_CONFIG[s] ? s : 'etfs';
+    }
+
+    let currentWatchlist = [];
+
+    function renderWatchlistChips(symbols) {
+      currentWatchlist = Array.isArray(symbols) ? symbols : [];
+      const container = document.getElementById('watchlistChips');
+      const countEl = document.getElementById('watchlistCount');
+      const hintEl = document.getElementById('watchlistHint');
+      if (countEl) {
+        countEl.innerText = t('watchlistCount', { n: currentWatchlist.length });
+      }
+      if (hintEl) {
+        hintEl.style.display = currentWatchlist.length === 0 ? 'block' : 'none';
+      }
+      if (!container) return;
+      container.innerHTML = currentWatchlist.map(sym => {
+        const escaped = String(sym).replace(/[&<>"']/g, '');
+        return `<span class="watchlist-chip">${escaped}<button type="button" class="watchlist-remove" onclick="removeWatchlistTicker('${escaped}')" title="Remove ${escaped}">×</button></span>`;
+      }).join('');
+    }
+
+    function handleWatchlistKeyDown(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addWatchlistTicker();
+      }
+    }
+
+    async function addWatchlistTicker() {
+      const input = document.getElementById('watchlistInput');
+      if (!input) return;
+      const raw = input.value || '';
+      const symbol = raw.trim().replace(/^\$/, '').toUpperCase();
+      if (!symbol || !/^[A-Z0-9.\-]+$/.test(symbol)) {
+        if (symbol) alert(t('watchlistInvalid'));
+        return;
+      }
+      try {
+        const res = await fetch('/api/v1/watchlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol, ticker: symbol })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          renderWatchlistChips(data.symbols || data.watchlist || []);
+          input.value = '';
+          input.focus();
+          if (lastCfg && canonicalizeTier(lastCfg.scan_tier) === 'watchlist') {
+            await setScanTier('watchlist');
+          }
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert(err.error || t('watchlistError'));
+        }
+      } catch (e) {
+        alert(t('watchlistError'));
+      }
+    }
+
+    async function removeWatchlistTicker(symbol) {
+      if (!symbol) return;
+      try {
+        const res = await fetch(`/api/v1/watchlist?symbol=${encodeURIComponent(symbol)}&ticker=${encodeURIComponent(symbol)}`, {
+          method: 'DELETE'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          renderWatchlistChips(data.symbols || data.watchlist || []);
+          if (lastCfg && canonicalizeTier(lastCfg.scan_tier) === 'watchlist') {
+            await setScanTier('watchlist');
+          }
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert(err.error || t('watchlistError'));
+        }
+      } catch (e) {
+        alert(t('watchlistError'));
+      }
+    }
+
+    async function fetchWatchlist() {
+      try {
+        const res = await fetch('/api/v1/watchlist');
+        if (res.ok) {
+          const data = await res.json();
+          renderWatchlistChips(data.symbols || data.watchlist || []);
+        }
+      } catch (e) {
+        console.warn('Failed to fetch watchlist:', e);
+      }
     }
 
     function familyContractCount(cfg) {
@@ -1646,12 +1861,17 @@
         if (el) el.className = (k === tierName) ? 'on-delayed' : '';
       });
 
+      const watchlistPanel = document.getElementById('watchlistPanel');
+      if (watchlistPanel) {
+        watchlistPanel.style.display = (tierName === 'watchlist') ? 'flex' : 'none';
+      }
+
       const hint = document.getElementById('scanHint');
       const uni = (cfg && cfg.universe) || {};
       const targetMeta = TIER_CONFIG[tierName] || TIER_CONFIG.etfs;
       let n = targetMeta.fallbackN;
       for (const k of targetMeta.uniKeys) {
-        if (uni[k] != null && uni[k] > 0) {
+        if (uni[k] != null && (tierName === 'watchlist' || uni[k] > 0)) {
           n = uni[k];
           break;
         }
@@ -1684,6 +1904,12 @@
           const res = await fetch('/api/v1/config');
           if (!res.ok) return;
           const cfg = await res.json();
+          if (cfg && Array.isArray(cfg.watchlist_symbols)) {
+            const newSyms = cfg.watchlist_symbols;
+            if (newSyms.length !== currentWatchlist.length || newSyms.some((s, i) => s !== currentWatchlist[i])) {
+              renderWatchlistChips(newSyms);
+            }
+          }
           paintSourceStatus(cfg);
           paintScanTier(cfg.scan_tier, cfg);
           await loadBoards(currentAlpha, true);
@@ -1699,6 +1925,12 @@
 
     async function applyConfig(cfg) {
       lastCfg = cfg;
+      if (cfg && Array.isArray(cfg.watchlist_symbols)) {
+        const newSyms = cfg.watchlist_symbols;
+        if (newSyms.length !== currentWatchlist.length || newSyms.some((s, i) => s !== currentWatchlist[i])) {
+          renderWatchlistChips(newSyms);
+        }
+      }
       const sandboxBtn = document.getElementById('btnSandbox');
       const delayedBtn = document.getElementById('btnDelayed');
       const liveBtn = document.getElementById('btnLive');
@@ -1878,6 +2110,11 @@
           body: JSON.stringify({ tier, family: currentFamily })
         });
         const cfg = await res.json();
+        if (res.status === 400 && cfg.error === 'empty_watchlist') {
+          const hint = document.getElementById('scanHint');
+          if (hint) hint.innerText = t('watchlistEmpty');
+          return;
+        }
         if (res.status === 409) {
           await applyConfig(cfg);
           startScanPoll();
@@ -2225,6 +2462,7 @@
     paintStrategyHelp(currentBoardKey);
     fetchConfig();
     fetchUniverseStats();
+    fetchWatchlist();
     loadBoards(currentAlpha);
   </script>
 </body>

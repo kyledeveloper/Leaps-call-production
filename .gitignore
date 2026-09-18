@@ -16,6 +16,7 @@ npm-debug.log*
 *.db-journal
 *.db-wal
 *.db-shm
+*.lock
 
 # Generated diagrams (keep the archify HTML template)
 *.html

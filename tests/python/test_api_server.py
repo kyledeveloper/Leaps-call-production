@@ -1,7 +1,10 @@
 import json
+import os
+import tempfile
 import unittest
 from tests.python.conftest import block_network
 from src.leaps_scanner.api.server import create_api_handler_class, AppState
+from src.leaps_scanner.data.rebalancer import DynamicUniverseManager
 from io import BytesIO
 
 
@@ -15,9 +18,16 @@ class MockHTTPRequest:
 class TestAPIServer(unittest.TestCase):
     def setUp(self):
         block_network()
-        self.state = AppState(offline_mode=True)
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        tmp_cache_path = os.path.join(self.tmp_dir.name, "universe_cache.json")
+        self.test_mgr = DynamicUniverseManager(cache_path=tmp_cache_path, offline_mode=True)
+        self.state = AppState(offline_mode=True, universe_manager=self.test_mgr)
         # Seed candidates
         self.state.client.get_leaps_candidates(["AAPL", "SPY"])
+
+    def tearDown(self):
+        if hasattr(self, "tmp_dir"):
+            self.tmp_dir.cleanup()
 
     def test_app_state_scan_and_rerank(self):
         self.state.run_scan(symbols=["AAPL", "SPY"])
@@ -221,6 +231,51 @@ class TestAPIServer(unittest.TestCase):
         self.state._scan_worker(["AAPL"], seq=3)
         self.assertEqual(self.state.scan_status, "error")
         self.assertIn("scan_failed", self.state.last_error or "")
+
+    def test_watchlist_api_endpoints_and_empty_guard(self):
+        handler_cls = create_api_handler_class(self.state)
+
+        # 1. GET /api/v1/watchlist returns default seed tickers
+        code, _, body = handler_cls.dispatch("GET", "/api/v1/watchlist", b"")
+        self.assertEqual(code, 200)
+        res = json.loads(body.decode("utf-8"))
+        self.assertIn("watchlist", res)
+        self.assertIn("symbols", res)
+        self.assertEqual(res["symbols"], res["watchlist"])
+        self.assertGreaterEqual(res["count"], 1)
+
+        # 2. POST /api/v1/watchlist add ticker using {"symbol": "$PLTR"} (Frontend format)
+        add_payload = json.dumps({"symbol": "$PLTR"}).encode("utf-8")
+        code, _, body = handler_cls.dispatch("POST", "/api/v1/watchlist", add_payload)
+        self.assertEqual(code, 200)
+        res = json.loads(body.decode("utf-8"))
+        self.assertIn("PLTR", res["symbols"])
+        self.assertIn("PLTR", res["watchlist"])
+
+        # 3. DELETE /api/v1/watchlist ticker using query param ?symbol=PLTR (Frontend format)
+        code, _, body = handler_cls.dispatch("DELETE", "/api/v1/watchlist?symbol=PLTR", b"")
+        self.assertEqual(code, 200)
+        res = json.loads(body.decode("utf-8"))
+        self.assertNotIn("PLTR", res["symbols"])
+        self.assertNotIn("PLTR", res["watchlist"])
+
+        # 4. Also verify legacy {"ticker": "..."} payload format works
+        add_payload_legacy = json.dumps({"action": "add", "ticker": "GME"}).encode("utf-8")
+        code, _, body = handler_cls.dispatch("POST", "/api/v1/watchlist", add_payload_legacy)
+        self.assertEqual(code, 200)
+        del_payload_legacy = json.dumps({"ticker": "GME"}).encode("utf-8")
+        code, _, body = handler_cls.dispatch("DELETE", "/api/v1/watchlist", del_payload_legacy)
+        self.assertEqual(code, 200)
+
+        # 5. Clause 5: Empty Watchlist Guard in resolve_scan_symbols and request_scan
+        self.state.universe_manager.set_watchlist([])
+        resolved = self.state.resolve_scan_symbols(tier="watchlist")
+        self.assertEqual(resolved, [])  # Must NOT fallback to DEFAULT_SCAN_SYMBOLS
+
+        # Empty scan request must return HTTP 400
+        code, payload = self.state.request_scan(tier="watchlist")
+        self.assertEqual(code, 400)
+        self.assertEqual(payload.get("error"), "empty_watchlist")
 
 
 if __name__ == "__main__":

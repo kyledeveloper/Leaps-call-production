@@ -51,7 +51,15 @@ function createSandbox(initialLocalStorage = {}) {
     pillIvr: { classList: { toggle: () => {} } },
     pillPop: { classList: { toggle: () => {} } },
     pillEarnings: { classList: { toggle: () => {} } },
-    pillLiquidity: { classList: { toggle: () => {} } }
+    pillLiquidity: { classList: { toggle: () => {} } },
+    tierWatchlist: { className: '' },
+    watchlistPanel: { style: { display: 'none' } },
+    watchlistChips: { innerHTML: '' },
+    watchlistInput: { value: '' },
+    watchlistCount: { innerText: '' },
+    watchlistHint: { style: { display: 'none' } },
+    watchlistAddBtn: { innerText: '' },
+    scanHint: { innerText: '' }
   };
 
   const store = Object.assign({}, initialLocalStorage);
@@ -74,6 +82,7 @@ function createSandbox(initialLocalStorage = {}) {
     performance: { now: () => Date.now() },
     setTimeout: (fn) => fn(),
     clearTimeout: () => {},
+    alert: () => {},
     fetch: async () => ({ ok: true, json: async () => ({ boards: { deep_itm: [], vol_discount: [], oversold: [], csp_harvest: [], csp_wheel: [], csp_vol_rank: [] } }) }),
     __elements: elements,
     __store: store
@@ -261,4 +270,105 @@ console.log('Running UI Filter & Search TDD Tests (Red-Team Clauses A-F)...');
   console.log('✓ Clause G Passed: Status filter and ticker search co-located on the same row.');
 }
 
-console.log('All Red-Team clauses A-G verified successfully! 🎉');
+// Clause H: Watchlist Universe & Ticker Management (Red-Team Clauses 7 & 8)
+{
+  console.log('Testing Clause H: Watchlist universe tier and DOM components...');
+  const { context, sandbox, elements, get } = createSandbox();
+
+  // 1. TIER_CONFIG contains watchlist
+  const tierConfig = get('TIER_CONFIG');
+  assert(tierConfig.watchlist, 'TIER_CONFIG must include "watchlist" entry');
+  assert.strictEqual(tierConfig.watchlist.id, 'tierWatchlist', 'watchlist tier id must be tierWatchlist');
+
+  // 2. canonicalizeTier handles watchlist
+  const canonicalizeTier = get('canonicalizeTier');
+  assert.strictEqual(canonicalizeTier('watchlist'), 'watchlist', 'canonicalizeTier must preserve "watchlist"');
+  assert.strictEqual(canonicalizeTier('WATCHLIST'), 'watchlist', 'canonicalizeTier must handle case-insensitivity');
+  assert.strictEqual(canonicalizeTier('watch'), 'watchlist', 'canonicalizeTier must handle "watch" alias');
+
+  // 3. HTML markup contains tier button and watchlist panel
+  assert(htmlContent.includes('id="tierWatchlist"'), 'index.html must include #tierWatchlist button');
+  assert(htmlContent.includes('id="watchlistPanel"'), 'index.html must include #watchlistPanel');
+  assert(htmlContent.includes('id="watchlistChips"'), 'index.html must include #watchlistChips container');
+  assert(htmlContent.includes('id="watchlistInput"'), 'index.html must include #watchlistInput field');
+  assert(htmlContent.includes('id="watchlistAddBtn"'), 'index.html must include #watchlistAddBtn');
+
+  // 4. paintScanTier toggles #watchlistPanel display
+  const paintScanTier = get('paintScanTier');
+  paintScanTier('watchlist');
+  assert.strictEqual(elements.watchlistPanel.style.display, 'flex', 'paintScanTier("watchlist") must show #watchlistPanel as flex');
+  paintScanTier('etfs');
+  assert.strictEqual(elements.watchlistPanel.style.display, 'none', 'paintScanTier("etfs") must hide #watchlistPanel');
+
+  // 5. renderWatchlistChips updates chips and count
+  const renderWatchlistChips = get('renderWatchlistChips');
+  renderWatchlistChips(['AAPL', 'NVDA']);
+  assert(elements.watchlistChips.innerHTML.includes('AAPL'), 'renderWatchlistChips must render AAPL chip');
+  assert(elements.watchlistChips.innerHTML.includes('NVDA'), 'renderWatchlistChips must render NVDA chip');
+  assert(elements.watchlistChips.innerHTML.includes('removeWatchlistTicker'), 'Chips must contain remove buttons');
+  assert.strictEqual(elements.watchlistCount.innerText, '2 symbols', 'watchlistCount must display symbol count');
+  assert.strictEqual(elements.watchlistHint.style.display, 'none', 'watchlistHint must be hidden when symbols present');
+
+  // 6. renderWatchlistChips([]) reveals empty hint
+  renderWatchlistChips([]);
+  assert.strictEqual(elements.watchlistCount.innerText, '0 symbols', 'watchlistCount must display 0 symbols');
+  assert.strictEqual(elements.watchlistHint.style.display, 'block', 'watchlistHint must be displayed when empty');
+
+  // 7. paintScanTier with 0 watchlist symbols preserves 0 (no fallback to 5)
+  paintScanTier('watchlist', { universe: { watchlist: 0 }, scan_status: 'idle' });
+  assert(elements.scanHint.innerText.includes('0'), 'paintScanTier for watchlist with 0 symbols must not fallback to 5');
+
+  // 8. fetchWatchlist with mock fetch
+  (async () => {
+    let lastUrl = '';
+    let lastOptions = null;
+    sandbox.fetch = async (url, options) => {
+      lastUrl = url;
+      lastOptions = options;
+      if (url === '/api/v1/watchlist' && (!options || options.method === 'GET')) {
+        return { ok: true, json: async () => ({ status: 'ok', symbols: ['MSFT', 'TSLA'], watchlist: ['MSFT', 'TSLA'] }) };
+      }
+      if (url === '/api/v1/watchlist' && options && options.method === 'POST') {
+        const body = JSON.parse(options.body);
+        return { ok: true, json: async () => ({ status: 'ok', symbols: ['MSFT', 'TSLA', body.symbol], watchlist: ['MSFT', 'TSLA', body.symbol] }) };
+      }
+      if (url.startsWith('/api/v1/watchlist') && options && options.method === 'DELETE') {
+        return { ok: true, json: async () => ({ status: 'ok', symbols: ['MSFT'], watchlist: ['MSFT'] }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    };
+
+    // Test fetchWatchlist()
+    const fetchWatchlist = get('fetchWatchlist');
+    await fetchWatchlist();
+    assert(elements.watchlistChips.innerHTML.includes('MSFT'), 'fetchWatchlist must render MSFT');
+    assert(elements.watchlistChips.innerHTML.includes('TSLA'), 'fetchWatchlist must render TSLA');
+    assert.strictEqual(elements.watchlistCount.innerText, '2 symbols', 'watchlistCount must be 2 symbols');
+
+    // Test addWatchlistTicker() with cashtag
+    elements.watchlistInput.value = '$PLTR';
+    const addWatchlistTicker = get('addWatchlistTicker');
+    await addWatchlistTicker();
+    assert.strictEqual(lastUrl, '/api/v1/watchlist');
+    assert.strictEqual(lastOptions.method, 'POST');
+    const sentBody = JSON.parse(lastOptions.body);
+    assert.strictEqual(sentBody.symbol, 'PLTR', 'POST body must contain cleaned symbol');
+    assert.strictEqual(sentBody.ticker, 'PLTR', 'POST body must contain ticker alias');
+    assert(elements.watchlistChips.innerHTML.includes('PLTR'), 'Chips must now include PLTR');
+    assert.strictEqual(elements.watchlistInput.value, '', 'Input must be cleared after adding');
+
+    // Test removeWatchlistTicker()
+    const removeWatchlistTicker = get('removeWatchlistTicker');
+    await removeWatchlistTicker('TSLA');
+    assert(lastUrl.includes('symbol=TSLA'), 'DELETE url must contain symbol parameter');
+    assert(lastUrl.includes('ticker=TSLA'), 'DELETE url must contain ticker parameter');
+    assert(!elements.watchlistChips.innerHTML.includes('TSLA'), 'Chips must no longer include TSLA');
+
+    console.log('✓ Clause H Passed: Watchlist universe tier configuration, DOM elements, and mock API interactions verified.');
+  })().then(() => {
+    console.log('All Red-Team clauses A-H verified successfully! 🎉');
+  }).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
