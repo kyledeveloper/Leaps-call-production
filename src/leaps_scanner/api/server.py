@@ -828,22 +828,13 @@ class AppState:
         # Item 4: plus a global sliding-window admission limiter (force_refresh
         # triggers upstream network I/O; the per-ticker cooldown is trivially
         # bypassed by rotating tickers) and a hard cap on the cooldown map.
+        # Follow-up: the global quota is consumed only when a fetch will
+        # actually occur — per-ticker-cooldown-blocked and offline-mode
+        # requests are served from cache (zero upstream I/O).
         now = time.time()
         cooldown_active = False
         if force_refresh:
             with self._lock:
-                admitted = self._force_refresh_times
-                cutoff = now - self._force_refresh_window_s
-                while admitted and admitted[0] <= cutoff:
-                    admitted.popleft()
-                if len(admitted) >= self._force_refresh_max_per_window:
-                    retry_in = int(admitted[0] + self._force_refresh_window_s - now) + 1
-                    return 429, {
-                        "error": "rate_limited",
-                        "message": f"Too many chain refreshes; try again in {retry_in}s.",
-                        "retry_after_s": retry_in,
-                    }
-                admitted.append(now)
                 # Bound the cooldown map: drop expired entries first (an entry
                 # older than the cooldown window behaves exactly like a miss),
                 # then hard-cap as a backstop against clock skew / bursts.
@@ -855,9 +846,25 @@ class AppState:
                     cooldown_active = True
                     force_refresh = False
                 else:
+                    if not self.offline_mode:
+                        admitted = self._force_refresh_times
+                        cutoff = now - self._force_refresh_window_s
+                        while admitted and admitted[0] <= cutoff:
+                            admitted.popleft()
+                        if len(admitted) >= self._force_refresh_max_per_window:
+                            retry_in = int(admitted[0] + self._force_refresh_window_s - now) + 1
+                            return 429, {
+                                "error": "rate_limited",
+                                "message": f"Too many chain refreshes; try again in {retry_in}s.",
+                                "retry_after_s": retry_in,
+                            }
+                        admitted.append(now)
                     cd[norm_ticker] = now
                     while len(cd) > self._force_refresh_max_cooldown_entries:
-                        cd.pop(next(iter(cd)))
+                        # Evict by oldest timestamp, not insertion order: an
+                        # existing key updated in place keeps its original
+                        # position with a fresh timestamp.
+                        cd.pop(min(cd, key=lambda k: cd[k]))
 
         # Normalize strategy key (Clause 5: prefix normalization)
         strat = (strategy or "").strip().lower()

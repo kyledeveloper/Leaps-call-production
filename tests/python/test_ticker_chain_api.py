@@ -236,6 +236,12 @@ class TestChainRefreshAdmission(unittest.TestCase):
         self.assertLessEqual(len(self.state._ticker_refresh_cooldown), 512)
 
     def test_global_force_refresh_rate_limit(self):
+        # The global limiter guards upstream I/O, so this test runs online with
+        # a mocked client (offline mode is exempt from the limiter).
+        self.state.offline_mode = False
+        fake = MagicMock()
+        fake.get_leaps_candidates.return_value = []
+        self.state.client = fake
         limit = self.state._force_refresh_max_per_window
         tickers = _two_letter_tickers(limit + 1)
         codes = []
@@ -248,6 +254,50 @@ class TestChainRefreshAdmission(unittest.TestCase):
         _, _, body = self.handler_cls.dispatch(
             "GET", f"/api/v1/ticker/chain?ticker={tickers[-1]}&force_refresh=true", b"")
         self.assertEqual(json.loads(body.decode("utf-8"))["error"], "rate_limited")
+
+    def test_cooldown_blocked_requests_do_not_consume_global_quota(self):
+        # CONCERN 1: per-ticker-cooldown-blocked requests are served from cache
+        # (zero upstream I/O) and must not consume the global quota.
+        self.state.offline_mode = False
+        fake = MagicMock()
+        fake.get_leaps_candidates.return_value = []
+        self.state.client = fake
+        self.state._force_refresh_max_per_window = 3
+        for _ in range(10):
+            code, _, _ = self.handler_cls.dispatch(
+                "GET", "/api/v1/ticker/chain?ticker=AAPL&force_refresh=true", b"")
+            self.assertEqual(code, 200)
+        # Only the first request actually fetched; a fresh ticker still admits.
+        self.assertEqual(len(self.state._force_refresh_times), 1)
+        code, _, _ = self.handler_cls.dispatch(
+            "GET", "/api/v1/ticker/chain?ticker=MSFT&force_refresh=true", b"")
+        self.assertEqual(code, 200)
+
+    def test_offline_mode_exempt_from_global_limiter(self):
+        # CONCERN 1: offline mode performs no upstream I/O, so force_refresh
+        # there must not consume the global quota.
+        self.state._force_refresh_max_per_window = 2
+        for t in _two_letter_tickers(10):
+            code, _, _ = self.handler_cls.dispatch(
+                "GET", f"/api/v1/ticker/chain?ticker={t}&force_refresh=true", b"")
+            self.assertEqual(code, 200)
+        self.assertEqual(len(self.state._force_refresh_times), 0)
+
+    def test_eviction_removes_oldest_timestamp_not_oldest_inserted(self):
+        # CONCERN 2: hard-cap eviction must use the oldest timestamp, not
+        # insertion order. "NEWER" was inserted first but has the newer
+        # timestamp; both entries are within the 15s cooldown window.
+        now = time.time()
+        self.state._force_refresh_max_cooldown_entries = 2
+        self.state._ticker_refresh_cooldown = {"NEWER": now, "OLDER": now - 10.0}
+        code, _, _ = self.handler_cls.dispatch(
+            "GET", "/api/v1/ticker/chain?ticker=ZZ&force_refresh=true", b"")
+        self.assertEqual(code, 200)
+        cd = self.state._ticker_refresh_cooldown
+        self.assertLessEqual(len(cd), 2)
+        self.assertIn("NEWER", cd, "entry with the newer timestamp must survive")
+        self.assertIn("ZZ", cd)
+        self.assertNotIn("OLDER", cd, "entry with the oldest timestamp must be evicted")
 
     def test_cooldown_blocked_request_still_200(self):
         code1, _, _ = self.handler_cls.dispatch(
