@@ -1984,7 +1984,7 @@
           }
         } else {
           const err = await res.json().catch(() => ({}));
-          alert(err.error || t('watchlistError'));
+          alert(err.message || err.error || t('watchlistError'));
         }
       } catch (e) {
         alert(t('watchlistError'));
@@ -2005,7 +2005,7 @@
           }
         } else {
           const err = await res.json().catch(() => ({}));
-          alert(err.error || t('watchlistError'));
+          alert(err.message || err.error || t('watchlistError'));
         }
       } catch (e) {
         alert(t('watchlistError'));
