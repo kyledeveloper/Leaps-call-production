@@ -955,7 +955,12 @@
         state.rawData = data;
         renderData();
       } catch (err) {
-        container.innerHTML = `<div class="empty-state" style="color: var(--accent-rose);">❌ 加载失败: ${err.message}</div>`;
+        container.textContent = "";
+        const errEl = document.createElement("div");
+        errEl.className = "empty-state";
+        errEl.style.color = "var(--accent-rose)";
+        errEl.textContent = "❌ 加载失败: " + (err && err.message ? String(err.message) : String(err));
+        container.appendChild(errEl);
       }
     }
 

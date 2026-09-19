@@ -23,7 +23,7 @@ Research scanner for **US Options Strategies** featuring dual strategy families:
 | **3. High IV Rank** | Volatility crush & mean reversion | IV Rank $\ge 50\%$, $\Delta \in [-0.35, -0.15]$, capturing elevated implied volatility premiums. |
 
 #### 🛡️ CSP Seller Risk Modeling & Controls
-- **Execution Slippage ($P_{exec}$)**: Penalizes wide spreads and thin order books ($Bid + (1 - \alpha) \times (Ask - Bid) \times DepthFactor$). Zero-bid ($Bid \le 0$) is immediately rejected.
+- **Execution Slippage ($P_{exec}$)**: Conservative sell fill $P_{exec} = mid - \alpha \times (mid - bid)$ (equivalently $mid - \alpha \times half\_spread$), with $\alpha$ elevated to at least 0.85 when displayed `bid_size` < target contracts. Guarantees $bid \le P_{exec} \le mid$. Zero-bid ($Bid \le 0$) is immediately rejected.
 - **DTE buckets & Gamma Penalty**: User-selectable `<7`, `7–14`, `14–28`, `28–45` (scan window 0–45, including weeklies). Short DTE is not hard-rejected; AROC uses $DTE_{safe} = \max(DTE, 1)$ with a haircut inside 21 days.
 - **POP & Downside Buffer**: Delta-linear probability of profit ($1 - |\Delta|$) with disclaimer; buffer $(S - K) / S$.
 - **Capital Allocation & Max Loss**: Computes nominal required collateral ($K \times 100$), maximum possible loss ($K \times 100 - P_{exec} \times 100$), and caps single-stock exposure at 25% of the total cash pool.
@@ -52,27 +52,33 @@ Requires Python 3.9+.
 cd Leaps-call-production
 pip install -r requirements.txt
 
-# Start the Web Scanner (defaults to Delayed public real market data)
-python3 -m leaps_scanner.cli server --port 8000
+# Start the Web Scanner (defaults to Delayed public real market data; binds 127.0.0.1)
+PYTHONPATH=. python -m src.leaps_scanner.cli --serve --port 8000
+
+# Offline sandbox dashboard (hermetic fixtures)
+PYTHONPATH=. python -m src.leaps_scanner.cli --offline --serve --port 8000
+
+# Optional: bind all interfaces (lab only; Webull credential POSTs stay localhost-only)
+PYTHONPATH=. python -m src.leaps_scanner.cli --serve --host 0.0.0.0 --port 8000
 ```
 
 Open the dashboard:
-- Default dashboard: `http://localhost:8000/`
-- Direct CSP deep-link: `http://localhost:8000/csp` or `?family=csp`
+- Default dashboard: `http://127.0.0.1:8000/`
+- Direct CSP deep-link: `http://127.0.0.1:8000/csp` or `?family=csp`
 
 ### CLI Scans (No UI)
 
 ```bash
 # LEAPS Call scan (using live delayed market data)
-python3 -m leaps_scanner.cli --family leaps --symbols SPY,QQQ --alpha 0.5
-python3 -m leaps_scanner.cli --strategy deep_itm --universe etfs
+PYTHONPATH=. python -m src.leaps_scanner.cli --family leaps --symbols SPY,QQQ --alpha 0.5
+PYTHONPATH=. python -m src.leaps_scanner.cli --strategy deep_itm --universe etfs
 
 # Cash-Secured Put scan (using live delayed market data)
-python3 -m leaps_scanner.cli --family csp --symbols AAPL,MSFT,NVDA,AVGO
-python3 -m leaps_scanner.cli --family csp --strategy csp_harvest --universe core
+PYTHONPATH=. python -m src.leaps_scanner.cli --family csp --symbols AAPL,MSFT,NVDA,AVGO
+PYTHONPATH=. python -m src.leaps_scanner.cli --family csp --strategy harvest --universe etfs
 
 # (Optional) Forced offline sandbox fixtures for quick local testing
-python3 -m leaps_scanner.cli --offline --family csp --symbols AAPL,SPY
+PYTHONPATH=. python -m src.leaps_scanner.cli --offline --family csp --symbols AAPL,SPY
 ```
 
 ### Dashboard Features
@@ -86,7 +92,7 @@ python3 -m leaps_scanner.cli --offline --family csp --symbols AAPL,SPY
 
 ```bash
 # Run all Python unit and hermetic edge-case tests (171 tests)
-PYTHONPATH=src python3 -m unittest discover -s tests/python -q
+PYTHONPATH=. python -m unittest discover -s tests/python -q
 
 # Run JavaScript toolchain and pre-push gatekeeper tests
 npm test
@@ -100,8 +106,8 @@ All unit tests are hermetic: network sockets are blocked.
 - **Physical No-Arbitrage Bounds**: $K e^{-rT} \le EuropeanPut \le AmericanPut \le K$.
 - **Model Greeks**: Analytic Black-Scholes / Bjerksund-Stensland Greeks. Put delta strictly bounded in $[-1.0, 0.0]$.
 - **Execution Price**:
-  - LEAPS: $P_{exec} = mid + \alpha \times (ask - mid)$
-  - CSP: $P_{exec} = bid + (1 - \alpha) \times (ask - bid) \times DepthFactor$
+  - LEAPS: $P_{exec} = mid + \alpha \times half\_spread$ (elevate $\alpha$ to $\ge 0.75$ if `ask_size` < target)
+  - CSP: $P_{exec} = mid - \alpha \times (mid - bid)$ (elevate $\alpha$ to $\ge 0.85$ if `bid_size` < target; clamped to $[bid, mid]$)
 
 Greeks are model estimates, not real-time exchange feeds. Treat PASS/WATCH as an analytical shortlist and verify on your broker terminal before executing.
 

@@ -72,6 +72,15 @@ SCAN_TIER_ALIASES: Dict[str, str] = {
 SCAN_TIERS = CANONICAL_SCAN_TIERS + tuple(SCAN_TIER_ALIASES.keys())
 
 
+def _is_loopback_addr(addr: Optional[str]) -> bool:
+    """True for localhost / loopback clients (and None for hermetic unit-test dispatch)."""
+    if addr is None:
+        return True
+    host = str(addr).strip().lower()
+    if host.startswith("::ffff:"):
+        host = host.split("::ffff:", 1)[1]
+    return host in ("127.0.0.1", "::1", "localhost")
+
 def normalize_scan_tier(tier: Optional[str]) -> Optional[str]:
     if not tier:
         return None
@@ -1136,7 +1145,13 @@ def create_api_handler_class(state: AppState):
 
     class APIHandler(BaseHTTPRequestHandler):
         @classmethod
-        def dispatch(cls, method: str, path: str, body: bytes) -> Tuple[int, Dict[str, str], bytes]:
+        def dispatch(
+            cls,
+            method: str,
+            path: str,
+            body: bytes,
+            remote_addr: Optional[str] = None,
+        ) -> Tuple[int, Dict[str, str], bytes]:
             parsed = urllib.parse.urlparse(path)
             query_params = urllib.parse.parse_qs(parsed.query)
             clean_path = parsed.path
@@ -1219,6 +1234,14 @@ def create_api_handler_class(state: AppState):
                     app_secret = app_secret.strip() or None
                 else:
                     app_secret = None
+                # Lab hardening: credential-bearing mode switches are localhost-only.
+                if (app_key or app_secret) and not _is_loopback_addr(remote_addr):
+                    payload = {
+                        **state.public_config(),
+                        "error": "localhost_only",
+                        "message": "Webull credentials may only be submitted from localhost.",
+                    }
+                    return 403, headers, json.dumps(payload).encode("utf-8")
                 code, payload = state.set_mode(
                     offline=offline,
                     app_key=app_key,
@@ -1517,7 +1540,8 @@ def create_api_handler_class(state: AppState):
             return 404, headers, json.dumps({"error": "Not Found"}).encode("utf-8")
 
         def do_GET(self):
-            code, headers, body = self.dispatch("GET", self.path, b"")
+            remote = self.client_address[0] if self.client_address else None
+            code, headers, body = self.dispatch("GET", self.path, b"", remote_addr=remote)
             self.send_response(code)
             for k, v in headers.items():
                 self.send_header(k, v)
@@ -1526,7 +1550,8 @@ def create_api_handler_class(state: AppState):
             self.wfile.write(body)
 
         def do_HEAD(self):
-            code, headers, body = self.dispatch("HEAD", self.path, b"")
+            remote = self.client_address[0] if self.client_address else None
+            code, headers, body = self.dispatch("HEAD", self.path, b"", remote_addr=remote)
             self.send_response(code)
             for k, v in headers.items():
                 self.send_header(k, v)
@@ -1536,7 +1561,8 @@ def create_api_handler_class(state: AppState):
         def do_POST(self):
             content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length) if content_length > 0 else b""
-            code, headers, body_out = self.dispatch("POST", self.path, body)
+            remote = self.client_address[0] if self.client_address else None
+            code, headers, body_out = self.dispatch("POST", self.path, body, remote_addr=remote)
             self.send_response(code)
             for k, v in headers.items():
                 self.send_header(k, v)
@@ -1547,7 +1573,8 @@ def create_api_handler_class(state: AppState):
         def do_DELETE(self):
             content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length) if content_length > 0 else b""
-            code, headers, body_out = self.dispatch("DELETE", self.path, body)
+            remote = self.client_address[0] if self.client_address else None
+            code, headers, body_out = self.dispatch("DELETE", self.path, body, remote_addr=remote)
             self.send_response(code)
             for k, v in headers.items():
                 self.send_header(k, v)
@@ -1562,9 +1589,9 @@ def create_api_handler_class(state: AppState):
     return APIHandler
 
 
-def run_server(port: int = 8000, offline_mode: bool = False):
+def run_server(host: str = "127.0.0.1", port: int = 8000, offline_mode: bool = False):
     """
-    Launch HTTP server on specified port.
+    Launch HTTP server on specified host/port (default bind: 127.0.0.1).
     """
     state = AppState(offline_mode=offline_mode)
     if offline_mode:
@@ -1572,8 +1599,9 @@ def run_server(port: int = 8000, offline_mode: bool = False):
     else:
         state.request_scan(tier="etfs", family="csp")
     handler_cls = create_api_handler_class(state)
-    server = ThreadingHTTPServer(("0.0.0.0", port), handler_cls)
-    print(f"LEAPS/CSP Scanner server running at 0.0.0.0:{port} (Source: {state.source})")
+    bind_host = host or "127.0.0.1"
+    server = ThreadingHTTPServer((bind_host, port), handler_cls)
+    print(f"LEAPS/CSP Scanner server running at {bind_host}:{port} (Source: {state.source})")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

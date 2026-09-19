@@ -23,7 +23,7 @@
 | **3. 高 IV Rank 溢价** | 波动率均值回归与压制 | IV Rank $\ge 50\%$，$\Delta \in [-0.35, -0.15]$，专门收割高溢价波动率暴跌回归红利。 |
 
 #### 🛡️ CSP 卖方风控与指标模型
-- **卖方执行价滑点 ($P_{exec}$)**：买卖价差与深度乘数惩罚模型（$P_{exec} = \text{Bid} + (1 - \alpha) \times (\text{Ask} - \text{Bid}) \times \text{DepthFactor}$）。无买盘（$\text{Bid} \le 0$）一票否决。
+- **卖方执行价滑点 ($P_{exec}$)**：保守卖方成交价 $P_{exec} = mid - \alpha \times (mid - bid)$（等价于 $mid - \alpha \times half\_spread$）；当盘口 `bid_size` 小于目标张数时将 $\alpha$ 至少抬升至 0.85；并保证 $bid \le P_{exec} \le mid$。无买盘（$\text{Bid} \le 0$）一票否决。
 - **DTE 四档筛选与 Gamma 惩罚**：用户可选 `<7`、`7–14`、`14–28`、`28–45`。短 DTE 不再硬拒绝；AROC 使用 $\text{DTE}_{safe} = \max(\text{DTE}, 1)$，并在 21 天以内额外衰减。
 - **POP 胜率与向下安全缓冲**：基于 Delta 线性逼近的获利概率估计（$1 - |\Delta|$，附带免责声明）；安全缓冲 $(S - K) / S$。
 - **资金占用与最大亏损**：名义担保金（$K \times 100$），最大可能亏损（$K \times 100 - P_{exec} \times 100$），支持现金池分配，并强制单标的最高占用总资金 25% 敞口上限。
@@ -52,27 +52,33 @@
 cd Leaps-call-production
 pip install -r requirements.txt
 
-# 启动 Web 量化看板（默认采用公开延迟真实行情源）
-python3 -m leaps_scanner.cli server --port 8000
+# 启动 Web 量化看板（默认公开延迟行情；默认绑定 127.0.0.1）
+PYTHONPATH=. python -m src.leaps_scanner.cli --serve --port 8000
+
+# 离线沙盒看板（气密测试桩）
+PYTHONPATH=. python -m src.leaps_scanner.cli --offline --serve --port 8000
+
+# 可选：绑定全部网卡（仅实验室环境；含 Webull 密钥的 POST 仍限本机）
+PYTHONPATH=. python -m src.leaps_scanner.cli --serve --host 0.0.0.0 --port 8000
 ```
 
 打开浏览器看板：
-- 默认主看板：`http://localhost:8000/`
-- 直达 CSP 看板：`http://localhost:8000/csp` 或携带参数 `?family=csp`
+- 默认主看板：`http://127.0.0.1:8000/`
+- 直达 CSP 看板：`http://127.0.0.1:8000/csp` 或携带参数 `?family=csp`
 
 ### 无界面命令行 (CLI)
 
 ```bash
 # 扫描 LEAPS Call 远月看涨（使用真实延迟行情）
-python3 -m leaps_scanner.cli --family leaps --symbols SPY,QQQ --alpha 0.5
-python3 -m leaps_scanner.cli --strategy deep_itm --universe etfs
+PYTHONPATH=. python -m src.leaps_scanner.cli --family leaps --symbols SPY,QQQ --alpha 0.5
+PYTHONPATH=. python -m src.leaps_scanner.cli --strategy deep_itm --universe etfs
 
 # 扫描 Cash-Secured Put 卖方（使用真实延迟行情）
-python3 -m leaps_scanner.cli --family csp --symbols AAPL,MSFT,NVDA,AVGO
-python3 -m leaps_scanner.cli --family csp --strategy csp_harvest --universe core
+PYTHONPATH=. python -m src.leaps_scanner.cli --family csp --symbols AAPL,MSFT,NVDA,AVGO
+PYTHONPATH=. python -m src.leaps_scanner.cli --family csp --strategy harvest --universe etfs
 
 # （可选）强制使用离线沙盒测试桩进行极速本地验证
-python3 -m leaps_scanner.cli --offline --family csp --symbols AAPL,SPY
+PYTHONPATH=. python -m src.leaps_scanner.cli --offline --family csp --symbols AAPL,SPY
 ```
 
 ### 看板核心功能
@@ -86,7 +92,7 @@ python3 -m leaps_scanner.cli --offline --family csp --symbols AAPL,SPY
 
 ```bash
 # 执行全部 Python 单元测试与无网络气密性测试（171 项单测）
-PYTHONPATH=src python3 -m unittest discover -s tests/python -q
+PYTHONPATH=. python -m unittest discover -s tests/python -q
 
 # 执行 JS 研发工具链与 Pre-push 安全门禁测试
 npm test
@@ -100,8 +106,8 @@ npm test
 - **物理无套利上下界**：$K e^{-rT} \le \text{EuropeanPut} \le \text{AmericanPut} \le K$。
 - **模型 Greeks**：解析导数 Black-Scholes / Bjerksund-Stensland 希腊字母。Put Delta 严格约束在负数区间 $[-1.0, 0.0]$。
 - **执行价滑点计算**：
-  - LEAPS 买方：$P_{exec} = \text{Mid} + \alpha \times (\text{Ask} - \text{Mid})$
-  - CSP 卖方：$P_{exec} = \text{Bid} + (1 - \alpha) \times (\text{Ask} - \text{Bid}) \times \text{DepthFactor}$
+  - LEAPS 买方：$P_{exec} = mid + \alpha \times half\_spread$（`ask_size` 不足目标张数时 $\alpha \ge 0.75$）
+  - CSP 卖方：$P_{exec} = mid - \alpha \times (mid - bid)$（`bid_size` 不足目标张数时 $\alpha \ge 0.85$；夹紧到 $[bid, mid]$）
 
 模型 Greeks 与估算指标属于量化筛选参考值，并非交易所实时行情。PASS 与 WATCH 仅作为备选初筛池，下单前请务必在券商交易终端核对实时盘口。
 
