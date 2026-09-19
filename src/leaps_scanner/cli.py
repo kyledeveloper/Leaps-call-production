@@ -66,13 +66,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--strategy", type=str, default="all", choices=["all", "deep_itm", "vol_discount", "oversold", "harvest", "wheel", "vol_rank"], help="Strategy filter")
     parser.add_argument("--serve", action="store_true", help="Launch interactive Web Dashboard HTTP server")
     parser.add_argument("--port", type=int, default=8000, help="Web Dashboard port")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="HTTP bind address (default: 127.0.0.1)")
     parser.add_argument("--offline", action="store_true", default=False, help="Force offline sandbox mode (default: online/live data)")
 
     args = parser.parse_args(argv)
 
 
     if args.serve:
-        run_server(port=args.port, offline_mode=args.offline)
+        run_server(host=args.host, port=args.port, offline_mode=args.offline)
         return 0
 
     if args.sync_universe:

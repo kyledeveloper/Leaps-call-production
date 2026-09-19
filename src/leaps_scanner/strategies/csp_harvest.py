@@ -72,7 +72,11 @@ def evaluate_csp_harvest(candidate) -> CSPHarvestResult:
             bid_size=candidate.bid_size,
             ask_size=candidate.ask_size,
         )
-        if l_guard.spread_status == GuardStatus.REJECT or l_guard.oi_status == GuardStatus.REJECT:
+        if (
+            l_guard.spread_status == GuardStatus.REJECT
+            or l_guard.oi_status == GuardStatus.REJECT
+            or l_guard.volume_status == GuardStatus.REJECT
+        ):
             liq_status = GuardStatus.REJECT
         elif l_guard.spread_status == GuardStatus.WATCH or l_guard.volume_status == GuardStatus.WATCH:
             liq_status = GuardStatus.WATCH

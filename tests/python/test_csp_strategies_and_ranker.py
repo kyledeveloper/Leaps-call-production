@@ -247,6 +247,77 @@ class TestCSPStrategiesAndRanker(unittest.TestCase):
         self.assertEqual(len(harvest), 1)
         self.assertNotEqual(harvest[0].status, GuardStatus.REJECT)
 
+    def test_harvest_volume_reject_does_not_pass(self):
+        """P0: high OI + vol=0 (+ empty book) volume REJECT must not fall through to PASS."""
+        thin_vol = CSPCandidate(
+            symbol="AAPL261016P00220000",
+            underlying="AAPL",
+            spot=230.0,
+            strike=220.0,
+            dte=30.0,
+            bid=3.00,
+            ask=3.20,
+            delta=-0.22,
+            open_interest=5000,
+            volume=0,
+            bid_size=0,
+            ask_size=0,
+            iv_rank=0.45,
+            rsi_14=52.0,
+            pct_to_200dma=0.08,
+            earnings_status=EarningsStatus.CONFIRMED_SAFE,
+        )
+        res = evaluate_csp_harvest(thin_vol)
+        self.assertEqual(res.gates["liquidity"], GuardStatus.REJECT)
+        self.assertEqual(res.status, GuardStatus.REJECT)
+        self.assertTrue(
+            any("INSUFFICIENT_ACTIVITY" in r for r in res.reasons),
+            res.reasons,
+        )
+
+        # Same fold in wheel / vol_rank evaluators
+        thin_wheel = CSPCandidate(
+            symbol="MSFT261016P00400000",
+            underlying="MSFT",
+            spot=420.0,
+            strike=400.0,
+            dte=35.0,
+            bid=8.00,
+            ask=8.40,
+            delta=-0.38,
+            open_interest=5000,
+            volume=0,
+            bid_size=0,
+            ask_size=0,
+            iv_rank=0.35,
+            rsi_14=38.0,
+            pct_to_200dma=-0.03,
+            earnings_status=EarningsStatus.CONFIRMED_SAFE,
+        )
+        res_w = evaluate_csp_wheel(thin_wheel)
+        self.assertEqual(res_w.gates["liquidity"], GuardStatus.REJECT)
+
+        thin_ivr = CSPCandidate(
+            symbol="NVDA261016P00110000",
+            underlying="NVDA",
+            spot=120.0,
+            strike=110.0,
+            dte=28.0,
+            bid=4.20,
+            ask=4.50,
+            delta=-0.28,
+            open_interest=15000,
+            volume=0,
+            bid_size=0,
+            ask_size=0,
+            iv_rank=0.78,
+            rsi_14=46.0,
+            pct_to_200dma=0.15,
+            earnings_status=EarningsStatus.CONFIRMED_SAFE,
+        )
+        res_v = evaluate_csp_vol_rank(thin_ivr)
+        self.assertEqual(res_v.gates["liquidity"], GuardStatus.REJECT)
+
     def test_wheel_without_dip_is_watch(self):
         hot = CSPCandidate(
             symbol="NVDA261016P00110000",

@@ -122,6 +122,29 @@ class TestAPIServer(unittest.TestCase):
         self.assertIn("connection_status", cfg)
         self.assertEqual(cfg.get("source"), "sandbox")
 
+
+    def test_mode_credentials_localhost_only(self):
+        """P0: app_secret / app_key on /api/v1/mode rejected from non-loopback clients."""
+        handler_cls = create_api_handler_class(self.state)
+        payload = json.dumps({
+            "source": "webull",
+            "offline": False,
+            "app_key": "k",
+            "app_secret": "s",
+        }).encode("utf-8")
+        code, headers, body = handler_cls.dispatch(
+            "POST", "/api/v1/mode", payload, remote_addr="203.0.113.10"
+        )
+        self.assertEqual(code, 403)
+        res = json.loads(body.decode("utf-8"))
+        self.assertEqual(res["error"], "localhost_only")
+
+        code, headers, body = handler_cls.dispatch(
+            "POST", "/api/v1/mode", payload, remote_addr="127.0.0.1"
+        )
+        # Loopback may still 400 on missing/invalid live auth — but not 403.
+        self.assertNotEqual(code, 403)
+
     def test_universe_scan_tiers(self):
         etfs = self.state.resolve_scan_symbols("etfs")
         djia = self.state.resolve_scan_symbols("djia")
